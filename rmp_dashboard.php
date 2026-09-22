@@ -1,11 +1,12 @@
 <?php
 require_once 'config.php';
-include 'includes/header.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'rmp') {
     header("Location: login.php");
     exit;
 }
+
+include 'includes/header.php';
 
 $rmp_id = $_SESSION['user_id'];
 $tests = $conn->query("

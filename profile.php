@@ -1,11 +1,12 @@
 <?php
 require_once 'config.php';
-include 'includes/header.php';
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit;
 }
+
+include 'includes/header.php';
 
 $user_id = $_SESSION['user_id'];
 $success = '';

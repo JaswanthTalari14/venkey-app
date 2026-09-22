@@ -1,11 +1,12 @@
 <?php
 require_once 'config.php';
-include 'includes/header.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header("Location: login.php");
     exit;
 }
+
+include 'includes/header.php';
 
 // Fetch platform statistics for the dashboard
 $total_patients = $conn->query("SELECT COUNT(*) as count FROM users WHERE role='patient'")->fetch_assoc()['count'];

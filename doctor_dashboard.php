@@ -1,11 +1,12 @@
 <?php
 require_once 'config.php';
-include 'includes/header.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'doctor') {
     header("Location: login.php");
     exit;
 }
+
+include 'includes/header.php';
 ?>
 
 <div class="dashboard-layout">
