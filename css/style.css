@@ -19,7 +19,17 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+body, input, button, select, textarea {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Ensure FontAwesome icons inherit proper icon font family */
+.fas, .far, .fab, .fa, .feature-icon, i[class*="fa-"] {
+  font-family: "Font Awesome 6 Free", "FontAwesome" !important;
+  font-weight: 900;
+  font-style: normal;
 }
 
 html {
