@@ -19,11 +19,14 @@ if (session_status() === PHP_SESSION_NONE) {
 <body>
     <header>
         <a href="index.php" class="logo">MedicalAk</a>
-        <nav>
+        <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+            <i class="fas fa-bars"></i>
+        </button>
+        <nav id="navMenu">
             <ul>
                 <li><a href="index.php">Home</a></li>
-                <li><a href="#features">Features</a></li>
-                <li><a href="#about">About</a></li>
+                <li><a href="index.php#features">Features</a></li>
+                <li><a href="index.php#about">About</a></li>
                 <?php if(isset($_SESSION['user_id'])): ?>
                     <?php if($_SESSION['role'] == 'patient'): ?>
                         <li><a href="patient_dashboard.php">Dashboard</a></li>
