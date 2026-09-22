@@ -445,6 +445,38 @@ footer {
   border-radius: 10px;
 }
 
+/* Sidebar Toggle Button for Mobile/Tablet */
+.sidebar-toggle {
+  display: none;
+  width: 100%;
+  padding: 0.85rem 1.1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  justify-content: space-between;
+  align-items: center;
+  transition: var(--transition);
+  outline: none;
+  user-select: none;
+}
+
+.sidebar-toggle:hover, .sidebar-toggle:active {
+  background: rgba(74, 144, 226, 0.15);
+  border-color: var(--primary-color);
+}
+
+.sidebar-toggle .toggle-icon {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sidebar-toggle.active .toggle-icon {
+  transform: rotate(180deg);
+}
+
 /* ==================================================
    RESPONSIVE MEDIA QUERIES
    ================================================== */
@@ -473,17 +505,35 @@ footer {
     width: 100%;
     min-height: auto;
   }
+
+  .sidebar-toggle {
+    display: flex;
+  }
+
+  .sidebar-title {
+    display: none;
+  }
   
   .sidebar-menu {
-    display: flex;
-    flex-wrap: wrap;
+    display: none;
+    flex-direction: column;
     gap: 0.5rem;
+    margin-top: 0.75rem;
+    width: 100%;
+  }
+
+  .sidebar-menu.active {
+    display: flex;
+    animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
   
   .sidebar-menu li {
     margin-bottom: 0;
-    flex: 1 1 calc(50% - 0.5rem);
-    min-width: 140px;
+    width: 100%;
+  }
+
+  .sidebar-menu a {
+    width: 100%;
   }
 }
 

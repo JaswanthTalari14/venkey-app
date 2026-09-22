@@ -54,7 +54,11 @@ $my_orders = $conn->query("
 
 <div class="dashboard-layout">
     <aside class="sidebar glass-panel">
-        <h3 style="margin-bottom: 2rem;">Patient Menu</h3>
+        <button class="sidebar-toggle" aria-label="Toggle Patient Menu">
+            <span><i class="fas fa-bars" style="margin-right: 0.5rem;"></i> Patient Menu</span>
+            <i class="fas fa-chevron-down toggle-icon"></i>
+        </button>
+        <h3 class="sidebar-title" style="margin-bottom: 2rem;">Patient Menu</h3>
         <ul class="sidebar-menu">
             <li><a href="patient_dashboard.php"><i class="fas fa-home"></i> Overview</a></li>
             <li><a href="book_consult.php"><i class="fas fa-calendar-check"></i> Consultations</a></li>
