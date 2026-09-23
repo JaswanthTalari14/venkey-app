@@ -150,16 +150,16 @@ include 'includes/header.php';
         <!-- Top-Up Requests & Admin Approval Status -->
         <h3 style="margin-bottom: 1rem;"><i class="fas fa-clock"></i> Wallet Top-Up Requests & Approval Status</h3>
         <div class="glass-panel" style="overflow-x: auto; padding: 1rem; margin-bottom: 2rem;">
-            <table style="width: 100%; text-align: left; border-collapse: collapse;">
+            <table style="width: 100%; min-width: 950px; text-align: left; border-collapse: collapse;">
                 <thead>
                     <tr style="border-bottom: 1px solid var(--glass-border);">
-                        <th style="padding: 1rem;">Top-Up ID</th>
-                        <th style="padding: 1rem;">Req. Amount</th>
-                        <th style="padding: 1rem;">Paid Amount</th>
-                        <th style="padding: 1rem;">Payment Status</th>
-                        <th style="padding: 1rem;">Admin Approval Status</th>
-                        <th style="padding: 1rem;">Date & Time</th>
-                        <th style="padding: 1rem;">Action / Note</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Top-Up ID</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Req. Amount</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Paid Amount</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Payment Status</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Admin Approval Status</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Date & Time</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Action / Note</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -169,59 +169,59 @@ include 'includes/header.php';
                     ?>
                         <?php while ($tu = $user_topups->fetch_assoc()): ?>
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                <td style="padding: 1rem; font-family: monospace; font-weight: bold; color: var(--secondary-color);">
+                                <td style="padding: 1rem; font-family: monospace; font-weight: bold; color: var(--secondary-color); white-space: nowrap;">
                                     <?php echo htmlspecialchars($tu['topup_id']); ?>
                                 </td>
-                                <td style="padding: 1rem; font-weight: bold;">₹<?php echo number_format($tu['amount'], 2); ?></td>
-                                <td style="padding: 1rem;">
+                                <td style="padding: 1rem; font-weight: bold; white-space: nowrap;">₹<?php echo number_format($tu['amount'], 2); ?></td>
+                                <td style="padding: 1rem; white-space: nowrap;">
                                     <?php echo $tu['paid_amount'] > 0 ? '₹' . number_format($tu['paid_amount'], 2) : '-'; ?>
                                 </td>
-                                <td style="padding: 1rem;">
+                                <td style="padding: 1rem; white-space: nowrap;">
                                     <?php if ($tu['status'] === 'pending'): ?>
-                                        <span style="background: rgba(241, 196, 15, 0.15); color: #f1c40f; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                        <span style="background: rgba(241, 196, 15, 0.15); color: #f1c40f; padding: 0.4rem 0.9rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; display: inline-block; white-space: nowrap;">
                                             Payment Pending
                                         </span>
                                     <?php elseif ($tu['status'] === 'payment_failed'): ?>
-                                        <span style="background: rgba(255, 71, 87, 0.15); color: #ff4757; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                        <span style="background: rgba(255, 71, 87, 0.15); color: #ff4757; padding: 0.4rem 0.9rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; display: inline-block; white-space: nowrap;">
                                             Payment Failed
                                         </span>
                                     <?php else: ?>
-                                        <span style="background: rgba(46, 213, 115, 0.15); color: #2ed573; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                        <span style="background: rgba(46, 213, 115, 0.15); color: #2ed573; padding: 0.4rem 0.9rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; display: inline-block; white-space: nowrap;">
                                             Payment Received
                                         </span>
                                     <?php endif; ?>
                                 </td>
-                                <td style="padding: 1rem;">
+                                <td style="padding: 1rem; white-space: nowrap;">
                                     <?php if ($tu['status'] === 'approved'): ?>
-                                        <span style="background: rgba(46, 213, 115, 0.15); color: #2ed573; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                        <span style="background: rgba(46, 213, 115, 0.15); color: #2ed573; padding: 0.4rem 0.9rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; display: inline-block; white-space: nowrap;">
                                             <i class="fas fa-check-circle"></i> Approved & Credited
                                         </span>
                                     <?php elseif ($tu['status'] === 'rejected'): ?>
-                                        <span style="background: rgba(255, 71, 87, 0.15); color: #ff4757; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                        <span style="background: rgba(255, 71, 87, 0.15); color: #ff4757; padding: 0.4rem 0.9rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; display: inline-block; white-space: nowrap;">
                                             <i class="fas fa-times-circle"></i> Rejected
                                         </span>
                                     <?php elseif ($tu['status'] === 'amount_mismatch'): ?>
-                                        <span style="background: rgba(155, 89, 182, 0.15); color: #9b59b6; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                        <span style="background: rgba(155, 89, 182, 0.15); color: #9b59b6; padding: 0.4rem 0.9rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; display: inline-block; white-space: nowrap;">
                                             <i class="fas fa-exclamation-triangle"></i> Amount Mismatch (Review)
                                         </span>
                                     <?php elseif ($tu['status'] === 'pending_approval'): ?>
-                                        <span style="background: rgba(230, 126, 34, 0.15); color: #e67e22; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                        <span style="background: rgba(230, 126, 34, 0.15); color: #e67e22; padding: 0.4rem 0.9rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; display: inline-block; white-space: nowrap;">
                                             <i class="fas fa-hourglass-half"></i> Pending Admin Verification
                                         </span>
                                     <?php else: ?>
                                         <span style="color: var(--text-secondary); font-size: 0.85rem;">-</span>
                                     <?php endif; ?>
                                 </td>
-                                <td style="padding: 1rem; font-size: 0.85rem; color: var(--text-secondary);">
+                                <td style="padding: 1rem; font-size: 0.85rem; color: var(--text-secondary); white-space: nowrap;">
                                     <?php echo date('M d, Y h:i A', strtotime($tu['created_at'])); ?>
                                 </td>
-                                <td style="padding: 1rem; font-size: 0.85rem;">
+                                <td style="padding: 1rem; font-size: 0.85rem; white-space: nowrap;">
                                     <?php if ($tu['status'] === 'pending'): ?>
                                         <a href="pay_wallet_topup.php?topup_id=<?php echo urlencode($tu['topup_id']); ?>" class="btn btn-outline" style="padding: 0.3rem 0.7rem; font-size: 0.8rem;">Pay Now</a>
                                     <?php elseif ($tu['status'] === 'rejected' && !empty($tu['rejection_reason'])): ?>
-                                        <small style="color: #ff4757; display: block; max-width: 200px;">Reason: <?php echo htmlspecialchars($tu['rejection_reason']); ?></small>
+                                        <small style="color: #ff4757; display: block;">Reason: <?php echo htmlspecialchars($tu['rejection_reason']); ?></small>
                                     <?php elseif ($tu['status'] === 'pending_approval' || $tu['status'] === 'amount_mismatch'): ?>
-                                        <small style="color: #e67e22;">Waiting for Admin verification</small>
+                                        <small style="color: #e67e22; white-space: nowrap;">Waiting for Admin verification</small>
                                     <?php else: ?>
                                         <span style="color: var(--text-secondary);">-</span>
                                     <?php endif; ?>
@@ -254,16 +254,16 @@ include 'includes/header.php';
         <!-- Transaction History Table -->
         <h3 style="margin-bottom: 1rem;"><i class="fas fa-list-alt"></i> Transaction History Ledger</h3>
         <div class="glass-panel" style="overflow-x: auto; padding: 1rem;">
-            <table style="width: 100%; text-align: left; border-collapse: collapse;">
+            <table style="width: 100%; min-width: 850px; text-align: left; border-collapse: collapse;">
                 <thead>
                     <tr style="border-bottom: 1px solid var(--glass-border);">
-                        <th style="padding: 1rem;">Tx ID</th>
-                        <th style="padding: 1rem;">Type & Description</th>
-                        <th style="padding: 1rem;">Direction</th>
-                        <th style="padding: 1rem;">Amount</th>
-                        <th style="padding: 1rem;">Balance After</th>
-                        <th style="padding: 1rem;">Date & Time</th>
-                        <th style="padding: 1rem;">Status</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Tx ID</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Type & Description</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Direction</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Amount</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Balance After</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Date & Time</th>
+                        <th style="padding: 1rem; white-space: nowrap;">Status</th>
                     </tr>
                 </thead>
                 <tbody>
