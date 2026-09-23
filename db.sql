@@ -39,6 +39,10 @@ CREATE TABLE IF NOT EXISTS orders (
     patient_id INT NOT NULL,
     total_amount DECIMAL(10,2) NOT NULL,
     status ENUM('pending', 'shipped', 'delivered', 'cancelled') DEFAULT 'pending',
+    payment_method VARCHAR(50) DEFAULT 'COD',
+    payment_status VARCHAR(50) DEFAULT 'Cash on Delivery',
+    gateway_order_id VARCHAR(100) DEFAULT NULL,
+    gateway_payment_id VARCHAR(100) DEFAULT NULL,
     address TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (patient_id) REFERENCES users(id)

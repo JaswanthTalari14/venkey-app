@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
 }
 
 $orders = $conn->query("
-    SELECT o.id, o.total_amount, o.status, o.address, o.created_at, p.name as patient_name 
+    SELECT o.id, o.total_amount, o.status, o.payment_method, o.payment_status, o.address, o.created_at, p.name as patient_name 
     FROM orders o
     JOIN users p ON o.patient_id = p.id
     ORDER BY o.created_at DESC
@@ -54,6 +54,8 @@ $orders = $conn->query("
                         <th style="padding: 1rem;">Order ID</th>
                         <th style="padding: 1rem;">Patient</th>
                         <th style="padding: 1rem;">Total Amount</th>
+                        <th style="padding: 1rem;">Payment Method</th>
+                        <th style="padding: 1rem;">Payment Status</th>
                         <th style="padding: 1rem;">Date</th>
                         <th style="padding: 1rem;">Status</th>
                         <th style="padding: 1rem;">Action</th>
@@ -66,6 +68,19 @@ $orders = $conn->query("
                                 <td style="padding: 1rem;">#ORD-<?php echo str_pad($o['id'], 4, '0', STR_PAD_LEFT); ?></td>
                                 <td style="padding: 1rem; font-weight: bold;"><?php echo htmlspecialchars($o['patient_name']); ?></td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">₹<?php echo $o['total_amount']; ?></td>
+                                <td style="padding: 1rem; font-size: 0.9rem; color: var(--text-secondary);"><?php echo htmlspecialchars($o['payment_method'] ?? 'COD'); ?></td>
+                                <td style="padding: 1rem;">
+                                    <?php
+                                        $pay_status = $o['payment_status'] ?? 'Cash on Delivery';
+                                        $pay_color = '#f5a623';
+                                        if ($pay_status === 'Paid') $pay_color = '#2ed573';
+                                        if ($pay_status === 'Failed') $pay_color = '#ff4757';
+                                        if ($pay_status === 'Cash on Delivery') $pay_color = '#3498db';
+                                    ?>
+                                    <span style="color: <?php echo $pay_color; ?>; font-weight: bold; font-size: 0.82rem;">
+                                        <?php echo htmlspecialchars($pay_status); ?>
+                                    </span>
+                                </td>
                                 <td style="padding: 1rem; color: var(--text-secondary);"><?php echo date('M d, Y', strtotime($o['created_at'])); ?></td>
                                 <td style="padding: 1rem;">
                                     <?php

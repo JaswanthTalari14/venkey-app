@@ -9,11 +9,23 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'patient') {
 include 'includes/header.php';
 
 $success = '';
+$error = '';
+$online_order_data = null;
+
+if (isset($_GET['success'])) {
+    $success = "Medicine ordered successfully! It will be delivered soon.";
+}
 
 // Check and add 'image' column if not exists
 $check_col = $conn->query("SHOW COLUMNS FROM medicines LIKE 'image'");
 if ($check_col && $check_col->num_rows == 0) {
     $conn->query("ALTER TABLE medicines ADD COLUMN image VARCHAR(255) DEFAULT NULL");
+}
+
+// Check and add payment columns in orders table if not exists
+$check_pay_col = $conn->query("SHOW COLUMNS FROM orders LIKE 'payment_method'");
+if ($check_pay_col && $check_pay_col->num_rows == 0) {
+    $conn->query("ALTER TABLE orders ADD COLUMN payment_method VARCHAR(50) DEFAULT 'COD', ADD COLUMN payment_status VARCHAR(50) DEFAULT 'Cash on Delivery', ADD COLUMN gateway_order_id VARCHAR(100) DEFAULT NULL, ADD COLUMN gateway_payment_id VARCHAR(100) DEFAULT NULL");
 }
 
 // Seed some sample medicines if empty
@@ -33,20 +45,48 @@ if ($row['count'] == 0) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
-    $medicine_id = $_POST['medicine_id'];
-    $qty = $_POST['quantity'];
+    $medicine_id = (int)$_POST['medicine_id'];
+    $qty = (int)$_POST['quantity'];
+    $payment_method = isset($_POST['payment_method']) && $_POST['payment_method'] === 'Online Payment' ? 'Online Payment' : 'COD';
     $patient_id = $_SESSION['user_id'];
     
-    // Get price
-    $med = $conn->query("SELECT price FROM medicines WHERE id=$medicine_id")->fetch_assoc();
-    $total = $med['price'] * $qty;
-    
-    // Create direct order for simplicity
-    $conn->query("INSERT INTO orders (patient_id, total_amount, address) VALUES ($patient_id, $total, 'User Default Address')");
-    $order_id = $conn->insert_id;
-    
-    $conn->query("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES ($order_id, $medicine_id, $qty, {$med['price']})");
-    $success = "Medicine ordered successfully! It will be delivered soon.";
+    // Get price & name
+    $med_res = $conn->query("SELECT price, name FROM medicines WHERE id=$medicine_id");
+    if ($med_res && $med_res->num_rows > 0) {
+        $med = $med_res->fetch_assoc();
+        $total = $med['price'] * $qty;
+        
+        if ($payment_method === 'COD') {
+            $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, 'User Default Address', 'COD', 'Cash on Delivery')");
+            $stmt->bind_param("id", $patient_id, $total);
+            $stmt->execute();
+            $order_id = $stmt->insert_id;
+            
+            $item_stmt = $conn->prepare("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES (?, ?, ?, ?)");
+            $item_stmt->bind_param("iiid", $order_id, $medicine_id, $qty, $med['price']);
+            $item_stmt->execute();
+            
+            $success = "Medicine ordered successfully! It will be delivered soon.";
+        } else {
+            // Online Payment Flow
+            $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, 'User Default Address', 'Online Payment', 'Pending')");
+            $stmt->bind_param("id", $patient_id, $total);
+            $stmt->execute();
+            $order_id = $stmt->insert_id;
+            
+            $item_stmt = $conn->prepare("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES (?, ?, ?, ?)");
+            $item_stmt->bind_param("iiid", $order_id, $medicine_id, $qty, $med['price']);
+            $item_stmt->execute();
+            
+            $online_order_data = [
+                'order_id' => $order_id,
+                'amount_paise' => (int)($total * 100),
+                'amount_display' => number_format($total, 2),
+                'medicine_name' => $med['name'],
+                'patient_id' => $patient_id
+            ];
+        }
+    }
 }
 
 $medicines = $conn->query("SELECT * FROM medicines");
@@ -54,7 +94,7 @@ $medicines = $conn->query("SELECT * FROM medicines");
 // Fetch patient's medicine orders
 $patient_id_for_orders = $_SESSION['user_id'];
 $my_orders = $conn->query("
-    SELECT o.id, o.created_at, o.status, o.total_amount, m.name as medicine_name, oi.quantity 
+    SELECT o.id, o.created_at, o.status, o.total_amount, o.payment_method, o.payment_status, m.name as medicine_name, oi.quantity 
     FROM orders o
     JOIN order_items oi ON o.id = oi.order_id
     JOIN medicines m ON oi.medicine_id = m.id
@@ -62,6 +102,8 @@ $my_orders = $conn->query("
     ORDER BY o.created_at DESC
 ");
 ?>
+
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 
 <div class="dashboard-layout">
     <aside class="sidebar glass-panel">
@@ -86,6 +128,7 @@ $my_orders = $conn->query("
         <p style="color: var(--text-secondary); margin-bottom: 2rem;">Order prescribed or over-the-counter medicines delivered directly to your home.</p>
         
         <?php if($success): ?><p style="color: #2ed573; margin-bottom: 1rem; padding: 1rem; background: rgba(46, 213, 115, 0.1); border-radius: 8px;"><?php echo $success; ?></p><?php endif; ?>
+        <?php if($error): ?><p style="color: #ff4757; margin-bottom: 1rem; padding: 1rem; background: rgba(255, 71, 87, 0.1); border-radius: 8px;"><?php echo $error; ?></p><?php endif; ?>
 
         <div class="features-grid" style="margin-top: 1rem;">
             <?php while($med = $medicines->fetch_assoc()): ?>
@@ -109,10 +152,27 @@ $my_orders = $conn->query("
                     <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; min-height: 40px;"><?php echo htmlspecialchars($med['description']); ?></p>
                     <p style="font-size: 1.5rem; font-weight: bold; color: var(--secondary-color); margin-bottom: 1rem;">₹<?php echo $med['price']; ?></p>
                     
-                    <form method="POST" action="" style="display: flex; gap: 0.5rem; margin-top: auto;">
+                    <form method="POST" action="" style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: auto;">
                         <input type="hidden" name="medicine_id" value="<?php echo $med['id']; ?>">
-                        <input type="number" name="quantity" value="1" min="1" max="10" class="form-control" style="width: 80px;" required>
-                        <button type="submit" name="order" class="btn btn-primary" style="flex: 1;">Order Now</button>
+                        
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+                            <label style="font-size: 0.85rem; color: var(--text-secondary);">Quantity:</label>
+                            <input type="number" name="quantity" value="1" min="1" max="10" class="form-control" style="width: 80px;" required>
+                        </div>
+                        
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 8px; padding: 0.5rem 0.75rem;">
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.3rem;">Payment Method:</div>
+                            <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                                <label style="font-size: 0.82rem; color: #fff; cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+                                    <input type="radio" name="payment_method" value="COD" checked> Cash on Delivery
+                                </label>
+                                <label style="font-size: 0.82rem; color: #fff; cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+                                    <input type="radio" name="payment_method" value="Online Payment"> Online Payment
+                                </label>
+                            </div>
+                        </div>
+
+                        <button type="submit" name="order" class="btn btn-primary" style="width: 100%;">Order Now</button>
                     </form>
                 </div>
             <?php endwhile; ?>
@@ -127,6 +187,8 @@ $my_orders = $conn->query("
                         <th style="padding: 1rem;">Medicine</th>
                         <th style="padding: 1rem;">Qty</th>
                         <th style="padding: 1rem;">Total Amount</th>
+                        <th style="padding: 1rem;">Payment Method</th>
+                        <th style="padding: 1rem;">Payment Status</th>
                         <th style="padding: 1rem;">Date Ordered</th>
                         <th style="padding: 1rem;">Status</th>
                     </tr>
@@ -139,6 +201,22 @@ $my_orders = $conn->query("
                                 <td style="padding: 1rem; font-weight: bold; color: var(--primary-color);"><?php echo htmlspecialchars($o['medicine_name']); ?></td>
                                 <td style="padding: 1rem;"><?php echo $o['quantity']; ?></td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">₹<?php echo $o['total_amount']; ?></td>
+                                <td style="padding: 1rem; font-size: 0.9rem; color: var(--text-secondary);"><?php echo htmlspecialchars($o['payment_method'] ?? 'COD'); ?></td>
+                                <td style="padding: 1rem;">
+                                    <?php
+                                        $pay_status = $o['payment_status'] ?? 'Cash on Delivery';
+                                        $pay_color = '#f5a623';
+                                        if ($pay_status === 'Paid') $pay_color = '#2ed573';
+                                        if ($pay_status === 'Failed') $pay_color = '#ff4757';
+                                        if ($pay_status === 'Cash on Delivery') $pay_color = '#3498db';
+                                    ?>
+                                    <span style="color: <?php echo $pay_color; ?>; font-weight: bold; font-size: 0.82rem;">
+                                        <?php echo htmlspecialchars($pay_status); ?>
+                                    </span>
+                                    <?php if ($pay_status === 'Pending' && ($o['payment_method'] ?? '') === 'Online Payment'): ?>
+                                        <button onclick="retryPayment(<?php echo $o['id']; ?>, <?php echo $o['total_amount']; ?>, '<?php echo htmlspecialchars($o['medicine_name']); ?>')" class="btn btn-primary" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; margin-left: 0.5rem;">Pay Again</button>
+                                    <?php endif; ?>
+                                </td>
                                 <td style="padding: 1rem;"><?php echo date('M d, Y', strtotime($o['created_at'])); ?></td>
                                 <td style="padding: 1rem;">
                                     <?php
@@ -155,12 +233,80 @@ $my_orders = $conn->query("
                             </tr>
                         <?php endwhile; ?>
                     <?php else: ?>
-                        <tr><td colspan="6" style="padding: 1rem; text-align: center;">You have not ordered any medicines yet.</td></tr>
+                        <tr><td colspan="8" style="padding: 1rem; text-align: center;">You have not ordered any medicines yet.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>
         </div>
     </main>
 </div>
+
+<?php if ($online_order_data): ?>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    triggerRazorpayCheckout(
+        <?php echo $online_order_data['order_id']; ?>,
+        <?php echo $online_order_data['amount_paise']; ?>,
+        "<?php echo htmlspecialchars($online_order_data['medicine_name']); ?>"
+    );
+});
+</script>
+<?php endif; ?>
+
+<script>
+function triggerRazorpayCheckout(orderId, amountPaise, medicineName) {
+    var options = {
+        "key": "<?php echo RAZORPAY_KEY_ID; ?>",
+        "amount": amountPaise,
+        "currency": "INR",
+        "name": "MedicalAk Medicine Delivery",
+        "description": "Payment for " + medicineName,
+        "handler": function (response){
+            fetch('verify_payment.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    order_id: orderId,
+                    razorpay_payment_id: response.razorpay_payment_id || ('pay_test_' + Date.now()),
+                    razorpay_order_id: response.razorpay_order_id || '',
+                    razorpay_signature: response.razorpay_signature || ''
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.href = 'medicines.php?success=1';
+                } else {
+                    alert('Payment verification error: ' + data.message);
+                    window.location.href = 'medicines.php';
+                }
+            })
+            .catch(err => {
+                alert('Connection error during verification. Please refresh.');
+                window.location.href = 'medicines.php';
+            });
+        },
+        "modal": {
+            "ondismiss": function() {
+                alert('Payment window closed. You can click "Pay Again" in your order list anytime.');
+            }
+        },
+        "prefill": {
+            "name": "Patient User",
+            "email": "patient@medicalak.com"
+        },
+        "theme": {
+            "color": "#4a90e2"
+        }
+    };
+    var rzp1 = new Razorpay(options);
+    rzp1.open();
+}
+
+function retryPayment(orderId, totalAmount, medicineName) {
+    var amountPaise = Math.round(totalAmount * 100);
+    triggerRazorpayCheckout(orderId, amountPaise, medicineName);
+}
+</script>
 
 <?php include 'includes/footer.php'; ?>
