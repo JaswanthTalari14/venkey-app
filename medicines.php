@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 require_once 'includes/referral_functions.php';
+require_once 'includes/wallet_functions.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'patient') {
     header("Location: login.php");
@@ -9,6 +10,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'patient') {
 
 $patient_id = $_SESSION['user_id'];
 $avail_ref_balance = get_customer_referral_balance($patient_id);
+$avail_wallet_balance = get_wallet_balance($patient_id);
 
 include 'includes/header.php';
 
@@ -58,9 +60,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
     $med_res = $conn->query("SELECT price, name FROM medicines WHERE id=$medicine_id");
     if ($med_res && $med_res->num_rows > 0) {
         $med = $med_res->fetch_assoc();
-        $total = $med['price'] * $qty;
+        $original_total = $med['price'] * $qty;
+        $total = $original_total;
 
-        // Handle optional Referral Reward Balance Deduction
+        // 1. Handle optional Referral Reward Balance Deduction
         if (isset($_POST['use_referral_balance']) && $_POST['use_referral_balance'] == '1' && $avail_ref_balance > 0) {
             $deduction = min($avail_ref_balance, $total);
             $total = max(0.00, $total - $deduction);
@@ -70,10 +73,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
                           VALUES ($patient_id, 'redemption', -$deduction, 'redeemed', 'Redeemed referral reward balance at order checkout', '$tx_red')");
             $avail_ref_balance = get_customer_referral_balance($patient_id);
         }
+
+        // 2. Handle optional Wallet Balance Deduction
+        $wallet_used = 0.00;
+        if (isset($_POST['use_wallet_balance']) && $_POST['use_wallet_balance'] == '1' && $avail_wallet_balance > 0 && $total > 0) {
+            $wallet_used = min($avail_wallet_balance, $total);
+            $total = max(0.00, $total - $wallet_used);
+        }
         
-        if ($payment_method === 'COD') {
-            $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, 'User Default Address', 'COD', 'Cash on Delivery')");
-            $stmt->bind_param("id", $patient_id, $total);
+        if ($total == 0.00 && $wallet_used > 0) {
+            // FULL WALLET PAYMENT
+            $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, 'User Default Address', 'Wallet', 'Paid via Wallet')");
+            $stmt->bind_param("id", $patient_id, $original_total);
             $stmt->execute();
             $order_id = $stmt->insert_id;
             
@@ -81,20 +92,48 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
             $item_stmt->bind_param("iiid", $order_id, $medicine_id, $qty, $med['price']);
             $item_stmt->execute();
 
-            // Evaluate Referral qualification on first COD order placement
-            process_referral_order_qualification($order_id, $patient_id, $total, true);
+            // Deduct Wallet Balance
+            process_wallet_payment($patient_id, $order_id, $wallet_used);
+            $avail_wallet_balance = get_wallet_balance($patient_id);
+
+            // Evaluate Referral qualification on full wallet order placement
+            process_referral_order_qualification($order_id, $patient_id, $original_total, true);
             
-            $success = "Medicine ordered successfully! It will be delivered soon.";
-        } else {
-            // Online Payment Flow
-            $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, 'User Default Address', 'Online Payment', 'Pending')");
-            $stmt->bind_param("id", $patient_id, $total);
+            $success = "🎉 Order placed successfully using your Medicineak Wallet balance!";
+        } else if ($payment_method === 'COD') {
+            $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, 'User Default Address', 'COD', 'Cash on Delivery')");
+            $stmt->bind_param("id", $patient_id, $original_total);
             $stmt->execute();
             $order_id = $stmt->insert_id;
             
             $item_stmt = $conn->prepare("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES (?, ?, ?, ?)");
             $item_stmt->bind_param("iiid", $order_id, $medicine_id, $qty, $med['price']);
             $item_stmt->execute();
+
+            if ($wallet_used > 0) {
+                process_wallet_payment($patient_id, $order_id, $wallet_used);
+                $avail_wallet_balance = get_wallet_balance($patient_id);
+            }
+
+            // Evaluate Referral qualification on COD order placement
+            process_referral_order_qualification($order_id, $patient_id, $original_total, true);
+            
+            $success = "Medicine ordered successfully! It will be delivered soon.";
+        } else {
+            // Online Payment Flow for Remaining Total
+            $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, 'User Default Address', 'Online Payment', 'Pending')");
+            $stmt->bind_param("id", $patient_id, $original_total);
+            $stmt->execute();
+            $order_id = $stmt->insert_id;
+            
+            $item_stmt = $conn->prepare("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES (?, ?, ?, ?)");
+            $item_stmt->bind_param("iiid", $order_id, $medicine_id, $qty, $med['price']);
+            $item_stmt->execute();
+
+            if ($wallet_used > 0) {
+                process_wallet_payment($patient_id, $order_id, $wallet_used);
+                $avail_wallet_balance = get_wallet_balance($patient_id);
+            }
 
             if (defined('PHONEPE_MERCHANT_ID') && !empty(PHONEPE_MERCHANT_ID)) {
                 header("Location: phonepe_pay.php?order_id=" . $order_id);
@@ -142,8 +181,9 @@ $my_orders = $conn->query("
             <li><a href="nearby_doctors.php"><i class="fas fa-map-marker-alt"></i> Find Doctors (10km)</a></li>
             <li><a href="privacy_consult.php"><i class="fas fa-user-secret"></i> Privacy Consult</a></li>
             <li><a href="book_tests.php"><i class="fas fa-vial"></i> Book Labs (RMP)</a></li>
-            <li><a href="refer_earn.php"><i class="fas fa-gift"></i> Refer & Earn</a></li>
             <li><a href="payment_history.php"><i class="fas fa-receipt"></i> Payment History</a></li>
+            <li><a href="refer_earn.php"><i class="fas fa-gift"></i> Refer & Earn</a></li>
+            <li><a href="my_wallet.php"><i class="fas fa-wallet"></i> My Wallet</a></li>
             <li><a href="chatbot.php"><i class="fas fa-robot"></i> AI Chatbot</a></li>
         </ul>
     </aside>
@@ -201,7 +241,16 @@ $my_orders = $conn->query("
                         <div style="background: rgba(80, 227, 194, 0.08); border: 1px solid rgba(80, 227, 194, 0.3); border-radius: 8px; padding: 0.4rem 0.6rem;">
                             <label style="font-size: 0.8rem; color: var(--secondary-color); cursor: pointer; display: flex; align-items: center; gap: 0.3rem; font-weight: 600;">
                                 <input type="checkbox" name="use_referral_balance" value="1"> 
-                                <i class="fas fa-wallet"></i> Use Referral Balance (₹<?php echo number_format($avail_ref_balance, 2); ?>)
+                                <i class="fas fa-gift"></i> Use Referral Balance (₹<?php echo number_format($avail_ref_balance, 2); ?>)
+                            </label>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if ($avail_wallet_balance > 0): ?>
+                        <div style="background: rgba(46, 213, 115, 0.08); border: 1px solid rgba(46, 213, 115, 0.3); border-radius: 8px; padding: 0.4rem 0.6rem;">
+                            <label style="font-size: 0.8rem; color: #2ed573; cursor: pointer; display: flex; align-items: center; gap: 0.3rem; font-weight: 600;">
+                                <input type="checkbox" name="use_wallet_balance" value="1"> 
+                                <i class="fas fa-wallet"></i> Use Wallet Balance (Available: ₹<?php echo number_format($avail_wallet_balance, 2); ?>)
                             </label>
                         </div>
                         <?php endif; ?>

@@ -48,6 +48,7 @@ include 'includes/header.php';
             <li><a href="admin_medicines.php"><i class="fas fa-pills"></i> Manage Medicines</a></li>
             <li><a href="admin_referrals.php"><i class="fas fa-gift"></i> Referral Management</a></li>
             <li><a href="admin_referral_settings.php" class="active"><i class="fas fa-sliders-h"></i> Referral Settings</a></li>
+            <li><a href="admin_wallets.php"><i class="fas fa-wallet"></i> Wallet Management</a></li>
             <li><a href="payment_history.php"><i class="fas fa-receipt"></i> Payment History</a></li>
             <li><a href="admin_feedback.php"><i class="fas fa-comments"></i> Feedback & Complaints</a></li>
         </ul>

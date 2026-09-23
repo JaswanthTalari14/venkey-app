@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/wallet_functions.php';
 
 // Auto-initialize Referral System Tables
 function init_referral_tables() {
@@ -237,16 +238,18 @@ function process_referral_order_qualification($order_id, $patient_id, $total_amo
             return false;
         }
 
-        // Grant Referrer Reward
+        // Grant Referrer Reward & Post to Wallet Ledger
         $tx1 = 'REF_RWD_' . time() . '_' . rand(1000, 9999);
         $conn->query("INSERT INTO referral_rewards (referral_id, customer_id, reward_type, amount, status, related_order_id, transaction_id, description) 
                       VALUES ($ref_id, $referrer_id, 'referrer_reward', $referrer_reward, 'earned', $order_id, '$tx1', 'Referral reward for successful invite')");
+        add_wallet_transaction($referrer_id, 'referral_reward', 'credit', $referrer_reward, "Referral reward for successful invite", $order_id, null, $ref_id);
 
-        // Grant Referred Customer Reward
+        // Grant Referred Customer Reward & Post to Wallet Ledger
         if ($referred_reward > 0) {
             $tx2 = 'REF_RWD_' . time() . '_' . rand(1000, 9999);
             $conn->query("INSERT INTO referral_rewards (referral_id, customer_id, reward_type, amount, status, related_order_id, transaction_id, description) 
                           VALUES ($ref_id, $patient_id, 'referred_reward', $referred_reward, 'earned', $order_id, '$tx2', 'Welcome referral bonus on first order')");
+            add_wallet_transaction($patient_id, 'referral_reward', 'credit', $referred_reward, "Welcome referral bonus on first order", $order_id, null, $ref_id);
         }
 
         // Update referral record
@@ -274,10 +277,12 @@ function process_referral_reversal($order_id) {
         $r_stmt = $conn->query("SELECT * FROM referral_rewards WHERE referral_id = $ref_id AND status = 'earned'");
         while ($r = $r_stmt->fetch_assoc()) {
             $customer_id = $r['customer_id'];
-            $neg_amount = -1 * abs($r['amount']);
+            $reward_amt = abs($r['amount']);
+            $neg_amount = -1 * $reward_amt;
             $tx_rev = 'REV_' . time() . '_' . rand(1000, 9999);
             $conn->query("INSERT INTO referral_rewards (referral_id, customer_id, reward_type, amount, status, related_order_id, transaction_id, description) 
                           VALUES ($ref_id, $customer_id, 'reversal', $neg_amount, 'reversed', $order_id, '$tx_rev', 'Referral reward reversal due to order cancellation/refund')");
+            add_wallet_transaction($customer_id, 'referral_reversal', 'debit', $reward_amt, "Referral reward reversal due to order cancellation/refund", $order_id, null, $ref_id);
         }
 
         $conn->query("UPDATE referrals SET status = 'Reward Reversed' WHERE id = $ref_id");
