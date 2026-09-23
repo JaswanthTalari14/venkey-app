@@ -262,13 +262,9 @@ function add_wallet_transaction($customer_id, $type, $direction, $amount, $reaso
 }
 
 // Add User Notification
-function add_user_notification($user_id, $title, $message) {
-    global $conn;
-    $stmt = $conn->prepare("INSERT INTO user_notifications (user_id, title, message) VALUES (?, ?, ?)");
-    if ($stmt) {
-        $stmt->bind_param("iss", $user_id, $title, $message);
-        $stmt->execute();
-    }
+function add_user_notification($user_id, $title, $message, $type = 'wallet') {
+    require_once __DIR__ . '/notification_functions.php';
+    return create_notification($user_id, $title, $message, $type);
 }
 
 // Update Customer Pending Wallet Balance
