@@ -149,35 +149,35 @@ $my_orders = $conn->query("
                         elseif (strpos($name_lower, 'vitamin') !== false) $img_src = 'images/medicines/vitaminc.png';
                     }
                 ?>
-                <div class="feature-card glass-panel" style="padding: 1.5rem; display: flex; flex-direction: column;">
-                    <div style="width: 100%; height: 160px; overflow: hidden; border-radius: 12px; margin-bottom: 1rem; background: rgba(0,0,0,0.2);">
-                        <img src="<?php echo htmlspecialchars($img_src); ?>" alt="<?php echo htmlspecialchars($med['name']); ?>" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px; transition: transform 0.3s ease;">
+                <div class="feature-card glass-panel" style="padding: 1rem; display: flex; flex-direction: column;">
+                    <div style="width: 100%; height: 125px; overflow: hidden; border-radius: 10px; margin-bottom: 0.6rem; background: rgba(0,0,0,0.2);">
+                        <img src="<?php echo htmlspecialchars($img_src); ?>" alt="<?php echo htmlspecialchars($med['name']); ?>" style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px; transition: transform 0.3s ease;">
                     </div>
-                    <h4 style="color: #fff; margin-bottom: 0.5rem;"><?php echo htmlspecialchars($med['name']); ?></h4>
-                    <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; min-height: 40px;"><?php echo htmlspecialchars($med['description']); ?></p>
-                    <p style="font-size: 1.5rem; font-weight: bold; color: var(--secondary-color); margin-bottom: 1rem;">₹<?php echo $med['price']; ?></p>
+                    <h4 style="color: #fff; margin-bottom: 0.25rem; font-size: 1.05rem;"><?php echo htmlspecialchars($med['name']); ?></h4>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem; min-height: 32px; line-height: 1.3;"><?php echo htmlspecialchars($med['description']); ?></p>
+                    <p style="font-size: 1.3rem; font-weight: bold; color: var(--secondary-color); margin-bottom: 0.5rem;">₹<?php echo $med['price']; ?></p>
                     
-                    <form method="POST" action="" style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: auto;">
+                    <form method="POST" action="" style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: auto;">
                         <input type="hidden" name="medicine_id" value="<?php echo $med['id']; ?>">
                         
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
-                            <label style="font-size: 0.85rem; color: var(--text-secondary);">Quantity:</label>
-                            <input type="number" name="quantity" value="1" min="1" max="10" class="form-control" style="width: 80px;" required>
+                            <label style="font-size: 0.8rem; color: var(--text-secondary);">Quantity:</label>
+                            <input type="number" name="quantity" value="1" min="1" max="10" class="form-control" style="width: 75px; padding: 0.3rem 0.5rem;" required>
                         </div>
                         
-                        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 8px; padding: 0.5rem 0.75rem;">
-                            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.3rem;">Payment Method:</div>
-                            <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
-                                <label style="font-size: 0.82rem; color: #fff; cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 8px; padding: 0.4rem 0.6rem;">
+                            <div style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 0.25rem;">Payment Method:</div>
+                            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                                <label style="font-size: 0.8rem; color: #fff; cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
                                     <input type="radio" name="payment_method" value="COD" checked> Cash on Delivery
                                 </label>
-                                <label style="font-size: 0.82rem; color: #fff; cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+                                <label style="font-size: 0.8rem; color: #fff; cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
                                     <input type="radio" name="payment_method" value="Online Payment"> Online Payment
                                 </label>
                             </div>
                         </div>
 
-                        <button type="submit" name="order" class="btn btn-primary" style="width: 100%;">Order Now</button>
+                        <button type="submit" name="order" class="btn btn-primary" style="width: 100%; padding: 0.5rem 1rem;">Order Now</button>
                     </form>
                 </div>
             <?php endwhile; ?>
