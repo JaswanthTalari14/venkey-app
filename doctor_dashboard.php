@@ -23,6 +23,7 @@ include 'includes/header.php';
             <li><a href="doctor_medicines.php"><i class="fas fa-pills"></i> Manage Medicines</a></li>
             <li><a href="doctor_orders.php"><i class="fas fa-box"></i> Medicine Orders</a></li>
             <li><a href="doctor_queries.php"><i class="fas fa-user-secret"></i> Anonymous Queries</a></li>
+            <li><a href="payment_history.php"><i class="fas fa-receipt"></i> Payment History</a></li>
             <li><a href="profile.php"><i class="fas fa-cog"></i> Settings & Availability</a></li>
         </ul>
     </aside>

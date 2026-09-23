@@ -32,6 +32,7 @@ $latest_users = $conn->query("SELECT id, name, email, role, created_at FROM user
             <li><a href="admin_bookings.php"><i class="fas fa-calendar-check"></i> All Bookings</a></li>
             <li><a href="admin_orders.php"><i class="fas fa-box"></i> Medicine Orders</a></li>
             <li><a href="admin_medicines.php"><i class="fas fa-pills"></i> Manage Medicines</a></li>
+            <li><a href="payment_history.php"><i class="fas fa-receipt"></i> Payment History</a></li>
             <li><a href="admin_feedback.php"><i class="fas fa-comments"></i> Feedback & Complaints</a></li>
         </ul>
     </aside>

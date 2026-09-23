@@ -29,6 +29,7 @@ $tests = $conn->query("
             <li><a href="rmp_dashboard.php" class="active"><i class="fas fa-flask"></i> My Booked Tests</a></li>
             <li><a href="rmp_upload.php"><i class="fas fa-file-upload"></i> Upload Results</a></li>
             <li><a href="rmp_referral.php"><i class="fas fa-user-md"></i> Doctor Referrals</a></li>
+            <li><a href="payment_history.php"><i class="fas fa-receipt"></i> Payment History</a></li>
             <li><a href="profile.php"><i class="fas fa-cog"></i> Settings</a></li>
         </ul>
     </aside>
