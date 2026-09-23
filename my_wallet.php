@@ -11,10 +11,14 @@ $patient_id = $_SESSION['user_id'];
 $wallet = get_or_create_wallet($patient_id);
 $settings = get_wallet_settings();
 
-$message = '';
-$msg_type = 'info';
+// Check session messages
+if (isset($_SESSION['wallet_msg'])) {
+    $message = $_SESSION['wallet_msg'];
+    $msg_type = isset($_SESSION['wallet_msg_type']) ? $_SESSION['wallet_msg_type'] : 'info';
+    unset($_SESSION['wallet_msg'], $_SESSION['wallet_msg_type']);
+}
 
-// Handle Add Money Request
+// Handle Add Money Request -> Redirects to payment gateway bridge
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_money') {
     $amount = isset($_POST['amount']) ? floatval($_POST['amount']) : 0;
     
@@ -25,17 +29,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $topup = process_wallet_topup_request($patient_id, $amount, 'online');
         if ($topup['success']) {
             $topup_id = $topup['topup_id'];
-            $gateway_ref = "PAY_" . strtoupper(substr(md5(uniqid()), 0, 10));
-            $res = verify_and_complete_topup($topup_id, $gateway_ref);
-            
-            if ($res['success']) {
-                $message = "🎉 ₹" . number_format($amount, 2) . " successfully added to your Medicineak wallet!";
-                $msg_type = 'success';
-                $wallet = get_or_create_wallet($patient_id); // Refresh wallet
-            } else {
-                $message = "Top-up failed: " . $res['message'];
-                $msg_type = 'danger';
-            }
+            // Redirect to payment gateway bridge
+            header("Location: pay_wallet_topup.php?topup_id=" . urlencode($topup_id));
+            exit;
         } else {
             $message = $topup['message'];
             $msg_type = 'danger';
@@ -149,6 +145,98 @@ include 'includes/header.php';
                 <p style="font-size: 2.2rem; font-weight: bold; color: #9b59b6; margin: 0.5rem 0;">₹<?php echo number_format($total_referral_rewards, 2); ?></p>
                 <small style="color: var(--text-secondary);">Referral earnings</small>
             </div>
+        </div>
+
+        <!-- Top-Up Requests & Admin Approval Status -->
+        <h3 style="margin-bottom: 1rem;"><i class="fas fa-clock"></i> Wallet Top-Up Requests & Approval Status</h3>
+        <div class="glass-panel" style="overflow-x: auto; padding: 1rem; margin-bottom: 2rem;">
+            <table style="width: 100%; text-align: left; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--glass-border);">
+                        <th style="padding: 1rem;">Top-Up ID</th>
+                        <th style="padding: 1rem;">Req. Amount</th>
+                        <th style="padding: 1rem;">Paid Amount</th>
+                        <th style="padding: 1rem;">Payment Status</th>
+                        <th style="padding: 1rem;">Admin Approval Status</th>
+                        <th style="padding: 1rem;">Date & Time</th>
+                        <th style="padding: 1rem;">Action / Note</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php 
+                    $user_topups = $conn->query("SELECT * FROM wallet_topups WHERE customer_id = $patient_id ORDER BY created_at DESC");
+                    if ($user_topups && $user_topups->num_rows > 0): 
+                    ?>
+                        <?php while ($tu = $user_topups->fetch_assoc()): ?>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <td style="padding: 1rem; font-family: monospace; font-weight: bold; color: var(--secondary-color);">
+                                    <?php echo htmlspecialchars($tu['topup_id']); ?>
+                                </td>
+                                <td style="padding: 1rem; font-weight: bold;">₹<?php echo number_format($tu['amount'], 2); ?></td>
+                                <td style="padding: 1rem;">
+                                    <?php echo $tu['paid_amount'] > 0 ? '₹' . number_format($tu['paid_amount'], 2) : '-'; ?>
+                                </td>
+                                <td style="padding: 1rem;">
+                                    <?php if ($tu['status'] === 'pending'): ?>
+                                        <span style="background: rgba(241, 196, 15, 0.15); color: #f1c40f; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                            Payment Pending
+                                        </span>
+                                    <?php elseif ($tu['status'] === 'payment_failed'): ?>
+                                        <span style="background: rgba(255, 71, 87, 0.15); color: #ff4757; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                            Payment Failed
+                                        </span>
+                                    <?php else: ?>
+                                        <span style="background: rgba(46, 213, 115, 0.15); color: #2ed573; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                            Payment Received
+                                        </span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="padding: 1rem;">
+                                    <?php if ($tu['status'] === 'approved'): ?>
+                                        <span style="background: rgba(46, 213, 115, 0.15); color: #2ed573; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                            <i class="fas fa-check-circle"></i> Approved & Credited
+                                        </span>
+                                    <?php elseif ($tu['status'] === 'rejected'): ?>
+                                        <span style="background: rgba(255, 71, 87, 0.15); color: #ff4757; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                            <i class="fas fa-times-circle"></i> Rejected
+                                        </span>
+                                    <?php elseif ($tu['status'] === 'amount_mismatch'): ?>
+                                        <span style="background: rgba(155, 89, 182, 0.15); color: #9b59b6; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                            <i class="fas fa-exclamation-triangle"></i> Amount Mismatch (Review)
+                                        </span>
+                                    <?php elseif ($tu['status'] === 'pending_approval'): ?>
+                                        <span style="background: rgba(230, 126, 34, 0.15); color: #e67e22; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                            <i class="fas fa-hourglass-half"></i> Pending Admin Verification
+                                        </span>
+                                    <?php else: ?>
+                                        <span style="color: var(--text-secondary); font-size: 0.85rem;">-</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="padding: 1rem; font-size: 0.85rem; color: var(--text-secondary);">
+                                    <?php echo date('M d, Y h:i A', strtotime($tu['created_at'])); ?>
+                                </td>
+                                <td style="padding: 1rem; font-size: 0.85rem;">
+                                    <?php if ($tu['status'] === 'pending'): ?>
+                                        <a href="pay_wallet_topup.php?topup_id=<?php echo urlencode($tu['topup_id']); ?>" class="btn btn-outline" style="padding: 0.3rem 0.7rem; font-size: 0.8rem;">Pay Now</a>
+                                    <?php elseif ($tu['status'] === 'rejected' && !empty($tu['rejection_reason'])): ?>
+                                        <small style="color: #ff4757; display: block; max-width: 200px;">Reason: <?php echo htmlspecialchars($tu['rejection_reason']); ?></small>
+                                    <?php elseif ($tu['status'] === 'pending_approval' || $tu['status'] === 'amount_mismatch'): ?>
+                                        <small style="color: #e67e22;">Waiting for Admin verification</small>
+                                    <?php else: ?>
+                                        <span style="color: var(--text-secondary);">-</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endwhile; ?>
+                    <?php else: ?>
+                        <tr>
+                            <td colspan="7" style="padding: 1.5rem; text-align: center; color: var(--text-secondary);">
+                                No top-up requests found. Click "Add Money to Wallet" above to get started.
+                            </td>
+                        </tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
         </div>
 
         <!-- Filter Tabs -->

@@ -59,14 +59,52 @@ function init_wallet_tables() {
         customer_id INT NOT NULL,
         topup_id VARCHAR(100) UNIQUE NOT NULL,
         amount DECIMAL(10,2) NOT NULL,
+        paid_amount DECIMAL(10,2) DEFAULT NULL,
         payment_method VARCHAR(50) DEFAULT 'online',
         payment_id VARCHAR(100) DEFAULT NULL,
-        status ENUM('pending', 'approved', 'rejected', 'failed', 'completed') DEFAULT 'pending',
+        status VARCHAR(50) DEFAULT 'pending',
         gateway_reference VARCHAR(255) DEFAULT NULL,
+        rejection_reason TEXT DEFAULT NULL,
+        approved_by INT DEFAULT NULL,
+        approved_at TIMESTAMP NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE,
         FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE
+    )");
+
+    // Auto-migrate wallet_topups columns if table existed
+    $col_res = $conn->query("SHOW COLUMNS FROM wallet_topups");
+    if ($col_res) {
+        $existing_cols = [];
+        while ($col_row = $col_res->fetch_assoc()) {
+            $existing_cols[] = strtolower($col_row['Field']);
+        }
+        if (!empty($existing_cols)) {
+            if (!in_array('paid_amount', $existing_cols)) {
+                $conn->query("ALTER TABLE wallet_topups ADD COLUMN paid_amount DECIMAL(10,2) DEFAULT NULL AFTER amount");
+            }
+            if (!in_array('rejection_reason', $existing_cols)) {
+                $conn->query("ALTER TABLE wallet_topups ADD COLUMN rejection_reason TEXT DEFAULT NULL");
+            }
+            if (!in_array('approved_by', $existing_cols)) {
+                $conn->query("ALTER TABLE wallet_topups ADD COLUMN approved_by INT DEFAULT NULL");
+            }
+            if (!in_array('approved_at', $existing_cols)) {
+                $conn->query("ALTER TABLE wallet_topups ADD COLUMN approved_at TIMESTAMP NULL");
+            }
+        }
+    }
+
+    // 5. User Notifications Table
+    $conn->query("CREATE TABLE IF NOT EXISTS user_notifications (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        user_id INT NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        is_read TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )");
 }
 
@@ -219,7 +257,39 @@ function add_wallet_transaction($customer_id, $type, $direction, $amount, $reaso
     }
 }
 
-// Request Wallet Topup
+// Add User Notification
+function add_user_notification($user_id, $title, $message) {
+    global $conn;
+    $stmt = $conn->prepare("INSERT INTO user_notifications (user_id, title, message) VALUES (?, ?, ?)");
+    if ($stmt) {
+        $stmt->bind_param("iss", $user_id, $title, $message);
+        $stmt->execute();
+    }
+}
+
+// Update Customer Pending Wallet Balance
+function update_customer_pending_balance($customer_id) {
+    global $conn;
+    $stmt = $conn->prepare("
+        SELECT SUM(COALESCE(paid_amount, amount)) as total_pending 
+        FROM wallet_topups 
+        WHERE customer_id = ? AND status IN ('pending', 'pending_approval', 'amount_mismatch')
+    ");
+    $stmt->bind_param("i", $customer_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $pending_total = 0.00;
+    if ($res && $row = $res->fetch_assoc()) {
+        $pending_total = floatval($row['total_pending'] ?? 0);
+    }
+
+    $upd = $conn->prepare("UPDATE wallets SET pending_balance = ? WHERE customer_id = ?");
+    $upd->bind_param("di", $pending_total, $customer_id);
+    $upd->execute();
+    return $pending_total;
+}
+
+// Request Wallet Topup (Initiates request with status = 'pending')
 function process_wallet_topup_request($customer_id, $amount, $payment_method = 'online') {
     global $conn;
     $amount = floatval($amount);
@@ -237,10 +307,11 @@ function process_wallet_topup_request($customer_id, $amount, $payment_method = '
     $topup_id = generate_wallet_tx_id('WALTOP');
     $wallet_id = $wallet['id'];
 
-    $stmt = $conn->prepare("INSERT INTO wallet_topups (wallet_id, customer_id, topup_id, amount, payment_method, status) VALUES (?, ?, ?, ?, ?, 'pending')");
-    $stmt->bind_param("iisds", $wallet_id, $customer_id, $topup_id, $amount, $payment_method);
+    $stmt = $conn->prepare("INSERT INTO wallet_topups (wallet_id, customer_id, topup_id, amount, paid_amount, payment_method, status) VALUES (?, ?, ?, ?, ?, 'online', 'pending')");
+    $stmt->bind_param("iisdd", $wallet_id, $customer_id, $topup_id, $amount, $amount);
     
     if ($stmt->execute()) {
+        update_customer_pending_balance($customer_id);
         return [
             'success' => true,
             'topup_id' => $topup_id,
@@ -251,8 +322,155 @@ function process_wallet_topup_request($customer_id, $amount, $payment_method = '
     return ['success' => false, 'message' => 'Failed to initiate wallet top-up request.'];
 }
 
-// Complete & Credit Wallet Topup (Server Verification)
-function verify_and_complete_topup($topup_id, $gateway_reference = 'verified_payment') {
+// Mark Top-up Payment Received (Gateway Callback / Redirect)
+// IMPORTANT: DOES NOT CREDIT WALLET AVAILABLE BALANCE. MOVES TO PENDING ADMIN APPROVAL
+function mark_topup_payment_received($topup_id, $paid_amount, $gateway_reference = '', $payment_id = null) {
+    global $conn;
+    $paid_amount = floatval($paid_amount);
+
+    $stmt = $conn->prepare("SELECT * FROM wallet_topups WHERE topup_id = ?");
+    $stmt->bind_param("s", $topup_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    if (!$res || $res->num_rows === 0) {
+        return ['success' => false, 'message' => 'Top-up request not found.'];
+    }
+
+    $topup = $res->fetch_assoc();
+    if ($topup['status'] === 'approved') {
+        return ['success' => true, 'message' => 'Top-up has already been approved and credited.'];
+    }
+
+    $requested_amount = floatval($topup['amount']);
+    $new_status = 'pending_approval';
+
+    if (abs($requested_amount - $paid_amount) > 0.01) {
+        $new_status = 'amount_mismatch';
+    }
+
+    $upd = $conn->prepare("UPDATE wallet_topups SET paid_amount = ?, gateway_reference = ?, payment_id = ?, status = ? WHERE topup_id = ?");
+    $upd->bind_param("dssss", $paid_amount, $gateway_reference, $payment_id, $new_status, $topup_id);
+    
+    if ($upd->execute()) {
+        $customer_id = (int)$topup['customer_id'];
+        update_customer_pending_balance($customer_id);
+
+        $amt_fmt = number_format($paid_amount, 2);
+        add_user_notification(
+            $customer_id,
+            "Wallet Top-Up Payment Received",
+            "Your ₹{$amt_fmt} wallet top-up payment was received and is waiting for Admin verification."
+        );
+
+        return [
+            'success' => true,
+            'status' => $new_status,
+            'message' => "Payment of ₹{$amt_fmt} received. Waiting for Admin verification and approval."
+        ];
+    }
+
+    return ['success' => false, 'message' => 'Failed to record payment verification.'];
+}
+
+// Mark Top-up Payment Failed
+function mark_topup_payment_failed($topup_id, $reason = 'Payment Failed') {
+    global $conn;
+    $upd = $conn->prepare("UPDATE wallet_topups SET status = 'payment_failed', rejection_reason = ? WHERE topup_id = ? AND status = 'pending'");
+    $upd->bind_param("ss", $reason, $topup_id);
+    $res = $upd->execute();
+
+    $stmt = $conn->prepare("SELECT customer_id FROM wallet_topups WHERE topup_id = ?");
+    $stmt->bind_param("s", $topup_id);
+    $stmt->execute();
+    $r = $stmt->get_result();
+    if ($r && $row = $r->fetch_assoc()) {
+        update_customer_pending_balance((int)$row['customer_id']);
+    }
+
+    return $res;
+}
+
+// ADMIN MANDATORY APPROVAL: Complete & Credit Wallet Topup
+function verify_and_complete_topup($topup_id, $admin_id, $gateway_reference = 'ADMIN_APPROVED') {
+    global $conn;
+
+    $conn->begin_transaction();
+
+    try {
+        $stmt = $conn->prepare("SELECT * FROM wallet_topups WHERE topup_id = ? FOR UPDATE");
+        $stmt->bind_param("s", $topup_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+
+        if (!$res || $res->num_rows === 0) {
+            $conn->rollback();
+            return ['success' => false, 'message' => 'Top-up transaction not found.'];
+        }
+
+        $topup = $res->fetch_assoc();
+
+        if ($topup['status'] === 'approved') {
+            $conn->rollback();
+            return ['success' => false, 'message' => 'Top-up has already been approved and credited.'];
+        }
+
+        if ($topup['status'] === 'rejected') {
+            $conn->rollback();
+            return ['success' => false, 'message' => 'Cannot approve a rejected top-up request.'];
+        }
+
+        $customer_id = (int)$topup['customer_id'];
+        $credit_amount = floatval($topup['paid_amount'] > 0 ? $topup['paid_amount'] : $topup['amount']);
+
+        // Perform atomic credit to available_balance
+        $res_tx = add_wallet_transaction(
+            $customer_id,
+            'topup_approved',
+            'credit',
+            $credit_amount,
+            "Wallet Top-Up Approved by Admin (ID: {$admin_id}). Ref: {$topup_id}",
+            null,
+            $topup['payment_id'] ?: $topup_id
+        );
+
+        if (!$res_tx['success']) {
+            $conn->rollback();
+            return $res_tx;
+        }
+
+        // Update wallet_topups record status to approved
+        $gw_ref = !empty($topup['gateway_reference']) ? $topup['gateway_reference'] : $gateway_reference;
+        $upd = $conn->prepare("UPDATE wallet_topups SET status = 'approved', approved_by = ?, approved_at = NOW(), gateway_reference = ? WHERE topup_id = ?");
+        $upd->bind_param("iss", $admin_id, $gw_ref, $topup_id);
+        $upd->execute();
+
+        // Recalculate pending balance
+        update_customer_pending_balance($customer_id);
+
+        // Notify customer
+        $amt_fmt = number_format($credit_amount, 2);
+        add_user_notification(
+            $customer_id,
+            "Wallet Top-Up Approved",
+            "₹{$amt_fmt} has been added to your Medicineak wallet."
+        );
+
+        $conn->commit();
+        return [
+            'success' => true,
+            'message' => "₹{$amt_fmt} approved and credited to customer wallet successfully.",
+            'new_balance' => $res_tx['new_balance']
+        ];
+
+    } catch (Exception $e) {
+        $conn->rollback();
+        return ['success' => false, 'message' => $e->getMessage()];
+    }
+}
+
+// ADMIN REJECTION: Reject Topup Request with Reason
+function reject_topup_with_reason($topup_id, $admin_id, $reason = 'Payment not received') {
     global $conn;
 
     $stmt = $conn->prepare("SELECT * FROM wallet_topups WHERE topup_id = ?");
@@ -261,45 +479,38 @@ function verify_and_complete_topup($topup_id, $gateway_reference = 'verified_pay
     $res = $stmt->get_result();
 
     if (!$res || $res->num_rows === 0) {
-        return ['success' => false, 'message' => 'Top-up transaction not found.'];
+        return ['success' => false, 'message' => 'Top-up request not found.'];
     }
 
     $topup = $res->fetch_assoc();
-    if ($topup['status'] === 'completed' || $topup['status'] === 'approved') {
-        return ['success' => true, 'message' => 'Top-up already credited.'];
+    if ($topup['status'] === 'approved') {
+        return ['success' => false, 'message' => 'Cannot reject an already approved top-up.'];
     }
 
-    $customer_id = $topup['customer_id'];
-    $amount = floatval($topup['amount']);
+    $upd = $conn->prepare("UPDATE wallet_topups SET status = 'rejected', rejection_reason = ?, approved_by = ?, approved_at = NOW() WHERE topup_id = ?");
+    $upd->bind_param("sis", $reason, $admin_id, $topup_id);
+    
+    if ($upd->execute()) {
+        $customer_id = (int)$topup['customer_id'];
+        update_customer_pending_balance($customer_id);
 
-    // Perform atomic credit
-    $res_tx = add_wallet_transaction(
-        $customer_id,
-        'topup_approved',
-        'credit',
-        $amount,
-        "Wallet Top-Up via " . ucfirst($topup['payment_method']) . " ({$gateway_reference})",
-        null,
-        $topup_id
-    );
+        $amt_fmt = number_format(floatval($topup['amount']), 2);
+        add_user_notification(
+            $customer_id,
+            "Wallet Top-Up Rejected",
+            "Your ₹{$amt_fmt} wallet top-up was rejected. Reason: {$reason}"
+        );
 
-    if ($res_tx['success']) {
-        $upd = $conn->prepare("UPDATE wallet_topups SET status = 'completed', gateway_reference = ? WHERE topup_id = ?");
-        $upd->bind_param("ss", $gateway_reference, $topup_id);
-        $upd->execute();
-
-        return ['success' => true, 'message' => "₹{$amount} credited to wallet successfully.", 'new_balance' => $res_tx['new_balance']];
+        return ['success' => true, 'message' => 'Top-up request rejected successfully.'];
     }
 
-    return $res_tx;
+    return ['success' => false, 'message' => 'Failed to reject top-up request.'];
 }
 
-// Reject Topup Request
+// Backward compatibility alias for reject_topup
 function reject_topup($topup_id, $reason = 'Payment Verification Failed') {
-    global $conn;
-    $upd = $conn->prepare("UPDATE wallet_topups SET status = 'rejected', gateway_reference = ? WHERE topup_id = ? AND status = 'pending'");
-    $upd->bind_param("ss", $reason, $topup_id);
-    return $upd->execute();
+    $admin_id = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0;
+    return reject_topup_with_reason($topup_id, $admin_id, $reason);
 }
 
 // Process Wallet Payment for Order Checkout

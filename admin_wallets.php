@@ -83,7 +83,7 @@ $settings = get_wallet_settings();
 $tot_bal_res = $conn->query("SELECT SUM(available_balance) as total FROM wallets");
 $platform_wallet_balance = floatval($tot_bal_res->fetch_assoc()['total'] ?? 0);
 
-$pend_top_res = $conn->query("SELECT COUNT(*) as cnt, SUM(amount) as amt FROM wallet_topups WHERE status = 'pending'");
+$pend_top_res = $conn->query("SELECT COUNT(*) as cnt, SUM(COALESCE(paid_amount, amount)) as amt FROM wallet_topups WHERE status IN ('pending_approval', 'amount_mismatch', 'pending')");
 $pend_top_row = $pend_top_res->fetch_assoc();
 $pending_topups_count = intval($pend_top_row['cnt']);
 $pending_topups_amt = floatval($pend_top_row['amt'] ?? 0);
@@ -118,12 +118,14 @@ $customer_wallets = $conn->query("
     ORDER BY w.available_balance DESC
 ");
 
-// Pending Top-ups List
+// Pending Top-ups List (Awaiting Mandatory Admin Approval)
 $pending_topups_list = $conn->query("
-    SELECT t.*, u.name as customer_name, u.mobile as customer_mobile
+    SELECT t.*, u.name as customer_name, u.mobile as customer_mobile, u.email as customer_email,
+           COALESCE(w.available_balance, 0.00) as current_wallet_balance
     FROM wallet_topups t
     JOIN users u ON t.customer_id = u.id
-    WHERE t.status = 'pending'
+    LEFT JOIN wallets w ON u.id = w.customer_id
+    WHERE t.status IN ('pending_approval', 'amount_mismatch', 'pending')
     ORDER BY t.created_at DESC
 ");
 
@@ -211,44 +213,80 @@ include 'includes/header.php';
             </div>
         </div>
 
-        <!-- Pending Top-ups Queue (if any) -->
+        <!-- Pending Top-ups Verification Queue (Requires Mandatory Admin Verification) -->
         <?php if ($pending_topups_list && $pending_topups_list->num_rows > 0): ?>
-            <h3 style="margin-bottom: 1rem; color: #f39c12;"><i class="fas fa-exclamation-circle"></i> Pending Top-Up Approvals</h3>
+            <h3 style="margin-bottom: 1rem; color: #f39c12;"><i class="fas fa-exclamation-circle"></i> Pending Wallet Top-Up Verification Requests</h3>
             <div class="glass-panel" style="overflow-x: auto; padding: 1rem; margin-bottom: 2rem; border-left: 4px solid #f39c12;">
                 <table style="width: 100%; text-align: left; border-collapse: collapse;">
                     <thead>
                         <tr style="border-bottom: 1px solid var(--glass-border);">
-                            <th style="padding: 1rem;">Topup ID</th>
-                            <th style="padding: 1rem;">Customer</th>
-                            <th style="padding: 1rem;">Amount</th>
-                            <th style="padding: 1rem;">Method</th>
-                            <th style="padding: 1rem;">Date</th>
-                            <th style="padding: 1rem;">Action</th>
+                            <th style="padding: 1rem;">Top-Up ID</th>
+                            <th style="padding: 1rem;">Customer Details</th>
+                            <th style="padding: 1rem;">Requested / Paid</th>
+                            <th style="padding: 1rem;">Gateway Ref & Tx ID</th>
+                            <th style="padding: 1rem;">Current Balance</th>
+                            <th style="padding: 1rem;">Verification Status</th>
+                            <th style="padding: 1rem;">Date & Time</th>
+                            <th style="padding: 1rem; text-align: right;">Mandatory Admin Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php while ($top = $pending_topups_list->fetch_assoc()): ?>
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                <td style="padding: 1rem; font-family: monospace; font-weight: bold; color: var(--primary-color);">#<?php echo htmlspecialchars($top['topup_id']); ?></td>
+                                <td style="padding: 1rem; font-family: monospace; font-weight: bold; color: var(--primary-color);">
+                                    <?php echo htmlspecialchars($top['topup_id']); ?>
+                                </td>
                                 <td style="padding: 1rem;">
-                                    <strong><?php echo htmlspecialchars($top['customer_name']); ?></strong><br>
+                                    <strong><?php echo htmlspecialchars($top['customer_name']); ?></strong> (ID: #<?php echo $top['customer_id']; ?>)<br>
                                     <small style="color: var(--text-secondary);"><?php echo htmlspecialchars($top['customer_mobile']); ?></small>
                                 </td>
-                                <td style="padding: 1rem; font-weight: bold; color: #2ed573;">₹<?php echo number_format($top['amount'], 2); ?></td>
-                                <td style="padding: 1rem; text-transform: capitalize;"><?php echo htmlspecialchars($top['payment_method']); ?></td>
-                                <td style="padding: 1rem; font-size: 0.85rem;"><?php echo date('M d, Y h:i A', strtotime($top['created_at'])); ?></td>
                                 <td style="padding: 1rem;">
+                                    <div style="font-weight: bold; color: #2ed573;">Req: ₹<?php echo number_format($top['amount'], 2); ?></div>
+                                    <?php if ($top['paid_amount'] > 0): ?>
+                                        <small style="color: <?php echo abs($top['amount'] - $top['paid_amount']) > 0.01 ? '#9b59b6' : 'var(--text-secondary)'; ?>; font-weight: bold;">
+                                            Paid: ₹<?php echo number_format($top['paid_amount'], 2); ?>
+                                        </small>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="padding: 1rem; font-size: 0.85rem;">
+                                    <div><strong>Gateway:</strong> <?php echo htmlspecialchars($top['payment_method']); ?></div>
+                                    <small style="color: var(--text-secondary); font-family: monospace; display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis;">
+                                        Ref: <?php echo htmlspecialchars($top['gateway_reference'] ?: $top['payment_id'] ?: 'Pending Callback'); ?>
+                                    </small>
+                                </td>
+                                <td style="padding: 1rem; font-weight: bold; color: #3498db;">
+                                    ₹<?php echo number_format($top['current_wallet_balance'], 2); ?>
+                                </td>
+                                <td style="padding: 1rem;">
+                                    <?php if ($top['status'] === 'amount_mismatch'): ?>
+                                        <span style="background: rgba(155, 89, 182, 0.15); color: #9b59b6; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                            <i class="fas fa-exclamation-triangle"></i> Amount Mismatch
+                                        </span>
+                                    <?php elseif ($top['status'] === 'pending_approval'): ?>
+                                        <span style="background: rgba(230, 126, 34, 0.15); color: #e67e22; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                            <i class="fas fa-clock"></i> Payment Received (Pending Verification)
+                                        </span>
+                                    <?php else: ?>
+                                        <span style="background: rgba(241, 196, 15, 0.15); color: #f1c40f; padding: 0.3rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem;">
+                                            Payment Pending
+                                        </span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="padding: 1rem; font-size: 0.85rem; color: var(--text-secondary);">
+                                    <?php echo date('M d, Y h:i A', strtotime($top['created_at'])); ?>
+                                </td>
+                                <td style="padding: 1rem; text-align: right; white-space: nowrap;">
                                     <form method="POST" action="admin_wallets.php" style="display: inline-block;">
                                         <input type="hidden" name="action" value="approve_topup">
-                                        <input type="hidden" name="topup_id" value="<?php echo $top['topup_id']; ?>">
-                                        <button type="submit" class="btn btn-primary" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;">Approve</button>
+                                        <input type="hidden" name="topup_id" value="<?php echo htmlspecialchars($top['topup_id']); ?>">
+                                        <button type="submit" onclick="return confirm('Confirm Admin Verification: Add ₹<?php echo number_format($top['paid_amount'] > 0 ? $top['paid_amount'] : $top['amount'], 2); ?> to customer wallet?');" class="btn btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">
+                                            <i class="fas fa-check-circle"></i> Approve & Add to Wallet
+                                        </button>
                                     </form>
-                                    <form method="POST" action="admin_wallets.php" style="display: inline-block; margin-left: 0.3rem;">
-                                        <input type="hidden" name="action" value="reject_topup">
-                                        <input type="hidden" name="topup_id" value="<?php echo $top['topup_id']; ?>">
-                                        <input type="hidden" name="reason" value="Rejected by Admin">
-                                        <button type="submit" class="btn btn-outline" style="font-size: 0.75rem; padding: 0.3rem 0.6rem; color: #ff4757; border-color: #ff4757;">Reject</button>
-                                    </form>
+
+                                    <button type="button" onclick="openRejectModal('<?php echo htmlspecialchars(addslashes($top['topup_id'])); ?>', '<?php echo htmlspecialchars(addslashes($top['customer_name'])); ?>', <?php echo $top['amount']; ?>)" class="btn btn-outline" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; color: #ff4757; border-color: #ff4757; margin-left: 0.3rem;">
+                                        <i class="fas fa-times-circle"></i> Reject
+                                    </button>
                                 </td>
                             </tr>
                         <?php endwhile; ?>
@@ -428,11 +466,54 @@ include 'includes/header.php';
     </div>
 </div>
 
+<!-- Reject Top-Up Modal -->
+<div id="reject-topup-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; justify-content: center; align-items: center; padding: 1rem;">
+    <div class="glass-panel" style="background: var(--bg-card); border: 1px solid var(--glass-border); width: 100%; max-width: 450px; padding: 2rem; border-radius: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h3 style="color: #ff4757;"><i class="fas fa-times-circle"></i> Reject Top-Up Request</h3>
+            <button onclick="document.getElementById('reject-topup-modal').style.display='none'" style="background: none; border: none; color: var(--text-primary); font-size: 1.5rem; cursor: pointer;">&times;</button>
+        </div>
+
+        <form method="POST" action="admin_wallets.php">
+            <input type="hidden" name="action" value="reject_topup">
+            <input type="hidden" id="reject_topup_id" name="topup_id" value="">
+
+            <p style="margin-bottom: 0.5rem; font-weight: bold;">Top-Up Request: <span id="reject_topup_display_id" style="color: var(--primary-color);"></span></p>
+            <p style="margin-bottom: 1rem; color: var(--text-secondary);">Customer: <span id="reject_customer_name"></span> (₹<span id="reject_amount"></span>)</p>
+
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: bold;">Select Rejection Reason</label>
+            <select id="reason_preset" onchange="if(this.value !== 'Other') document.getElementById('reject_reason_text').value = this.value;" class="glass-panel" style="width: 100%; padding: 0.8rem; border-radius: 8px; margin-bottom: 1rem; color: var(--text-primary);">
+                <option value="Payment not received in merchant account">Payment not received in merchant account</option>
+                <option value="Payment amount mismatch">Payment amount mismatch</option>
+                <option value="Invalid transaction reference">Invalid transaction reference</option>
+                <option value="Duplicate payment submission">Duplicate payment submission</option>
+                <option value="Payment failed / declined at gateway">Payment failed / declined at gateway</option>
+                <option value="Other">Other (Specify below)</option>
+            </select>
+
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: bold;">Detailed Reason / Note</label>
+            <textarea id="reject_reason_text" name="reason" placeholder="Explain why this top-up payment is being rejected..." class="glass-panel" style="width: 100%; padding: 0.8rem; border-radius: 8px; margin-bottom: 1.5rem; color: var(--text-primary);" required>Payment not received in merchant account</textarea>
+
+            <button type="submit" class="btn btn-outline" style="width: 100%; padding: 0.8rem; font-size: 1rem; color: #ff4757; border-color: #ff4757;">
+                <i class="fas fa-ban"></i> Confirm Rejection
+            </button>
+        </form>
+    </div>
+</div>
+
 <script>
 function openAdjustModal(cid, name) {
     document.getElementById('modal_customer_id').value = cid;
     document.getElementById('modal_customer_name').innerText = name;
     document.getElementById('adjust-modal').style.display = 'flex';
+}
+
+function openRejectModal(topupId, customerName, amount) {
+    document.getElementById('reject_topup_id').value = topupId;
+    document.getElementById('reject_topup_display_id').innerText = topupId;
+    document.getElementById('reject_customer_name').innerText = customerName;
+    document.getElementById('reject_amount').innerText = Number(amount).toFixed(2);
+    document.getElementById('reject-topup-modal').style.display = 'flex';
 }
 </script>
 
