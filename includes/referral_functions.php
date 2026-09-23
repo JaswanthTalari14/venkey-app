@@ -34,8 +34,8 @@ function init_referral_tables() {
         FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE
     )");
 
-    // 3. Referrals Table
-    $conn->query("CREATE TABLE IF NOT EXISTS referrals (
+    // 3. Customer Referrals Table (Distinct from RMP doctor referrals table)
+    $conn->query("CREATE TABLE IF NOT EXISTS customer_referrals (
         id INT PRIMARY KEY AUTO_INCREMENT,
         referrer_customer_id INT NOT NULL,
         referred_customer_id INT UNIQUE NOT NULL,
@@ -53,6 +53,75 @@ function init_referral_tables() {
         FOREIGN KEY (referred_customer_id) REFERENCES users(id) ON DELETE CASCADE
     )");
 
+    // Migration Check: Ensure required columns exist if customer_referrals was created with an older/different schema
+    $col_res = $conn->query("SHOW COLUMNS FROM customer_referrals");
+    if ($col_res) {
+        $existing_cols = [];
+        while ($col_row = $col_res->fetch_assoc()) {
+            $existing_cols[] = strtolower($col_row['Field']);
+        }
+
+        if (!empty($existing_cols)) {
+            if (!in_array('referrer_customer_id', $existing_cols)) {
+                if (in_array('referrer_id', $existing_cols)) {
+                    $conn->query("ALTER TABLE customer_referrals CHANGE COLUMN referrer_id referrer_customer_id INT NOT NULL");
+                } else {
+                    $conn->query("ALTER TABLE customer_referrals ADD COLUMN referrer_customer_id INT NOT NULL AFTER id");
+                }
+            }
+
+            if (!in_array('referred_customer_id', $existing_cols)) {
+                if (in_array('referred_id', $existing_cols)) {
+                    $conn->query("ALTER TABLE customer_referrals CHANGE COLUMN referred_id referred_customer_id INT NOT NULL");
+                } elseif (in_array('user_id', $existing_cols)) {
+                    $conn->query("ALTER TABLE customer_referrals CHANGE COLUMN user_id referred_customer_id INT NOT NULL");
+                } else {
+                    $conn->query("ALTER TABLE customer_referrals ADD COLUMN referred_customer_id INT NOT NULL AFTER referrer_customer_id");
+                }
+            }
+
+            if (!in_array('referral_code', $existing_cols)) {
+                $conn->query("ALTER TABLE customer_referrals ADD COLUMN referral_code VARCHAR(50) NOT NULL");
+            }
+
+            if (!in_array('status', $existing_cols)) {
+                $conn->query("ALTER TABLE customer_referrals ADD COLUMN status ENUM('Invited', 'Registered', 'Order Pending', 'Qualified', 'Reward Earned', 'Reward Reversed', 'Expired', 'Rejected') DEFAULT 'Registered'");
+            }
+
+            if (!in_array('qualifying_order_id', $existing_cols)) {
+                $conn->query("ALTER TABLE customer_referrals ADD COLUMN qualifying_order_id INT DEFAULT NULL");
+            }
+
+            if (!in_array('invited_at', $existing_cols)) {
+                $conn->query("ALTER TABLE customer_referrals ADD COLUMN invited_at TIMESTAMP NULL");
+            }
+
+            if (!in_array('registered_at', $existing_cols)) {
+                $conn->query("ALTER TABLE customer_referrals ADD COLUMN registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+            }
+
+            if (!in_array('qualified_at', $existing_cols)) {
+                $conn->query("ALTER TABLE customer_referrals ADD COLUMN qualified_at TIMESTAMP NULL");
+            }
+
+            if (!in_array('reward_earned_at', $existing_cols)) {
+                $conn->query("ALTER TABLE customer_referrals ADD COLUMN reward_earned_at TIMESTAMP NULL");
+            }
+
+            if (!in_array('expires_at', $existing_cols)) {
+                $conn->query("ALTER TABLE customer_referrals ADD COLUMN expires_at TIMESTAMP NULL");
+            }
+
+            if (!in_array('created_at', $existing_cols)) {
+                $conn->query("ALTER TABLE customer_referrals ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+            }
+
+            if (!in_array('updated_at', $existing_cols)) {
+                $conn->query("ALTER TABLE customer_referrals ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+            }
+        }
+    }
+
     // 4. Referral Rewards (Wallet Ledger) Table
     $conn->query("CREATE TABLE IF NOT EXISTS referral_rewards (
         id INT PRIMARY KEY AUTO_INCREMENT,
@@ -64,8 +133,7 @@ function init_referral_tables() {
         related_order_id INT DEFAULT NULL,
         transaction_id VARCHAR(100) DEFAULT NULL,
         description TEXT DEFAULT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )");
 }
 
@@ -158,7 +226,7 @@ function register_referral_claim($new_customer_id, $referral_code_input) {
     if ($referrer_id === (int)$new_customer_id) return false;
 
     // Check referrer & referred identity match
-    $check_stmt = $conn->prepare("SELECT phone, email FROM users WHERE id IN (?, ?)");
+    $check_stmt = $conn->prepare("SELECT email FROM users WHERE id IN (?, ?)");
     $check_stmt->bind_param("ii", $referrer_id, $new_customer_id);
     $check_stmt->execute();
     $u_res = $check_stmt->get_result();
@@ -167,19 +235,19 @@ function register_referral_claim($new_customer_id, $referral_code_input) {
         $users[] = $u;
     }
     if (count($users) === 2) {
-        if ($users[0]['phone'] === $users[1]['phone'] || strtolower($users[0]['email']) === strtolower($users[1]['email'])) {
-            return false; // Prevent duplicate phone/email self referral
+        if (strtolower($users[0]['email']) === strtolower($users[1]['email'])) {
+            return false; // Prevent duplicate email self referral
         }
     }
 
     // Check if new customer was already referred
-    $dup_check = $conn->prepare("SELECT id FROM referrals WHERE referred_customer_id = ?");
+    $dup_check = $conn->prepare("SELECT id FROM customer_referrals WHERE referred_customer_id = ?");
     $dup_check->bind_param("i", $new_customer_id);
     $dup_check->execute();
     if ($dup_check->get_result()->num_rows > 0) return false;
 
     $expiry_days = (int)$settings['expiry_days'];
-    $ins = $conn->prepare("INSERT INTO referrals (referrer_customer_id, referred_customer_id, referral_code, status, registered_at, expires_at) 
+    $ins = $conn->prepare("INSERT INTO customer_referrals (referrer_customer_id, referred_customer_id, referral_code, status, registered_at, expires_at) 
                            VALUES (?, ?, ?, 'Registered', NOW(), DATE_ADD(NOW(), INTERVAL ? DAY))");
     $ins->bind_param("iisi", $referrer_id, $new_customer_id, $code, $expiry_days);
     return $ins->execute();
@@ -193,7 +261,7 @@ function process_referral_order_qualification($order_id, $patient_id, $total_amo
     if (!$settings['program_enabled']) return false;
 
     // Find active referral for this patient
-    $stmt = $conn->prepare("SELECT * FROM referrals WHERE referred_customer_id = ? AND status IN ('Registered', 'Order Pending')");
+    $stmt = $conn->prepare("SELECT * FROM customer_referrals WHERE referred_customer_id = ? AND status IN ('Registered', 'Order Pending')");
     $stmt->bind_param("i", $patient_id);
     $stmt->execute();
     $ref_res = $stmt->get_result();
@@ -203,7 +271,7 @@ function process_referral_order_qualification($order_id, $patient_id, $total_amo
 
     // Check expiry
     if (!empty($referral['expires_at']) && strtotime($referral['expires_at']) < time()) {
-        $conn->query("UPDATE referrals SET status = 'Expired' WHERE id = " . $referral['id']);
+        $conn->query("UPDATE customer_referrals SET status = 'Expired' WHERE id = " . $referral['id']);
         return false;
     }
 
@@ -220,7 +288,7 @@ function process_referral_order_qualification($order_id, $patient_id, $total_amo
 
     // Update status to Order Pending
     if ($referral['status'] === 'Registered') {
-        $conn->query("UPDATE referrals SET status = 'Order Pending', qualifying_order_id = $order_id WHERE id = " . $referral['id']);
+        $conn->query("UPDATE customer_referrals SET status = 'Order Pending', qualifying_order_id = $order_id WHERE id = " . $referral['id']);
     }
 
     // Check if order qualifies
@@ -253,7 +321,7 @@ function process_referral_order_qualification($order_id, $patient_id, $total_amo
         }
 
         // Update referral record
-        $conn->query("UPDATE referrals SET status = 'Reward Earned', qualified_at = NOW(), reward_earned_at = NOW() WHERE id = $ref_id");
+        $conn->query("UPDATE customer_referrals SET status = 'Reward Earned', qualified_at = NOW(), reward_earned_at = NOW() WHERE id = $ref_id");
         return true;
     }
 
@@ -264,7 +332,7 @@ function process_referral_order_qualification($order_id, $patient_id, $total_amo
 function process_referral_reversal($order_id) {
     global $conn;
 
-    $stmt = $conn->prepare("SELECT * FROM referrals WHERE qualifying_order_id = ? AND status = 'Reward Earned'");
+    $stmt = $conn->prepare("SELECT * FROM customer_referrals WHERE qualifying_order_id = ? AND status = 'Reward Earned'");
     $stmt->bind_param("i", $order_id);
     $stmt->execute();
     $res = $stmt->get_result();
@@ -285,7 +353,7 @@ function process_referral_reversal($order_id) {
             add_wallet_transaction($customer_id, 'referral_reversal', 'debit', $reward_amt, "Referral reward reversal due to order cancellation/refund", $order_id, null, $ref_id);
         }
 
-        $conn->query("UPDATE referrals SET status = 'Reward Reversed' WHERE id = $ref_id");
+        $conn->query("UPDATE customer_referrals SET status = 'Reward Reversed' WHERE id = $ref_id");
         return true;
     }
     return false;

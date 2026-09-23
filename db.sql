@@ -108,3 +108,109 @@ CREATE TABLE IF NOT EXISTS referrals (
     FOREIGN KEY (rmp_id) REFERENCES users(id),
     FOREIGN KEY (doctor_id) REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS referral_settings (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    program_enabled TINYINT(1) DEFAULT 1,
+    referrer_reward DECIMAL(10,2) DEFAULT 50.00,
+    referred_reward DECIMAL(10,2) DEFAULT 25.00,
+    min_order_amount DECIMAL(10,2) DEFAULT 199.00,
+    expiry_days INT DEFAULT 30,
+    max_rewards INT DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS referral_codes (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    customer_id INT UNIQUE NOT NULL,
+    referral_code VARCHAR(50) UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS customer_referrals (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    referrer_customer_id INT NOT NULL,
+    referred_customer_id INT UNIQUE NOT NULL,
+    referral_code VARCHAR(50) NOT NULL,
+    status ENUM('Invited', 'Registered', 'Order Pending', 'Qualified', 'Reward Earned', 'Reward Reversed', 'Expired', 'Rejected') DEFAULT 'Registered',
+    qualifying_order_id INT DEFAULT NULL,
+    invited_at TIMESTAMP NULL,
+    registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    qualified_at TIMESTAMP NULL,
+    reward_earned_at TIMESTAMP NULL,
+    expires_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (referrer_customer_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (referred_customer_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS referral_rewards (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    referral_id INT DEFAULT NULL,
+    customer_id INT NOT NULL,
+    reward_type ENUM('referrer_reward', 'referred_reward', 'reversal', 'redemption') NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    status ENUM('earned', 'reversed', 'redeemed') DEFAULT 'earned',
+    related_order_id INT DEFAULT NULL,
+    transaction_id VARCHAR(100) DEFAULT NULL,
+    description TEXT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS wallet_settings (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    min_topup DECIMAL(10,2) DEFAULT 50.00,
+    max_topup DECIMAL(10,2) DEFAULT 10000.00,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS wallets (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    customer_id INT UNIQUE NOT NULL,
+    available_balance DECIMAL(10,2) DEFAULT 0.00,
+    pending_balance DECIMAL(10,2) DEFAULT 0.00,
+    status ENUM('active', 'frozen') DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    wallet_id INT NOT NULL,
+    customer_id INT NOT NULL,
+    transaction_id VARCHAR(100) UNIQUE NOT NULL,
+    transaction_type ENUM('topup', 'topup_pending', 'topup_approved', 'topup_rejected', 'payment', 'refund', 'referral_reward', 'referral_reversal', 'admin_credit', 'admin_debit', 'correction') NOT NULL,
+    direction ENUM('credit', 'debit') NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    previous_balance DECIMAL(10,2) NOT NULL,
+    new_balance DECIMAL(10,2) NOT NULL,
+    status ENUM('completed', 'pending', 'failed', 'reversed') DEFAULT 'completed',
+    order_id INT DEFAULT NULL,
+    payment_id VARCHAR(100) DEFAULT NULL,
+    referral_id INT DEFAULT NULL,
+    reason TEXT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS wallet_topups (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    wallet_id INT NOT NULL,
+    customer_id INT NOT NULL,
+    topup_id VARCHAR(100) UNIQUE NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    payment_method VARCHAR(50) DEFAULT 'online',
+    payment_id VARCHAR(100) DEFAULT NULL,
+    status ENUM('pending', 'approved', 'rejected', 'failed', 'completed') DEFAULT 'pending',
+    gateway_reference VARCHAR(255) DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE
+);

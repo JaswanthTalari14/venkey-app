@@ -24,33 +24,39 @@ $total_rewards_earned = 0.00;
 $ref_history = [];
 $stmt = $conn->prepare("
     SELECT r.*, u.name as referred_name, u.phone as referred_phone, u.created_at as reg_date
-    FROM referrals r
+    FROM customer_referrals r
     JOIN users u ON r.referred_customer_id = u.id
     WHERE r.referrer_customer_id = ?
     ORDER BY r.created_at DESC
 ");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$res = $stmt->get_result();
+if ($stmt) {
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
 
-while ($row = $res->fetch_assoc()) {
-    $ref_history[] = $row;
-    $total_referrals++;
-    $st = $row['status'];
-    if ($st === 'Reward Earned' || $st === 'Qualified') {
-        $successful_referrals++;
-    } elseif ($st === 'Registered' || $st === 'Order Pending') {
-        $pending_referrals++;
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $ref_history[] = $row;
+            $total_referrals++;
+            $st = $row['status'];
+            if ($st === 'Reward Earned' || $st === 'Qualified') {
+                $successful_referrals++;
+            } elseif ($st === 'Registered' || $st === 'Order Pending') {
+                $pending_referrals++;
+            }
+        }
     }
 }
 
 // Calculate total earned rewards
 $rw_stmt = $conn->prepare("SELECT SUM(amount) as total FROM referral_rewards WHERE customer_id = ? AND amount > 0");
-$rw_stmt->bind_param("i", $user_id);
-$rw_stmt->execute();
-$rw_res = $rw_stmt->get_result();
-if ($rw_res && $rw_row = $rw_res->fetch_assoc()) {
-    $total_rewards_earned = (float)($rw_row['total'] ?: 0);
+if ($rw_stmt) {
+    $rw_stmt->bind_param("i", $user_id);
+    $rw_stmt->execute();
+    $rw_res = $rw_stmt->get_result();
+    if ($rw_res && $rw_row = $rw_res->fetch_assoc()) {
+        $total_rewards_earned = (float)($rw_row['total'] ?: 0);
+    }
 }
 
 include 'includes/header.php';

@@ -10,12 +10,12 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 $settings = get_referral_settings();
 
 // Metrics calculation
-$total_ref = $conn->query("SELECT COUNT(*) as count FROM referrals")->fetch_assoc()['count'];
-$total_invited = $conn->query("SELECT COUNT(*) as count FROM referrals WHERE status = 'Invited'")->fetch_assoc()['count'];
-$total_registered = $conn->query("SELECT COUNT(*) as count FROM referrals WHERE status = 'Registered'")->fetch_assoc()['count'];
-$total_pending = $conn->query("SELECT COUNT(*) as count FROM referrals WHERE status = 'Order Pending'")->fetch_assoc()['count'];
-$total_qualified = $conn->query("SELECT COUNT(*) as count FROM referrals WHERE status IN ('Qualified', 'Reward Earned')")->fetch_assoc()['count'];
-$total_reversed = $conn->query("SELECT COUNT(*) as count FROM referrals WHERE status = 'Reward Reversed'")->fetch_assoc()['count'];
+$total_ref = $conn->query("SELECT COUNT(*) as count FROM customer_referrals")->fetch_assoc()['count'];
+$total_invited = $conn->query("SELECT COUNT(*) as count FROM customer_referrals WHERE status = 'Invited'")->fetch_assoc()['count'];
+$total_registered = $conn->query("SELECT COUNT(*) as count FROM customer_referrals WHERE status = 'Registered'")->fetch_assoc()['count'];
+$total_pending = $conn->query("SELECT COUNT(*) as count FROM customer_referrals WHERE status = 'Order Pending'")->fetch_assoc()['count'];
+$total_qualified = $conn->query("SELECT COUNT(*) as count FROM customer_referrals WHERE status IN ('Qualified', 'Reward Earned')")->fetch_assoc()['count'];
+$total_reversed = $conn->query("SELECT COUNT(*) as count FROM customer_referrals WHERE status = 'Reward Reversed'")->fetch_assoc()['count'];
 
 $total_rewards_paid = $conn->query("SELECT SUM(amount) as total FROM referral_rewards WHERE amount > 0")->fetch_assoc()['total'] ?: 0;
 
@@ -24,7 +24,7 @@ $query = "
     SELECT r.*, 
            u1.name as referrer_name, u1.phone as referrer_phone,
            u2.name as referred_name, u2.phone as referred_phone, u2.email as referred_email
-    FROM referrals r
+    FROM customer_referrals r
     JOIN users u1 ON r.referrer_customer_id = u1.id
     JOIN users u2 ON r.referred_customer_id = u2.id
     ORDER BY r.created_at DESC
