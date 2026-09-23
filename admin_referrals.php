@@ -9,6 +9,9 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 
 $settings = get_referral_settings();
 
+// Sync any pending referrals across system
+sync_pending_referrals();
+
 // Metrics calculation
 $total_ref = $conn->query("SELECT COUNT(*) as count FROM customer_referrals")->fetch_assoc()['count'];
 $total_invited = $conn->query("SELECT COUNT(*) as count FROM customer_referrals WHERE status = 'Invited'")->fetch_assoc()['count'];

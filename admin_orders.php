@@ -16,6 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
     
     if ($conn->query("UPDATE orders SET status='$new_status' WHERE id=$order_id")) {
         $success = "Order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . " status updated to $new_status!";
+        require_once 'includes/referral_functions.php';
+        sync_pending_referrals();
     }
 }
 

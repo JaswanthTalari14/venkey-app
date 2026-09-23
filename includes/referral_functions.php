@@ -201,6 +201,7 @@ function get_referral_link($customer_id) {
 // Get customer available referral balance
 function get_customer_referral_balance($customer_id) {
     global $conn;
+    sync_pending_referrals($customer_id);
     $stmt = $conn->prepare("SELECT SUM(amount) as total FROM referral_rewards WHERE customer_id = ?");
     $stmt->bind_param("i", $customer_id);
     $stmt->execute();
@@ -211,53 +212,105 @@ function get_customer_referral_balance($customer_id) {
     return 0.00;
 }
 
-// Process Registration Referral Linkage
-function register_referral_claim($new_customer_id, $referral_code_input) {
+// Automatically synchronize pending referrals based on order delivery status
+function sync_pending_referrals($referrer_id = null) {
     global $conn;
-    $code = trim(strtoupper($referral_code_input));
-    if (empty($code)) return false;
 
     $settings = get_referral_settings();
     if (!$settings['program_enabled']) return false;
 
-    // Find referrer
-    $stmt = $conn->prepare("SELECT customer_id FROM referral_codes WHERE referral_code = ?");
-    $stmt->bind_param("s", $code);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    if (!$res || $res->num_rows === 0) return false;
+    $min_amt = (float)$settings['min_order_amount'];
 
-    $referrer_id = (int)$res->fetch_assoc()['customer_id'];
-
-    // Self-Referral Prevention
-    if ($referrer_id === (int)$new_customer_id) return false;
-
-    // Check referrer & referred identity match
-    $check_stmt = $conn->prepare("SELECT email FROM users WHERE id IN (?, ?)");
-    $check_stmt->bind_param("ii", $referrer_id, $new_customer_id);
-    $check_stmt->execute();
-    $u_res = $check_stmt->get_result();
-    $users = [];
-    while ($u = $u_res->fetch_assoc()) {
-        $users[] = $u;
+    // Select pending referrals (Registered or Order Pending)
+    $sql = "SELECT * FROM customer_referrals WHERE status IN ('Registered', 'Order Pending')";
+    if ($referrer_id !== null) {
+        $sql .= " AND referrer_customer_id = " . (int)$referrer_id;
     }
-    if (count($users) === 2) {
-        if (strtolower($users[0]['email']) === strtolower($users[1]['email'])) {
-            return false; // Prevent duplicate email self referral
+
+    $res = $conn->query($sql);
+    if (!$res || $res->num_rows === 0) return true;
+
+    while ($referral = $res->fetch_assoc()) {
+        $ref_id = (int)$referral['id'];
+        $patient_id = (int)$referral['referred_customer_id'];
+        $referrer_customer_id = (int)$referral['referrer_customer_id'];
+
+        // Check if referral has expired
+        if (!empty($referral['expires_at']) && strtotime($referral['expires_at']) < time()) {
+            $conn->query("UPDATE customer_referrals SET status = 'Expired' WHERE id = $ref_id");
+            continue;
+        }
+
+        // Find qualifying order
+        $qualifying_order_id = !empty($referral['qualifying_order_id']) ? (int)$referral['qualifying_order_id'] : 0;
+
+        if ($qualifying_order_id > 0) {
+            $ord_stmt = $conn->query("SELECT id, total_amount, status, payment_status FROM orders WHERE id = $qualifying_order_id");
+            $ord = $ord_stmt ? $ord_stmt->fetch_assoc() : null;
+        } else {
+            // Find first order placed by referred customer
+            $ord_stmt = $conn->query("SELECT id, total_amount, status, payment_status FROM orders WHERE patient_id = $patient_id AND status NOT IN ('cancelled', 'Cancelled', 'rejected') ORDER BY id ASC LIMIT 1");
+            $ord = $ord_stmt ? $ord_stmt->fetch_assoc() : null;
+        }
+
+        if (!$ord) {
+            continue;
+        }
+
+        $order_id = (int)$ord['id'];
+        $total_amount = (float)$ord['total_amount'];
+        $order_status = strtolower(trim($ord['status']));
+
+        // Update qualifying_order_id and status to Order Pending if currently Registered
+        if ($referral['status'] === 'Registered') {
+            $conn->query("UPDATE customer_referrals SET status = 'Order Pending', qualifying_order_id = $order_id WHERE id = $ref_id");
+        }
+
+        // Qualification check: Order status is 'delivered' (case-insensitive) AND total_amount >= min_order_amount
+        if ($order_status === 'delivered' && $total_amount >= $min_amt) {
+            // Idempotency Check: Prevent duplicate reward grant
+            $reward_check = $conn->query("SELECT id FROM referral_rewards WHERE referral_id = $ref_id AND reward_type = 'referrer_reward'");
+            if ($reward_check && $reward_check->num_rows > 0) {
+                // Already rewarded, ensure referral status is 'Reward Earned'
+                $conn->query("UPDATE customer_referrals SET status = 'Reward Earned' WHERE id = $ref_id");
+                continue;
+            }
+
+            $referrer_reward = (float)$settings['referrer_reward'];
+            $referred_reward = (float)$settings['referred_reward'];
+
+            // Grant Referrer Reward & Post to Wallet Ledger
+            $tx1 = 'REF_RWD_' . time() . '_' . rand(1000, 9999);
+            $conn->query("INSERT INTO referral_rewards (referral_id, customer_id, reward_type, amount, status, related_order_id, transaction_id, description) 
+                          VALUES ($ref_id, $referrer_customer_id, 'referrer_reward', $referrer_reward, 'earned', $order_id, '$tx1', 'Referral reward for successful invite')");
+            add_wallet_transaction($referrer_customer_id, 'referral_reward', 'credit', $referrer_reward, "Referral reward for successful invite", $order_id, null, $ref_id);
+
+            // Notification for Referrer Customer
+            if (function_exists('create_notification')) {
+                create_notification($referrer_customer_id, "🎉 Referral Reward Earned!", "Your referred friend's order has been delivered! ₹" . number_format($referrer_reward, 2) . " has been credited to your wallet.", 'success', 'referral', $ref_id);
+            }
+
+            // Grant Referred Customer Reward & Post to Wallet Ledger (if applicable)
+            if ($referred_reward > 0) {
+                $reward_check2 = $conn->query("SELECT id FROM referral_rewards WHERE referral_id = $ref_id AND reward_type = 'referred_reward'");
+                if (!$reward_check2 || $reward_check2->num_rows === 0) {
+                    $tx2 = 'REF_RWD_' . time() . '_' . rand(1000, 9999);
+                    $conn->query("INSERT INTO referral_rewards (referral_id, customer_id, reward_type, amount, status, related_order_id, transaction_id, description) 
+                                  VALUES ($ref_id, $patient_id, 'referred_reward', $referred_reward, 'earned', $order_id, '$tx2', 'Welcome referral bonus on first order')");
+                    add_wallet_transaction($patient_id, 'referral_reward', 'credit', $referred_reward, "Welcome referral bonus on first order", $order_id, null, $ref_id);
+
+                    if (function_exists('create_notification')) {
+                        create_notification($patient_id, "🎉 Welcome Referral Bonus!", "Your order has been delivered! ₹" . number_format($referred_reward, 2) . " welcome bonus has been credited to your wallet.", 'success', 'referral', $ref_id);
+                    }
+                }
+            }
+
+            // Update referral record status to 'Reward Earned'
+            $conn->query("UPDATE customer_referrals SET status = 'Reward Earned', qualified_at = NOW(), reward_earned_at = NOW() WHERE id = $ref_id");
         }
     }
 
-    // Check if new customer was already referred
-    $dup_check = $conn->prepare("SELECT id FROM customer_referrals WHERE referred_customer_id = ?");
-    $dup_check->bind_param("i", $new_customer_id);
-    $dup_check->execute();
-    if ($dup_check->get_result()->num_rows > 0) return false;
-
-    $expiry_days = (int)$settings['expiry_days'];
-    $ins = $conn->prepare("INSERT INTO customer_referrals (referrer_customer_id, referred_customer_id, referral_code, status, registered_at, expires_at) 
-                           VALUES (?, ?, ?, 'Registered', NOW(), DATE_ADD(NOW(), INTERVAL ? DAY))");
-    $ins->bind_param("iisi", $referrer_id, $new_customer_id, $code, $expiry_days);
-    return $ins->execute();
+    return true;
 }
 
 // Evaluate and process Referral Rewards on Order Confirmation
@@ -289,7 +342,6 @@ function process_referral_order_qualification($order_id, $patient_id, $total_amo
     $prev_orders = $order_check->get_result()->fetch_assoc()['cnt'];
 
     if ($prev_orders > 0) {
-        // Not first order
         return false;
     }
 
@@ -298,41 +350,10 @@ function process_referral_order_qualification($order_id, $patient_id, $total_amo
         $conn->query("UPDATE customer_referrals SET status = 'Order Pending', qualifying_order_id = $order_id WHERE id = " . $referral['id']);
     }
 
-    // Check if order qualifies
-    $min_amt = (float)$settings['min_order_amount'];
-    if ($total_amount >= $min_amt && $is_confirmed) {
-        // QUALIFIED & REWARD EARNED!
-        $ref_id = $referral['id'];
-        $referrer_id = $referral['referrer_customer_id'];
-        $referrer_reward = (float)$settings['referrer_reward'];
-        $referred_reward = (float)$settings['referred_reward'];
+    // Sync referral qualification
+    sync_pending_referrals($referral['referrer_customer_id']);
 
-        // Prevent duplicate reward grant
-        $reward_check = $conn->query("SELECT id FROM referral_rewards WHERE referral_id = $ref_id AND reward_type = 'referrer_reward'");
-        if ($reward_check && $reward_check->num_rows > 0) {
-            return false;
-        }
-
-        // Grant Referrer Reward & Post to Wallet Ledger
-        $tx1 = 'REF_RWD_' . time() . '_' . rand(1000, 9999);
-        $conn->query("INSERT INTO referral_rewards (referral_id, customer_id, reward_type, amount, status, related_order_id, transaction_id, description) 
-                      VALUES ($ref_id, $referrer_id, 'referrer_reward', $referrer_reward, 'earned', $order_id, '$tx1', 'Referral reward for successful invite')");
-        add_wallet_transaction($referrer_id, 'referral_reward', 'credit', $referrer_reward, "Referral reward for successful invite", $order_id, null, $ref_id);
-
-        // Grant Referred Customer Reward & Post to Wallet Ledger
-        if ($referred_reward > 0) {
-            $tx2 = 'REF_RWD_' . time() . '_' . rand(1000, 9999);
-            $conn->query("INSERT INTO referral_rewards (referral_id, customer_id, reward_type, amount, status, related_order_id, transaction_id, description) 
-                          VALUES ($ref_id, $patient_id, 'referred_reward', $referred_reward, 'earned', $order_id, '$tx2', 'Welcome referral bonus on first order')");
-            add_wallet_transaction($patient_id, 'referral_reward', 'credit', $referred_reward, "Welcome referral bonus on first order", $order_id, null, $ref_id);
-        }
-
-        // Update referral record
-        $conn->query("UPDATE customer_referrals SET status = 'Reward Earned', qualified_at = NOW(), reward_earned_at = NOW() WHERE id = $ref_id");
-        return true;
-    }
-
-    return false;
+    return true;
 }
 
 // Process Referral Reward Reversal (on cancellation / refund)
