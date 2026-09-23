@@ -10,15 +10,26 @@ include 'includes/header.php';
 
 $success = '';
 
+// Check and add 'image' column if not exists
+$check_col = $conn->query("SHOW COLUMNS FROM medicines LIKE 'image'");
+if ($check_col && $check_col->num_rows == 0) {
+    $conn->query("ALTER TABLE medicines ADD COLUMN image VARCHAR(255) DEFAULT NULL");
+}
+
 // Seed some sample medicines if empty
 $check_meds = $conn->query("SELECT COUNT(*) as count FROM medicines");
 $row = $check_meds->fetch_assoc();
 if ($row['count'] == 0) {
-    $conn->query("INSERT INTO medicines (name, description, price, stock) VALUES 
-        ('Paracetamol 500mg', 'Fever and mild pain relief.', 15.00, 100),
-        ('Amoxicillin 250mg', 'Antibiotic for bacterial infections.', 120.00, 50),
-        ('Cetirizine 10mg', 'Allergy relief tablets.', 45.00, 200),
-        ('Vitamin C + Zinc', 'Immunity booster supplement.', 250.00, 80)");
+    $conn->query("INSERT INTO medicines (name, description, price, stock, image) VALUES 
+        ('Paracetamol 500mg', 'Fever and mild pain relief.', 15.00, 100, 'images/medicines/paracetamol.png'),
+        ('Amoxicillin 250mg', 'Antibiotic for bacterial infections.', 120.00, 50, 'images/medicines/amoxicillin.png'),
+        ('Cetirizine 10mg', 'Allergy relief tablets.', 45.00, 200, 'images/medicines/cetirizine.png'),
+        ('Vitamin C + Zinc', 'Immunity booster supplement.', 250.00, 80, 'images/medicines/vitaminc.png')");
+} else {
+    $conn->query("UPDATE medicines SET image = 'images/medicines/paracetamol.png' WHERE name LIKE '%Paracetamol%' AND (image IS NULL OR image = '')");
+    $conn->query("UPDATE medicines SET image = 'images/medicines/amoxicillin.png' WHERE name LIKE '%Amoxicillin%' AND (image IS NULL OR image = '')");
+    $conn->query("UPDATE medicines SET image = 'images/medicines/cetirizine.png' WHERE name LIKE '%Cetirizine%' AND (image IS NULL OR image = '')");
+    $conn->query("UPDATE medicines SET image = 'images/medicines/vitaminc.png' WHERE name LIKE '%Vitamin%' AND (image IS NULL OR image = '')");
 }
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
@@ -78,12 +89,27 @@ $my_orders = $conn->query("
 
         <div class="features-grid" style="margin-top: 1rem;">
             <?php while($med = $medicines->fetch_assoc()): ?>
-                <div class="feature-card glass-panel" style="padding: 1.5rem;">
+                <?php 
+                    $img_src = 'images/medicines/default.png';
+                    if (!empty($med['image']) && file_exists($med['image'])) {
+                        $img_src = $med['image'];
+                    } else {
+                        $name_lower = strtolower($med['name']);
+                        if (strpos($name_lower, 'paracetamol') !== false) $img_src = 'images/medicines/paracetamol.png';
+                        elseif (strpos($name_lower, 'amoxicillin') !== false) $img_src = 'images/medicines/amoxicillin.png';
+                        elseif (strpos($name_lower, 'cetirizine') !== false) $img_src = 'images/medicines/cetirizine.png';
+                        elseif (strpos($name_lower, 'vitamin') !== false) $img_src = 'images/medicines/vitaminc.png';
+                    }
+                ?>
+                <div class="feature-card glass-panel" style="padding: 1.5rem; display: flex; flex-direction: column;">
+                    <div style="width: 100%; height: 160px; overflow: hidden; border-radius: 12px; margin-bottom: 1rem; background: rgba(0,0,0,0.2);">
+                        <img src="<?php echo htmlspecialchars($img_src); ?>" alt="<?php echo htmlspecialchars($med['name']); ?>" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px; transition: transform 0.3s ease;">
+                    </div>
                     <h4 style="color: #fff; margin-bottom: 0.5rem;"><?php echo htmlspecialchars($med['name']); ?></h4>
                     <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; min-height: 40px;"><?php echo htmlspecialchars($med['description']); ?></p>
                     <p style="font-size: 1.5rem; font-weight: bold; color: var(--secondary-color); margin-bottom: 1rem;">₹<?php echo $med['price']; ?></p>
                     
-                    <form method="POST" action="" style="display: flex; gap: 0.5rem;">
+                    <form method="POST" action="" style="display: flex; gap: 0.5rem; margin-top: auto;">
                         <input type="hidden" name="medicine_id" value="<?php echo $med['id']; ?>">
                         <input type="number" name="quantity" value="1" min="1" max="10" class="form-control" style="width: 80px;" required>
                         <button type="submit" name="order" class="btn btn-primary" style="flex: 1;">Order Now</button>
