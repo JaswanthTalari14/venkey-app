@@ -54,6 +54,7 @@ function init_referral_tables() {
     )");
 
     // Migration Check: Ensure required columns exist if customer_referrals was created with an older/different schema
+    $conn->query("ALTER TABLE customer_referrals MODIFY COLUMN status VARCHAR(50) DEFAULT 'Registered'");
     $col_res = $conn->query("SHOW COLUMNS FROM customer_referrals");
     if ($col_res) {
         $existing_cols = [];

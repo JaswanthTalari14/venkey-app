@@ -74,6 +74,10 @@ function init_wallet_tables() {
     )");
 
     // Auto-migrate wallet_topups columns if table existed
+    $conn->query("ALTER TABLE wallet_topups MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+    $conn->query("ALTER TABLE wallet_transactions MODIFY COLUMN transaction_type VARCHAR(50) NOT NULL");
+    $conn->query("ALTER TABLE wallet_transactions MODIFY COLUMN status VARCHAR(50) DEFAULT 'completed'");
+
     $col_res = $conn->query("SHOW COLUMNS FROM wallet_topups");
     if ($col_res) {
         $existing_cols = [];
