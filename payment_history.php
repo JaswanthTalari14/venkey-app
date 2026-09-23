@@ -206,55 +206,57 @@ include 'includes/header.php';
             </div>
 
             <?php if (count($payments) > 0): ?>
-                <table id="paymentsTable" style="width: 100%; text-align: left; border-collapse: collapse;">
-                    <thead>
-                        <tr style="border-bottom: 1px solid var(--glass-border);">
-                            <th style="padding: 1rem;">Transaction Ref</th>
-                            <th style="padding: 1rem;">Item / Service</th>
-                            <th style="padding: 1rem;">Amount</th>
-                            <th style="padding: 1rem;">Method</th>
-                            <th style="padding: 1rem;">Status</th>
-                            <th style="padding: 1rem;">Date & Time</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($payments as $p): ?>
-                            <?php 
-                                $status = $p['payment_status'];
-                                $badge_style = "background: rgba(245, 166, 35, 0.2); color: var(--accent); border: 1px solid var(--accent);";
-                                $st_lower = strtolower($status);
-                                if ($st_lower === 'paid' || $st_lower === 'completed') {
-                                    $badge_style = "background: rgba(46, 213, 115, 0.2); color: #2ed573; border: 1px solid #2ed573;";
-                                } elseif ($st_lower === 'failed' || $st_lower === 'cancelled') {
-                                    $badge_style = "background: rgba(255, 71, 87, 0.2); color: #ff4757; border: 1px solid #ff4757;";
-                                }
-                            ?>
+                <div class="table-responsive" style="width: 100%; overflow-x: auto;">
+                    <table id="paymentsTable" style="width: 100%; min-width: 780px; text-align: left; border-collapse: collapse;">
+                        <thead>
                             <tr style="border-bottom: 1px solid var(--glass-border);">
-                                <td style="padding: 1rem; font-weight: 600; font-family: monospace;">
-                                    <?php echo htmlspecialchars($p['ref_id'] ?: ('TXN_' . $p['id'])); ?>
-                                </td>
-                                <td style="padding: 1rem;">
-                                    <?php echo htmlspecialchars($p['item_type']); ?>
-                                </td>
-                                <td style="padding: 1rem; font-weight: 700; color: var(--text-primary);">
-                                    ₹<?php echo number_format($p['amount'], 2); ?>
-                                </td>
-                                <td style="padding: 1rem; font-size: 0.9rem; color: var(--text-secondary);">
-                                    <i class="fas fa-credit-card" style="margin-right: 0.3rem;"></i> 
-                                    <?php echo htmlspecialchars($p['payment_method'] ?: 'COD / Online'); ?>
-                                </td>
-                                <td style="padding: 1rem;">
-                                    <span style="padding: 0.3rem 0.75rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; display: inline-block; <?php echo $badge_style; ?>">
-                                        <?php echo htmlspecialchars($status); ?>
-                                    </span>
-                                </td>
-                                <td style="padding: 1rem; font-size: 0.85rem; color: var(--text-secondary);">
-                                    <?php echo date('M d, Y h:i A', strtotime($p['created_at'])); ?>
-                                </td>
+                                <th style="padding: 1rem; white-space: nowrap;">Transaction Ref</th>
+                                <th style="padding: 1rem; white-space: nowrap;">Item / Service</th>
+                                <th style="padding: 1rem; white-space: nowrap;">Amount</th>
+                                <th style="padding: 1rem; white-space: nowrap;">Method</th>
+                                <th style="padding: 1rem; white-space: nowrap;">Status</th>
+                                <th style="padding: 1rem; white-space: nowrap;">Date & Time</th>
                             </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($payments as $p): ?>
+                                <?php 
+                                    $status = $p['payment_status'];
+                                    $badge_style = "background: rgba(245, 166, 35, 0.2); color: var(--accent); border: 1px solid var(--accent);";
+                                    $st_lower = strtolower($status);
+                                    if ($st_lower === 'paid' || $st_lower === 'completed') {
+                                        $badge_style = "background: rgba(46, 213, 115, 0.2); color: #2ed573; border: 1px solid #2ed573;";
+                                    } elseif ($st_lower === 'failed' || $st_lower === 'cancelled') {
+                                        $badge_style = "background: rgba(255, 71, 87, 0.2); color: #ff4757; border: 1px solid #ff4757;";
+                                    }
+                                ?>
+                                <tr style="border-bottom: 1px solid var(--glass-border);">
+                                    <td style="padding: 1rem; font-weight: 600; font-family: monospace; white-space: nowrap;">
+                                        <?php echo htmlspecialchars($p['ref_id'] ?: ('TXN_' . $p['id'])); ?>
+                                    </td>
+                                    <td style="padding: 1rem; white-space: nowrap;">
+                                        <?php echo htmlspecialchars($p['item_type']); ?>
+                                    </td>
+                                    <td style="padding: 1rem; font-weight: 700; color: var(--text-primary); white-space: nowrap;">
+                                        ₹<?php echo number_format($p['amount'], 2); ?>
+                                    </td>
+                                    <td style="padding: 1rem; font-size: 0.9rem; color: var(--text-secondary); white-space: nowrap;">
+                                        <i class="fas fa-credit-card" style="margin-right: 0.3rem;"></i> 
+                                        <?php echo htmlspecialchars($p['payment_method'] ?: 'COD / Online'); ?>
+                                    </td>
+                                    <td style="padding: 1rem; white-space: nowrap;">
+                                        <span style="padding: 0.3rem 0.75rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; display: inline-block; <?php echo $badge_style; ?>">
+                                            <?php echo htmlspecialchars($status); ?>
+                                        </span>
+                                    </td>
+                                    <td style="padding: 1rem; font-size: 0.85rem; color: var(--text-secondary); white-space: nowrap;">
+                                        <?php echo date('M d, Y h:i A', strtotime($p['created_at'])); ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
             <?php else: ?>
                 <p style="text-align: center; color: var(--text-secondary); padding: 3rem 1rem;">No payment transactions found in your history.</p>
             <?php endif; ?>
