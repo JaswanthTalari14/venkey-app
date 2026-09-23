@@ -74,6 +74,17 @@
   box-shadow: 0 15px 35px rgba(0, 0, 0, 0.06), 0 0 40px rgba(74, 144, 226, 0.08);
 }
 
+[data-theme="light"] .sidebar-toggle {
+  background: rgba(74, 144, 226, 0.12);
+  border-color: rgba(74, 144, 226, 0.3);
+  color: #0f172a;
+}
+
+[data-theme="light"] .sidebar-toggle i,
+[data-theme="light"] .sidebar-toggle span {
+  color: #0f172a;
+}
+
 *, *::before, *::after {
   margin: 0;
   padding: 0;
@@ -537,10 +548,10 @@ footer {
   display: none;
   width: 100%;
   padding: 0.85rem 1.1rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--form-input-bg);
   border: 1px solid var(--glass-border);
   border-radius: 10px;
-  color: #fff;
+  color: var(--text-primary);
   font-weight: 600;
   font-size: 1rem;
   cursor: pointer;
