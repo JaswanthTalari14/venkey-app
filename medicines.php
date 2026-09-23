@@ -22,32 +22,24 @@ if (isset($_GET['success'])) {
     $success = "Medicine ordered successfully! It will be delivered soon.";
 }
 
-// Check and add 'image' column if not exists
-$check_col = $conn->query("SHOW COLUMNS FROM medicines LIKE 'image'");
-if ($check_col && $check_col->num_rows == 0) {
-    $conn->query("ALTER TABLE medicines ADD COLUMN image VARCHAR(255) DEFAULT NULL");
-}
-
-// Check and add payment columns in orders table if not exists
-$check_pay_col = $conn->query("SHOW COLUMNS FROM orders LIKE 'payment_method'");
-if ($check_pay_col && $check_pay_col->num_rows == 0) {
-    $conn->query("ALTER TABLE orders ADD COLUMN payment_method VARCHAR(50) DEFAULT 'COD', ADD COLUMN payment_status VARCHAR(50) DEFAULT 'Cash on Delivery', ADD COLUMN gateway_order_id VARCHAR(100) DEFAULT NULL, ADD COLUMN gateway_payment_id VARCHAR(100) DEFAULT NULL");
-}
-
-// Seed some sample medicines if empty
-$check_meds = $conn->query("SELECT COUNT(*) as count FROM medicines");
-$row = $check_meds->fetch_assoc();
-if ($row['count'] == 0) {
-    $conn->query("INSERT INTO medicines (name, description, price, stock, image) VALUES 
-        ('Paracetamol 500mg', 'Fever and mild pain relief.', 15.00, 100, 'images/medicines/paracetamol.png'),
-        ('Amoxicillin 250mg', 'Antibiotic for bacterial infections.', 120.00, 50, 'images/medicines/amoxicillin.png'),
-        ('Cetirizine 10mg', 'Allergy relief tablets.', 45.00, 200, 'images/medicines/cetirizine.png'),
-        ('Vitamin C + Zinc', 'Immunity booster supplement.', 250.00, 80, 'images/medicines/vitaminc.png')");
-} else {
-    $conn->query("UPDATE medicines SET image = 'images/medicines/paracetamol.png' WHERE name LIKE '%Paracetamol%' AND (image IS NULL OR image = '')");
-    $conn->query("UPDATE medicines SET image = 'images/medicines/amoxicillin.png' WHERE name LIKE '%Amoxicillin%' AND (image IS NULL OR image = '')");
-    $conn->query("UPDATE medicines SET image = 'images/medicines/cetirizine.png' WHERE name LIKE '%Cetirizine%' AND (image IS NULL OR image = '')");
-    $conn->query("UPDATE medicines SET image = 'images/medicines/vitaminc.png' WHERE name LIKE '%Vitamin%' AND (image IS NULL OR image = '')");
+if (!isset($GLOBALS['medicines_initialized'])) {
+    $GLOBALS['medicines_initialized'] = true;
+    $check_meds = @$conn->query("SELECT 1 FROM medicines LIMIT 1");
+    if (!$check_meds || $check_meds->num_rows == 0) {
+        $check_col = $conn->query("SHOW COLUMNS FROM medicines LIKE 'image'");
+        if ($check_col && $check_col->num_rows == 0) {
+            $conn->query("ALTER TABLE medicines ADD COLUMN image VARCHAR(255) DEFAULT NULL");
+        }
+        $check_pay_col = $conn->query("SHOW COLUMNS FROM orders LIKE 'payment_method'");
+        if ($check_pay_col && $check_pay_col->num_rows == 0) {
+            $conn->query("ALTER TABLE orders ADD COLUMN payment_method VARCHAR(50) DEFAULT 'COD', ADD COLUMN payment_status VARCHAR(50) DEFAULT 'Cash on Delivery', ADD COLUMN gateway_order_id VARCHAR(100) DEFAULT NULL, ADD COLUMN gateway_payment_id VARCHAR(100) DEFAULT NULL");
+        }
+        $conn->query("INSERT INTO medicines (name, description, price, stock, image) VALUES 
+            ('Paracetamol 500mg', 'Fever and mild pain relief.', 15.00, 100, 'images/medicines/paracetamol.png'),
+            ('Amoxicillin 250mg', 'Antibiotic for bacterial infections.', 120.00, 50, 'images/medicines/amoxicillin.png'),
+            ('Cetirizine 10mg', 'Allergy relief tablets.', 45.00, 200, 'images/medicines/cetirizine.png'),
+            ('Vitamin C + Zinc', 'Immunity booster supplement.', 250.00, 80, 'images/medicines/vitaminc.png')");
+    }
 }
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {

@@ -1,4 +1,7 @@
 <?php
+$message = '';
+$msg_type = 'info';
+
 require_once 'config.php';
 require_once 'includes/wallet_functions.php';
 
@@ -108,7 +111,7 @@ include 'includes/header.php';
             </div>
         <?php endif; ?>
 
-        <?php if ($message): ?>
+        <?php if (isset($message) && !empty($message)): ?>
             <div style="background: <?php echo $msg_type === 'success' ? 'rgba(46, 213, 115, 0.15)' : 'rgba(255, 71, 87, 0.15)'; ?>; border: 1px solid <?php echo $msg_type === 'success' ? '#2ed573' : '#ff4757'; ?>; color: <?php echo $msg_type === 'success' ? '#2ed573' : '#ff4757'; ?>; padding: 1rem; border-radius: 12px; margin-bottom: 1.5rem;">
                 <?php echo htmlspecialchars($message); ?>
             </div>

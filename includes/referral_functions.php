@@ -138,8 +138,14 @@ function init_referral_tables() {
     )");
 }
 
-// Run Table Initialization
-init_referral_tables();
+// Run Table Initialization conditionally to optimize performance
+if (!isset($GLOBALS['referral_tables_inited'])) {
+    $GLOBALS['referral_tables_inited'] = true;
+    $check_ref_tbl = @$conn->query("SELECT 1 FROM referral_settings LIMIT 1");
+    if (!$check_ref_tbl) {
+        init_referral_tables();
+    }
+}
 
 // Fetch active referral settings
 function get_referral_settings() {

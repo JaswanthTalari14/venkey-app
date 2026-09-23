@@ -49,8 +49,14 @@ function init_notification_tables() {
     }
 }
 
-// Run Table Initialization
-init_notification_tables();
+// Run Table Initialization conditionally to optimize performance
+if (!isset($GLOBALS['notification_tables_inited'])) {
+    $GLOBALS['notification_tables_inited'] = true;
+    $check_notif_tbl = @$conn->query("SELECT 1 FROM user_notifications LIMIT 1");
+    if (!$check_notif_tbl) {
+        init_notification_tables();
+    }
+}
 
 // Create Notification with Duplicate Prevention
 function create_notification($user_id, $title, $message, $type = 'info', $related_entity_type = null, $related_entity_id = null, $role = null) {

@@ -28,14 +28,13 @@ if ($action === 'stream') {
     header('Connection: keep-alive');
     header('X-Accel-Buffering: no');
 
-    $last_check = time();
-    $unread_count = get_unread_notification_count($user_id);
+    $last_unread = get_unread_notification_count($user_id);
     $initial_list = get_user_notifications($user_id, 15);
 
     // Initial Event
     echo "data: " . json_encode([
         'type' => 'init',
-        'unread_count' => $unread_count,
+        'unread_count' => $last_unread,
         'notifications' => $initial_list
     ]) . "\n\n";
     @flush();
@@ -47,14 +46,17 @@ if ($action === 'stream') {
         sleep(2);
 
         $current_unread = get_unread_notification_count($user_id);
-        $recent_list = get_user_notifications($user_id, 10);
+        if ($current_unread !== $last_unread) {
+            $last_unread = $current_unread;
+            $recent_list = get_user_notifications($user_id, 10);
 
-        echo "data: " . json_encode([
-            'type' => 'update',
-            'unread_count' => $current_unread,
-            'notifications' => $recent_list
-        ]) . "\n\n";
-        @flush();
+            echo "data: " . json_encode([
+                'type' => 'update',
+                'unread_count' => $current_unread,
+                'notifications' => $recent_list
+            ]) . "\n\n";
+            @flush();
+        }
     }
     exit;
 }
