@@ -344,8 +344,7 @@ document.getElementById('btnCancelPay').addEventListener('click', function() {
 
 document.getElementById('btnConfirmPay').addEventListener('click', function() {
     if (!activeOrderId) return;
-    document.getElementById('btnConfirmPay').innerText = "Processing...";
-    document.getElementById('btnConfirmPay').disabled = true;
+    document.getElementById('paymentGatewayModal').style.display = 'none';
     
     var simPaymentId = 'pay_online_' + Date.now();
     submitPaymentVerification(activeOrderId, simPaymentId, 'order_online_' + Date.now(), 'simulated_sig_' + Date.now());
