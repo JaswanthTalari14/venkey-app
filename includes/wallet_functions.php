@@ -353,8 +353,9 @@ function mark_topup_payment_received($topup_id, $paid_amount, $gateway_reference
         $new_status = 'amount_mismatch';
     }
 
-    $upd = $conn->prepare("UPDATE wallet_topups SET paid_amount = ?, gateway_reference = ?, payment_id = ?, status = ? WHERE topup_id = ?");
-    $upd->bind_param("dssss", $paid_amount, $gateway_reference, $payment_id, $new_status, $topup_id);
+    $method = 'Razorpay';
+    $upd = $conn->prepare("UPDATE wallet_topups SET paid_amount = ?, payment_method = ?, gateway_reference = ?, payment_id = ?, status = ? WHERE topup_id = ?");
+    $upd->bind_param("dsssss", $paid_amount, $method, $gateway_reference, $payment_id, $new_status, $topup_id);
     
     if ($upd->execute()) {
         $customer_id = (int)$topup['customer_id'];
@@ -363,14 +364,14 @@ function mark_topup_payment_received($topup_id, $paid_amount, $gateway_reference
         $amt_fmt = number_format($paid_amount, 2);
         add_user_notification(
             $customer_id,
-            "Wallet Top-Up Payment Received",
-            "Your ₹{$amt_fmt} wallet top-up payment was received and is waiting for Admin verification."
+            "Razorpay Payment Received",
+            "Your ₹{$amt_fmt} wallet top-up payment was received via Razorpay and is waiting for Admin verification."
         );
 
         return [
             'success' => true,
             'status' => $new_status,
-            'message' => "Payment of ₹{$amt_fmt} received. Waiting for Admin verification and approval."
+            'message' => "Razorpay payment of ₹{$amt_fmt} received. Waiting for Admin verification and approval."
         ];
     }
 

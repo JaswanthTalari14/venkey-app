@@ -249,9 +249,12 @@ include 'includes/header.php';
                                     <?php endif; ?>
                                 </td>
                                 <td style="padding: 1rem; font-size: 0.85rem;">
-                                    <div><strong>Gateway:</strong> <?php echo htmlspecialchars($top['payment_method']); ?></div>
-                                    <small style="color: var(--text-secondary); font-family: monospace; display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis;">
-                                        Ref: <?php echo htmlspecialchars($top['gateway_reference'] ?: $top['payment_id'] ?: 'Pending Callback'); ?>
+                                    <div style="font-weight: bold; color: #4a90e2;"><i class="fas fa-credit-card"></i> <?php echo htmlspecialchars($top['payment_method'] ?: 'Razorpay'); ?></div>
+                                    <small style="color: var(--text-secondary); font-family: monospace; display: block;">
+                                        Order ID: <?php echo htmlspecialchars($top['gateway_reference'] ?: '-'); ?>
+                                    </small>
+                                    <small style="color: var(--text-secondary); font-family: monospace; display: block;">
+                                        Payment ID: <?php echo htmlspecialchars($top['payment_id'] ?: '-'); ?>
                                     </small>
                                 </td>
                                 <td style="padding: 1rem; font-weight: bold; color: #3498db;">
