@@ -19,7 +19,11 @@ $bookings = $conn->query("
 
 <div class="dashboard-layout">
     <aside class="sidebar glass-panel">
-        <h3 style="margin-bottom: 2rem;">Admin Menu</h3>
+        <button class="sidebar-toggle" aria-label="Toggle Admin Menu">
+            <span><i class="fas fa-bars" style="margin-right: 0.5rem;"></i> Admin Menu</span>
+            <i class="fas fa-chevron-down toggle-icon"></i>
+        </button>
+        <h3 class="sidebar-title" style="margin-bottom: 2rem;">Admin Menu</h3>
         <ul class="sidebar-menu">
             <li><a href="admin_dashboard.php"><i class="fas fa-chart-pie"></i> Overview</a></li>
             <li><a href="admin_users.php"><i class="fas fa-users-cog"></i> Manage Users</a></li>

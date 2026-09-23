@@ -45,7 +45,11 @@ $pending_tests = $conn->query("
 
 <div class="dashboard-layout">
     <aside class="sidebar glass-panel">
-        <h3 style="margin-bottom: 2rem;">RMP Menu</h3>
+        <button class="sidebar-toggle" aria-label="Toggle RMP Menu">
+            <span><i class="fas fa-bars" style="margin-right: 0.5rem;"></i> RMP Menu</span>
+            <i class="fas fa-chevron-down toggle-icon"></i>
+        </button>
+        <h3 class="sidebar-title" style="margin-bottom: 2rem;">RMP Menu</h3>
         <ul class="sidebar-menu">
             <li><a href="rmp_dashboard.php"><i class="fas fa-flask"></i> My Booked Tests</a></li>
             <li><a href="rmp_upload.php" class="active"><i class="fas fa-file-upload"></i> Upload Results</a></li>
