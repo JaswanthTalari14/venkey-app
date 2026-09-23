@@ -59,6 +59,8 @@ if ($is_valid) {
     $update_stmt = $conn->prepare("UPDATE orders SET payment_status = 'Paid', payment_method = 'Online Payment', gateway_payment_id = ?, gateway_order_id = ? WHERE id = ?");
     $update_stmt->bind_param("ssi", $razorpay_payment_id, $razorpay_order_id, $order_id);
     if ($update_stmt->execute()) {
+        require_once 'includes/referral_functions.php';
+        process_referral_order_qualification($order_id, $patient_id, $order['total_amount'], true);
         echo json_encode(['success' => true, 'message' => 'Payment verified and order confirmed successfully!']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Database update failed.']);

@@ -1,10 +1,14 @@
 <?php
 require_once 'config.php';
+require_once 'includes/referral_functions.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'patient') {
     header("Location: login.php");
     exit;
 }
+
+$patient_id = $_SESSION['user_id'];
+$avail_ref_balance = get_customer_referral_balance($patient_id);
 
 include 'includes/header.php';
 
@@ -55,6 +59,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
     if ($med_res && $med_res->num_rows > 0) {
         $med = $med_res->fetch_assoc();
         $total = $med['price'] * $qty;
+
+        // Handle optional Referral Reward Balance Deduction
+        if (isset($_POST['use_referral_balance']) && $_POST['use_referral_balance'] == '1' && $avail_ref_balance > 0) {
+            $deduction = min($avail_ref_balance, $total);
+            $total = max(0.00, $total - $deduction);
+            
+            $tx_red = 'RED_' . time() . '_' . rand(1000, 9999);
+            $conn->query("INSERT INTO referral_rewards (customer_id, reward_type, amount, status, description, transaction_id) 
+                          VALUES ($patient_id, 'redemption', -$deduction, 'redeemed', 'Redeemed referral reward balance at order checkout', '$tx_red')");
+            $avail_ref_balance = get_customer_referral_balance($patient_id);
+        }
         
         if ($payment_method === 'COD') {
             $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, 'User Default Address', 'COD', 'Cash on Delivery')");
@@ -65,6 +80,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
             $item_stmt = $conn->prepare("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES (?, ?, ?, ?)");
             $item_stmt->bind_param("iiid", $order_id, $medicine_id, $qty, $med['price']);
             $item_stmt->execute();
+
+            // Evaluate Referral qualification on first COD order placement
+            process_referral_order_qualification($order_id, $patient_id, $total, true);
             
             $success = "Medicine ordered successfully! It will be delivered soon.";
         } else {
@@ -124,6 +142,8 @@ $my_orders = $conn->query("
             <li><a href="nearby_doctors.php"><i class="fas fa-map-marker-alt"></i> Find Doctors (10km)</a></li>
             <li><a href="privacy_consult.php"><i class="fas fa-user-secret"></i> Privacy Consult</a></li>
             <li><a href="book_tests.php"><i class="fas fa-vial"></i> Book Labs (RMP)</a></li>
+            <li><a href="refer_earn.php"><i class="fas fa-gift"></i> Refer & Earn</a></li>
+            <li><a href="payment_history.php"><i class="fas fa-receipt"></i> Payment History</a></li>
             <li><a href="chatbot.php"><i class="fas fa-robot"></i> AI Chatbot</a></li>
         </ul>
     </aside>
@@ -153,7 +173,7 @@ $my_orders = $conn->query("
                     <div style="width: 100%; height: 125px; overflow: hidden; border-radius: 10px; margin-bottom: 0.6rem; background: rgba(0,0,0,0.2);">
                         <img src="<?php echo htmlspecialchars($img_src); ?>" alt="<?php echo htmlspecialchars($med['name']); ?>" style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px; transition: transform 0.3s ease;">
                     </div>
-                    <h4 style="color: #fff; margin-bottom: 0.25rem; font-size: 1.05rem;"><?php echo htmlspecialchars($med['name']); ?></h4>
+                    <h4 style="color: var(--text-primary); margin-bottom: 0.25rem; font-size: 1.05rem;"><?php echo htmlspecialchars($med['name']); ?></h4>
                     <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem; min-height: 32px; line-height: 1.3;"><?php echo htmlspecialchars($med['description']); ?></p>
                     <p style="font-size: 1.3rem; font-weight: bold; color: var(--secondary-color); margin-bottom: 0.5rem;">₹<?php echo $med['price']; ?></p>
                     
@@ -168,14 +188,23 @@ $my_orders = $conn->query("
                         <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 8px; padding: 0.4rem 0.6rem;">
                             <div style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 0.25rem;">Payment Method:</div>
                             <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
-                                <label style="font-size: 0.8rem; color: #fff; cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
+                                <label style="font-size: 0.8rem; color: var(--text-primary); cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
                                     <input type="radio" name="payment_method" value="COD" checked> Cash on Delivery
                                 </label>
-                                <label style="font-size: 0.8rem; color: #fff; cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
+                                <label style="font-size: 0.8rem; color: var(--text-primary); cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
                                     <input type="radio" name="payment_method" value="Online Payment"> Online Payment
                                 </label>
                             </div>
                         </div>
+
+                        <?php if ($avail_ref_balance > 0): ?>
+                        <div style="background: rgba(80, 227, 194, 0.08); border: 1px solid rgba(80, 227, 194, 0.3); border-radius: 8px; padding: 0.4rem 0.6rem;">
+                            <label style="font-size: 0.8rem; color: var(--secondary-color); cursor: pointer; display: flex; align-items: center; gap: 0.3rem; font-weight: 600;">
+                                <input type="checkbox" name="use_referral_balance" value="1"> 
+                                <i class="fas fa-wallet"></i> Use Referral Balance (₹<?php echo number_format($avail_ref_balance, 2); ?>)
+                            </label>
+                        </div>
+                        <?php endif; ?>
 
                         <button type="submit" name="order" class="btn btn-primary" style="width: 100%; padding: 0.5rem 1rem;">Order Now</button>
                     </form>

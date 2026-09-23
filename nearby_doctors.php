@@ -39,6 +39,8 @@ $nearby_doctors = $conn->query($query);
             <li><a href="nearby_doctors.php" class="active"><i class="fas fa-map-marker-alt"></i> Find Doctors (10km)</a></li>
             <li><a href="privacy_consult.php"><i class="fas fa-user-secret"></i> Privacy Consult</a></li>
             <li><a href="book_tests.php"><i class="fas fa-vial"></i> Book Labs (RMP)</a></li>
+            <li><a href="payment_history.php"><i class="fas fa-receipt"></i> Payment History</a></li>
+            <li><a href="refer_earn.php"><i class="fas fa-gift"></i> Refer & Earn</a></li>
             <li><a href="chatbot.php"><i class="fas fa-robot"></i> AI Chatbot</a></li>
         </ul>
     </aside>

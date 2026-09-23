@@ -31,6 +31,9 @@ $users = $conn->query("SELECT * FROM users ORDER BY created_at DESC");
             <li><a href="admin_bookings.php"><i class="fas fa-calendar-check"></i> All Bookings</a></li>
             <li><a href="admin_orders.php"><i class="fas fa-box"></i> Medicine Orders</a></li>
             <li><a href="admin_medicines.php"><i class="fas fa-pills"></i> Manage Medicines</a></li>
+            <li><a href="admin_referrals.php"><i class="fas fa-gift"></i> Referral Management</a></li>
+            <li><a href="admin_referral_settings.php"><i class="fas fa-sliders-h"></i> Referral Settings</a></li>
+            <li><a href="payment_history.php"><i class="fas fa-receipt"></i> Payment History</a></li>
             <li><a href="admin_feedback.php"><i class="fas fa-comments"></i> Feedback & Complaints</a></li>
         </ul>
     </aside>

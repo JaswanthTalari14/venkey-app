@@ -65,6 +65,11 @@ if (!empty($merchantId) && !empty($saltKey) && !empty($merchantTransactionId)) {
 
 if ($is_paid) {
     $conn->query("UPDATE orders SET payment_status = 'Paid', payment_method = 'Online Payment (PhonePe)' WHERE id = $order_id");
+    require_once 'includes/referral_functions.php';
+    $o_res = $conn->query("SELECT total_amount FROM orders WHERE id = $order_id");
+    if ($o_res && $o_row = $o_res->fetch_assoc()) {
+        process_referral_order_qualification($order_id, $patient_id, $o_row['total_amount'], true);
+    }
     header("Location: medicines.php?success=1");
     exit;
 } else {

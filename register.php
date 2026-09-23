@@ -1,7 +1,18 @@
 <?php
 require_once 'config.php';
+require_once 'includes/referral_functions.php';
+
 $error = '';
 $success = '';
+
+// Store pending referral code in session if present in URL
+if (isset($_GET['ref']) && !empty($_GET['ref'])) {
+    $_SESSION['pending_ref'] = trim($_GET['ref']);
+}
+
+$ref_code = isset($_POST['referral_code']) 
+    ? trim($_POST['referral_code']) 
+    : (isset($_SESSION['pending_ref']) ? $_SESSION['pending_ref'] : '');
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $name = $conn->real_escape_string($_POST['name']);
@@ -23,6 +34,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                   VALUES ('$name', '$email', '$phone', '$password', '$role', $lat, $lon, $spec)";
         
         if ($conn->query($query)) {
+            $new_user_id = $conn->insert_id;
+
+            // Process Referral linkage if patient and referral code exists
+            if ($role === 'patient' && !empty($ref_code)) {
+                register_referral_claim($new_user_id, $ref_code);
+            }
+            unset($_SESSION['pending_ref']);
+
             $success = "Registration successful! You can now login.";
         } else {
             $error = "Registration failed. Try again.";
@@ -61,6 +80,10 @@ include 'includes/header.php';
                 <option value="doctor">Doctor</option>
                 <option value="rmp">RMP</option>
             </select>
+        </div>
+        <div class="form-group">
+            <label>Referral Code (Optional)</label>
+            <input type="text" name="referral_code" class="form-control" placeholder="e.g. MED123456" value="<?php echo htmlspecialchars($ref_code); ?>">
         </div>
         <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">Register <i class="fas fa-user-plus"></i></button>
     </form>
