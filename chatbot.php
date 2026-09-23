@@ -51,6 +51,7 @@ include 'includes/header.php';
 
             <!-- Quick Suggestions Bar -->
             <div style="padding: 0.5rem 1rem; background: rgba(0,0,0,0.2); display: flex; gap: 0.5rem; overflow-x: auto; border-top: 1px solid rgba(255,255,255,0.05);">
+                <button type="button" onclick="sendQuickMsg('Hii')" style="background: rgba(74, 144, 226, 0.2); border: 1px solid rgba(74, 144, 226, 0.4); color: #fff; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer; white-space: nowrap;">👋 Hii</button>
                 <button type="button" onclick="sendQuickMsg('I have a fever')" style="background: rgba(74, 144, 226, 0.15); border: 1px solid rgba(74, 144, 226, 0.3); color: #fff; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer; white-space: nowrap;">🤒 Fever</button>
                 <button type="button" onclick="sendQuickMsg('I have a headache')" style="background: rgba(74, 144, 226, 0.15); border: 1px solid rgba(74, 144, 226, 0.3); color: #fff; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer; white-space: nowrap;">🤕 Headache</button>
                 <button type="button" onclick="sendQuickMsg('How to order medicines?')" style="background: rgba(80, 227, 194, 0.15); border: 1px solid rgba(80, 227, 194, 0.3); color: #fff; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer; white-space: nowrap;">💊 Order Medicines</button>
