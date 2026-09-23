@@ -77,6 +77,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
             $item_stmt = $conn->prepare("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES (?, ?, ?, ?)");
             $item_stmt->bind_param("iiid", $order_id, $medicine_id, $qty, $med['price']);
             $item_stmt->execute();
+
+            if (defined('PHONEPE_MERCHANT_ID') && !empty(PHONEPE_MERCHANT_ID)) {
+                header("Location: phonepe_pay.php?order_id=" . $order_id);
+                exit;
+            }
             
             $online_order_data = [
                 'order_id' => $order_id,
