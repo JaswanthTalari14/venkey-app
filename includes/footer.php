@@ -146,8 +146,30 @@
                         if (toggle) toggle.classList.remove('active');
                     }
                 }
-            });
-        });
+        // Instant Link Hover & Touch Prefetching for Sub-50ms Navigation
+        (function() {
+            const prefetched = new Set();
+            function prefetchUrl(url) {
+                if (!url || prefetched.has(url) || url.startsWith('#') || url.startsWith('javascript:') || url.includes('logout.php')) return;
+                prefetched.add(url);
+                const link = document.createElement('link');
+                link.rel = 'prefetch';
+                link.href = url;
+                document.head.appendChild(link);
+            }
+            document.addEventListener('mouseover', function(e) {
+                const anchor = e.target.closest('a');
+                if (anchor && anchor.href && anchor.origin === window.location.origin) {
+                    prefetchUrl(anchor.href);
+                }
+            }, { passive: true });
+            document.addEventListener('touchstart', function(e) {
+                const anchor = e.target.closest('a');
+                if (anchor && anchor.href && anchor.origin === window.location.origin) {
+                    prefetchUrl(anchor.href);
+                }
+            }, { passive: true });
+        })();
     });
     </script>
 </body>

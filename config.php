@@ -15,6 +15,7 @@ if (session_status() === PHP_SESSION_NONE) {
     }
     session_start();
 }
+@ini_set('zlib.output_compression', 'On');
 ob_start();
 
 $host   = getenv('DB_HOST') ?: "localhost";
