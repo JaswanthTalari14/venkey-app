@@ -146,6 +146,9 @@
                         if (toggle) toggle.classList.remove('active');
                     }
                 }
+            });
+        });
+
         // Instant Link Hover & Touch Prefetching for Sub-50ms Navigation
         (function() {
             const prefetched = new Set();
