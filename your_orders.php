@@ -49,6 +49,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
 include 'includes/header.php';
 
+// Server-side Search & Filter Support
+$search_param = isset($_GET['search']) ? trim($_GET['search']) : '';
+$status_param = isset($_GET['status']) ? trim($_GET['status']) : 'all';
+$payment_param = isset($_GET['payment']) ? trim($_GET['payment']) : 'all';
+
 // Fetch all medicine orders belonging strictly to the currently authenticated patient
 $orders_query = $conn->query("
     SELECT o.id as order_id, o.total_amount, o.status as order_status, o.payment_method, o.payment_status, 
@@ -144,6 +149,38 @@ if ($orders_query) {
     background: #ff4757;
     color: #ffffff;
 }
+.search-filter-box {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 1.25rem;
+    margin-bottom: 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+}
+.search-input-wrapper {
+    position: relative;
+    flex: 2;
+    min-width: 250px;
+}
+.search-input-wrapper i {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+.search-input-wrapper input {
+    width: 100%;
+    padding-left: 2.5rem !important;
+}
+.filter-select {
+    flex: 1;
+    min-width: 150px;
+}
 </style>
 
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
@@ -171,7 +208,7 @@ if ($orders_query) {
     </aside>
     
     <main class="dashboard-content">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;">
             <div>
                 <h2>Your Medicine Orders</h2>
                 <p style="color: var(--text-secondary); margin-top: 0.3rem;">Track and view complete history of all your medicine delivery orders.</p>
@@ -193,14 +230,68 @@ if ($orders_query) {
             </p>
         <?php endif; ?>
 
+        <!-- SEARCH AND FILTER TOOLBAR -->
         <?php if (!empty($orders_by_id)): ?>
-            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+            <div class="search-filter-box glass-panel">
+                <div class="search-input-wrapper">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="orderSearchInput" class="form-control" placeholder="Search by Order ID (#ORD-0001), Medicine Name, Address..." value="<?php echo htmlspecialchars($search_param); ?>" onkeyup="filterOrders()" onchange="filterOrders()">
+                </div>
+
+                <div class="filter-select">
+                    <select id="orderStatusFilter" class="form-control" onchange="filterOrders()">
+                        <option value="all" <?php echo $status_param === 'all' ? 'selected' : ''; ?>>All Statuses</option>
+                        <option value="pending" <?php echo $status_param === 'pending' ? 'selected' : ''; ?>>Pending</option>
+                        <option value="shipped" <?php echo $status_param === 'shipped' ? 'selected' : ''; ?>>Shipped</option>
+                        <option value="delivered" <?php echo $status_param === 'delivered' ? 'selected' : ''; ?>>Delivered</option>
+                        <option value="cancelled" <?php echo $status_param === 'cancelled' ? 'selected' : ''; ?>>Cancelled</option>
+                    </select>
+                </div>
+
+                <div class="filter-select">
+                    <select id="paymentFilter" class="form-control" onchange="filterOrders()">
+                        <option value="all" <?php echo $payment_param === 'all' ? 'selected' : ''; ?>>All Payments</option>
+                        <option value="paid" <?php echo $payment_param === 'paid' ? 'selected' : ''; ?>>Paid (Online / Wallet)</option>
+                        <option value="cod" <?php echo $payment_param === 'cod' ? 'selected' : ''; ?>>Cash on Delivery</option>
+                        <option value="pending_pay" <?php echo $payment_param === 'pending_pay' ? 'selected' : ''; ?>>Pending Payment</option>
+                        <option value="failed" <?php echo $payment_param === 'failed' ? 'selected' : ''; ?>>Failed Payment</option>
+                    </select>
+                </div>
+
+                <div class="filter-select">
+                    <select id="dateFilter" class="form-control" onchange="filterOrders()">
+                        <option value="all">All Time</option>
+                        <option value="30days">Last 30 Days</option>
+                        <option value="6months">Last 6 Months</option>
+                        <option value="year">Last 1 Year</option>
+                    </select>
+                </div>
+
+                <button type="button" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.85rem;" onclick="resetOrderFilters()">
+                    <i class="fas fa-undo"></i> Reset Filters
+                </button>
+            </div>
+
+            <!-- Orders Counter Badge -->
+            <div style="margin-bottom: 1rem; font-size: 0.88rem; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center;">
+                <span>Showing <strong id="visibleOrderCount" style="color: var(--text-primary);"><?php echo count($orders_by_id); ?></strong> of <strong style="color: var(--primary-color);"><?php echo count($orders_by_id); ?></strong> medicine orders</span>
+            </div>
+
+            <!-- Order Cards List -->
+            <div id="ordersCardsList" style="display: flex; flex-direction: column; gap: 1.5rem;">
                 <?php foreach ($orders_by_id as $order): ?>
                     <?php
                         $ord_id = $order['order_id'];
                         $formatted_id = "#ORD-" . str_pad($ord_id, 4, '0', STR_PAD_LEFT);
                         $order_date = date('M d, Y', strtotime($order['created_at']));
                         $order_time = date('h:i A', strtotime($order['created_at']));
+                        
+                        // Combine medicine names for search indexing
+                        $med_names = [];
+                        foreach ($order['items'] as $it) {
+                            $med_names[] = strtolower($it['medicine_name']);
+                        }
+                        $search_index = strtolower($formatted_id . ' ' . implode(' ', $med_names) . ' ' . $order['address'] . ' ' . $order['payment_method'] . ' ' . $order['payment_status'] . ' ' . $order['order_status']);
                         
                         // Status Colors
                         $status_color = 'var(--text-primary)';
@@ -217,7 +308,15 @@ if ($orders_query) {
                         elseif ($pay_status === 'Cash on Delivery') $pay_color = '#3498db';
                     ?>
 
-                    <div class="glass-panel" style="padding: 1.5rem; transition: var(--transition);">
+                    <div class="glass-panel order-card-wrapper" 
+                         data-order-id="<?php echo $ord_id; ?>"
+                         data-search="<?php echo htmlspecialchars($search_index); ?>"
+                         data-status="<?php echo strtolower($order['order_status']); ?>"
+                         data-payment-method="<?php echo strtolower($order['payment_method']); ?>"
+                         data-payment-status="<?php echo strtolower($pay_status); ?>"
+                         data-timestamp="<?php echo strtotime($order['created_at']); ?>"
+                         style="padding: 1.5rem; transition: var(--transition);">
+                         
                         <!-- Order Card Header -->
                         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--glass-border); padding-bottom: 1rem; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.8rem;">
                             <div>
@@ -307,6 +406,17 @@ if ($orders_query) {
                     </div>
                 <?php endforeach; ?>
             </div>
+
+            <!-- Empty Search Results Message -->
+            <div id="noSearchMatchNotice" class="glass-panel" style="display: none; text-align: center; padding: 3rem 2rem; border-radius: 20px; margin-top: 1rem;">
+                <i class="fas fa-search" style="font-size: 2.2rem; color: var(--text-secondary); margin-bottom: 1rem;"></i>
+                <h4 style="color: var(--text-primary); margin-bottom: 0.5rem; font-size: 1.2rem;">No orders match your search and filter criteria.</h4>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1.2rem;">Try changing your keywords or resetting status/payment filters.</p>
+                <button type="button" class="btn btn-outline" onclick="resetOrderFilters()">
+                    <i class="fas fa-undo"></i> Reset Filters
+                </button>
+            </div>
+
         <?php else: ?>
             <!-- Empty State -->
             <div class="glass-panel" style="text-align: center; padding: 4rem 2rem; border-radius: 20px;">
@@ -378,6 +488,76 @@ if ($orders_query) {
 <script>
 var ordersData = <?php echo json_encode($orders_by_id); ?>;
 var activeOrderId = null;
+
+// REAL-TIME INSTANT CLIENT-SIDE SEARCH AND FILTER LOGIC
+function filterOrders() {
+    var searchKey = document.getElementById('orderSearchInput').value.toLowerCase().trim();
+    var statusFilter = document.getElementById('orderStatusFilter').value;
+    var paymentFilter = document.getElementById('paymentFilter').value;
+    var dateFilter = document.getElementById('dateFilter').value;
+    
+    var cards = document.querySelectorAll('.order-card-wrapper');
+    var visibleCount = 0;
+    var nowSec = Math.floor(Date.now() / 1000);
+    
+    cards.forEach(function(card) {
+        var searchData = card.getAttribute('data-search') || '';
+        var statusData = card.getAttribute('data-status') || '';
+        var payMethodData = card.getAttribute('data-payment-method') || '';
+        var payStatusData = card.getAttribute('data-payment-status') || '';
+        var timestamp = parseInt(card.getAttribute('data-timestamp')) || 0;
+        
+        var matchesSearch = !searchKey || searchData.indexOf(searchKey) !== -1;
+        var matchesStatus = (statusFilter === 'all') || (statusData === statusFilter);
+        
+        var matchesPayment = true;
+        if (paymentFilter === 'paid') {
+            matchesPayment = (payStatusData === 'paid' || payStatusData === 'paid via wallet');
+        } else if (paymentFilter === 'cod') {
+            matchesPayment = (payMethodData === 'cod' || payStatusData === 'cash on delivery');
+        } else if (paymentFilter === 'pending_pay') {
+            matchesPayment = (payStatusData === 'pending');
+        } else if (paymentFilter === 'failed') {
+            matchesPayment = (payStatusData === 'failed');
+        }
+
+        var matchesDate = true;
+        if (dateFilter === '30days') {
+            matchesDate = (nowSec - timestamp) <= (30 * 86400);
+        } else if (dateFilter === '6months') {
+            matchesDate = (nowSec - timestamp) <= (180 * 86400);
+        } else if (dateFilter === 'year') {
+            matchesDate = (nowSec - timestamp) <= (365 * 86400);
+        }
+
+        if (matchesSearch && matchesStatus && matchesPayment && matchesDate) {
+            card.style.display = 'block';
+            visibleCount++;
+        } else {
+            card.style.display = 'none';
+        }
+    });
+
+    var countBadge = document.getElementById('visibleOrderCount');
+    if (countBadge) countBadge.innerText = visibleCount;
+    
+    var notice = document.getElementById('noSearchMatchNotice');
+    if (notice) {
+        notice.style.display = (visibleCount === 0 && cards.length > 0) ? 'block' : 'none';
+    }
+}
+
+function resetOrderFilters() {
+    document.getElementById('orderSearchInput').value = '';
+    document.getElementById('orderStatusFilter').value = 'all';
+    document.getElementById('paymentFilter').value = 'all';
+    document.getElementById('dateFilter').value = 'all';
+    filterOrders();
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+    filterOrders();
+});
 
 function openOrderDetailsModal(orderId) {
     var order = ordersData[orderId];
