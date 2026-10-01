@@ -1,0 +1,438 @@
+<?php
+require_once 'config.php';
+
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'patient') {
+    header("Location: login.php");
+    exit;
+}
+
+$patient_id = (int)$_SESSION['user_id'];
+
+include 'includes/header.php';
+
+// Fetch all medicine orders belonging strictly to the currently authenticated patient
+$orders_query = $conn->query("
+    SELECT o.id as order_id, o.total_amount, o.status as order_status, o.payment_method, o.payment_status, 
+           o.gateway_payment_id, o.gateway_order_id, o.address, o.created_at,
+           oi.id as item_id, oi.medicine_id, oi.quantity, oi.price as unit_price,
+           m.name as medicine_name, m.image as medicine_image, m.description as medicine_desc
+    FROM orders o
+    JOIN order_items oi ON o.id = oi.order_id
+    JOIN medicines m ON oi.medicine_id = m.id
+    WHERE o.patient_id = $patient_id
+    ORDER BY o.created_at DESC, o.id DESC
+");
+
+// Group multiple medicines by order_id
+$orders_by_id = [];
+if ($orders_query) {
+    while ($row = $orders_query->fetch_assoc()) {
+        $oid = $row['order_id'];
+        if (!isset($orders_by_id[$oid])) {
+            $orders_by_id[$oid] = [
+                'order_id' => $row['order_id'],
+                'total_amount' => (float)$row['total_amount'],
+                'order_status' => $row['order_status'],
+                'payment_method' => $row['payment_method'] ?? 'COD',
+                'payment_status' => $row['payment_status'] ?? 'Cash on Delivery',
+                'gateway_payment_id' => $row['gateway_payment_id'],
+                'gateway_order_id' => $row['gateway_order_id'],
+                'address' => $row['address'],
+                'created_at' => $row['created_at'],
+                'items' => []
+            ];
+        }
+        
+        $img_src = 'images/medicines/default.png';
+        if (!empty($row['medicine_image']) && file_exists($row['medicine_image'])) {
+            $img_src = $row['medicine_image'];
+        } else {
+            $name_lower = strtolower($row['medicine_name']);
+            if (strpos($name_lower, 'paracetamol') !== false) $img_src = 'images/medicines/paracetamol.png';
+            elseif (strpos($name_lower, 'amoxicillin') !== false) $img_src = 'images/medicines/amoxicillin.png';
+            elseif (strpos($name_lower, 'cetirizine') !== false) $img_src = 'images/medicines/cetirizine.png';
+            elseif (strpos($name_lower, 'vitamin') !== false) $img_src = 'images/medicines/vitaminc.png';
+        }
+        
+        $orders_by_id[$oid]['items'][] = [
+            'item_id' => $row['item_id'],
+            'medicine_id' => $row['medicine_id'],
+            'medicine_name' => $row['medicine_name'],
+            'medicine_desc' => $row['medicine_desc'],
+            'medicine_image' => $img_src,
+            'quantity' => (int)$row['quantity'],
+            'unit_price' => (float)$row['unit_price'],
+            'item_total' => (float)$row['unit_price'] * (int)$row['quantity']
+        ];
+    }
+}
+?>
+
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
+<div class="dashboard-layout">
+    <aside class="sidebar glass-panel">
+        <button class="sidebar-toggle" aria-label="Toggle Patient Menu">
+            <span><i class="fas fa-bars" style="margin-right: 0.5rem;"></i> Patient Menu</span>
+            <i class="fas fa-chevron-down toggle-icon"></i>
+        </button>
+        <h3 class="sidebar-title" style="margin-bottom: 2rem;">Patient Menu</h3>
+        <ul class="sidebar-menu">
+            <li><a href="patient_dashboard.php"><i class="fas fa-home"></i> Overview</a></li>
+            <li><a href="book_consult.php"><i class="fas fa-calendar-check"></i> Consultations</a></li>
+            <li><a href="medicines.php"><i class="fas fa-pills"></i> Order Medicines</a></li>
+            <li><a href="your_orders.php" class="active"><i class="fas fa-boxes"></i> Your Orders</a></li>
+            <li><a href="nearby_doctors.php"><i class="fas fa-map-marker-alt"></i> Find Doctors (10km)</a></li>
+            <li><a href="privacy_consult.php"><i class="fas fa-user-secret"></i> Privacy Consult</a></li>
+            <li><a href="book_tests.php"><i class="fas fa-vial"></i> Book Labs (RMP)</a></li>
+            <li><a href="payment_history.php"><i class="fas fa-receipt"></i> Payment History</a></li>
+            <li><a href="refer_earn.php"><i class="fas fa-gift"></i> Refer & Earn</a></li>
+            <li><a href="my_wallet.php"><i class="fas fa-wallet"></i> My Wallet</a></li>
+            <li><a href="chatbot.php"><i class="fas fa-robot"></i> AI Chatbot</a></li>
+        </ul>
+    </aside>
+    
+    <main class="dashboard-content">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 2rem;">
+            <div>
+                <h2>Your Medicine Orders</h2>
+                <p style="color: var(--text-secondary); margin-top: 0.3rem;">Track and view complete history of all your medicine delivery orders.</p>
+            </div>
+            <a href="medicines.php" class="btn btn-primary" style="padding: 0.6rem 1.2rem;">
+                <i class="fas fa-plus"></i> Order New Medicines
+            </a>
+        </div>
+
+        <?php if (!empty($orders_by_id)): ?>
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                <?php foreach ($orders_by_id as $order): ?>
+                    <?php
+                        $ord_id = $order['order_id'];
+                        $formatted_id = "#ORD-" . str_pad($ord_id, 4, '0', STR_PAD_LEFT);
+                        $order_date = date('M d, Y', strtotime($order['created_at']));
+                        $order_time = date('h:i A', strtotime($order['created_at']));
+                        
+                        // Status Colors
+                        $status_color = 'var(--text-primary)';
+                        if ($order['order_status'] === 'pending') $status_color = 'var(--accent)';
+                        elseif ($order['order_status'] === 'shipped') $status_color = '#3498db';
+                        elseif ($order['order_status'] === 'delivered') $status_color = '#2ed573';
+                        elseif ($order['order_status'] === 'cancelled') $status_color = '#ff4757';
+                        
+                        // Payment Status Colors
+                        $pay_status = $order['payment_status'];
+                        $pay_color = '#f5a623';
+                        if (in_array($pay_status, ['Paid', 'Paid via Wallet'])) $pay_color = '#2ed573';
+                        elseif ($pay_status === 'Failed') $pay_color = '#ff4757';
+                        elseif ($pay_status === 'Cash on Delivery') $pay_color = '#3498db';
+                    ?>
+
+                    <div class="glass-panel" style="padding: 1.5rem; transition: var(--transition);">
+                        <!-- Order Card Header -->
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--glass-border); padding-bottom: 1rem; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.8rem;">
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                    <strong style="font-size: 1.1rem; color: var(--primary-color);"><?php echo $formatted_id; ?></strong>
+                                    <span style="color: <?php echo $status_color; ?>; font-weight: bold; text-transform: capitalize; background: rgba(255,255,255,0.06); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.8rem; border: 1px solid <?php echo $status_color; ?>;">
+                                        <i class="fas fa-circle" style="font-size: 0.5rem; vertical-align: middle; margin-right: 0.3rem;"></i><?php echo htmlspecialchars($order['order_status']); ?>
+                                    </span>
+                                </div>
+                                <div style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 0.3rem;">
+                                    <i class="fas fa-calendar-alt"></i> Placed on <?php echo $order_date; ?> at <?php echo $order_time; ?>
+                                </div>
+                            </div>
+                            
+                            <div style="text-align: right; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                                <div>
+                                    <div style="font-size: 0.78rem; color: var(--text-secondary);">Total Payable</div>
+                                    <div style="font-size: 1.3rem; font-weight: 800; color: var(--secondary-color);">₹<?php echo number_format($order['total_amount'], 2); ?></div>
+                                </div>
+                                <button type="button" class="btn btn-outline" style="padding: 0.4rem 0.9rem; font-size: 0.85rem;" onclick="openOrderDetailsModal(<?php echo $ord_id; ?>)">
+                                    <i class="fas fa-eye"></i> View Details
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Order Items List -->
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
+                            <?php foreach ($order['items'] as $item): ?>
+                                <div style="display: flex; align-items: center; gap: 1rem; background: rgba(0,0,0,0.2); padding: 0.75rem 1rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.03);">
+                                    <div style="width: 48px; height: 48px; border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.05); flex-shrink: 0;">
+                                        <img src="<?php echo htmlspecialchars($item['medicine_image']); ?>" alt="<?php echo htmlspecialchars($item['medicine_name']); ?>" loading="lazy" style="width: 100%; height: 100%; object-fit: cover;">
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <div style="font-weight: 600; color: var(--text-primary); font-size: 0.92rem;"><?php echo htmlspecialchars($item['medicine_name']); ?></div>
+                                        <div style="font-size: 0.8rem; color: var(--text-secondary);"><?php echo htmlspecialchars($item['medicine_desc']); ?></div>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <div style="font-size: 0.88rem; color: var(--text-primary); font-weight: 500;">Qty: <?php echo $item['quantity']; ?> × ₹<?php echo number_format($item['unit_price'], 2); ?></div>
+                                        <div style="font-size: 0.9rem; color: var(--secondary-color); font-weight: bold;">₹<?php echo number_format($item['item_total'], 2); ?></div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+
+                        <!-- Order Card Footer Info -->
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed var(--glass-border); padding-top: 0.8rem; font-size: 0.85rem; flex-wrap: wrap; gap: 0.8rem;">
+                            <div style="color: var(--text-secondary); max-width: 60%;">
+                                <i class="fas fa-map-marker-alt" style="color: var(--primary-color);"></i> <strong>Delivery Address:</strong> 
+                                <span style="color: var(--text-primary);"><?php echo htmlspecialchars($order['address']); ?></span>
+                            </div>
+
+                            <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                                <div>
+                                    <span style="color: var(--text-secondary);">Payment:</span> 
+                                    <strong style="color: var(--text-primary);"><?php echo htmlspecialchars($order['payment_method']); ?></strong> 
+                                    (<span style="color: <?php echo $pay_color; ?>; font-weight: bold;"><?php echo htmlspecialchars($pay_status); ?></span>)
+                                </div>
+
+                                <?php if ($pay_status === 'Pending' && $order['payment_method'] === 'Online Payment'): ?>
+                                    <button type="button" class="btn btn-primary" style="padding: 0.3rem 0.8rem; font-size: 0.8rem;" onclick="retryPayment(<?php echo $ord_id; ?>, <?php echo $order['total_amount']; ?>, '<?php echo htmlspecialchars(addslashes($order['items'][0]['medicine_name'] ?? 'Medicine Order')); ?>')">
+                                        <i class="fas fa-redo"></i> Pay Again
+                                    </button>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php else: ?>
+            <!-- Empty State -->
+            <div class="glass-panel" style="text-align: center; padding: 4rem 2rem; border-radius: 20px;">
+                <div style="width: 80px; height: 80px; background: rgba(74, 144, 226, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem auto;">
+                    <i class="fas fa-box-open" style="font-size: 2.5rem; color: var(--primary-color);"></i>
+                </div>
+                <h3 style="color: var(--text-primary); margin-bottom: 0.5rem; font-size: 1.4rem;">No medicine orders yet.</h3>
+                <p style="color: var(--text-secondary); font-size: 0.95rem; max-width: 420px; margin: 0 auto 1.8rem auto;">You haven't placed any medicine delivery orders so far. Order prescribed medicines delivered directly to your doorstep.</p>
+                <a href="medicines.php" class="btn btn-primary" style="padding: 0.75rem 1.8rem; font-size: 1rem;">
+                    <i class="fas fa-pills"></i> Order Medicines
+                </a>
+            </div>
+        <?php endif; ?>
+    </main>
+</div>
+
+<!-- ========================================================= -->
+<!-- ORDER DETAILS MODAL -->
+<!-- ========================================================= -->
+<div id="orderDetailsModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 99999; align-items: center; justify-content: center; padding: 1rem; overflow-y: auto;">
+    <div class="glass-panel" style="background: var(--darker-bg); border: 1px solid var(--glass-border); width: 100%; max-width: 580px; padding: 1.8rem; border-radius: 20px; box-shadow: 0 25px 60px rgba(0,0,0,0.7); position: relative; max-height: 90vh; overflow-y: auto;">
+        
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.8rem;">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                <i class="fas fa-receipt" style="color: var(--primary-color); font-size: 1.4rem;"></i>
+                <h3 style="color: var(--text-primary); margin: 0; font-size: 1.25rem;" id="modalOrderTitle">Order Details</h3>
+            </div>
+            <button type="button" onclick="closeOrderDetailsModal()" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.3rem; cursor: pointer;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <div id="orderDetailsContent">
+            <!-- Dynamic Content loaded via JS -->
+        </div>
+    </div>
+</div>
+
+<!-- Payment Modal Dialog for Online Retry Payment -->
+<div id="paymentGatewayModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 99999; align-items: center; justify-content: center; padding: 1rem;">
+    <div class="glass-panel" style="background: #1a1f2c; border: 1px solid var(--glass-border); width: 100%; max-width: 440px; padding: 2rem; border-radius: 16px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); text-align: center;">
+        <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 1rem;">
+            <i class="fas fa-shield-alt" style="color: var(--secondary-color); font-size: 1.8rem;"></i>
+            <h3 style="color: #fff; margin: 0;">Online Payment Gateway</h3>
+        </div>
+        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;" id="modalMedName">Medicine Payment</p>
+        <div style="font-size: 2rem; font-weight: bold; color: var(--secondary-color); margin-bottom: 1.5rem;" id="modalAmount">₹0.00</div>
+        
+        <div style="background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 10px; padding: 1rem; margin-bottom: 1.5rem; text-align: left;">
+            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem; font-weight: bold;">Select Payment Type:</div>
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #fff; margin-bottom: 0.5rem; cursor: pointer;">
+                <input type="radio" name="pay_type" value="upi" checked> <i class="fas fa-mobile-alt" style="color: #2ed573;"></i> UPI / GPay / PhonePe / Paytm
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #fff; margin-bottom: 0.5rem; cursor: pointer;">
+                <input type="radio" name="pay_type" value="card"> <i class="fas fa-credit-card" style="color: #3498db;"></i> Credit / Debit Card
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #fff; cursor: pointer;">
+                <input type="radio" name="pay_type" value="netbanking"> <i class="fas fa-university" style="color: #f5a623;"></i> Net Banking
+            </label>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem;">
+            <button id="btnCancelPay" class="btn" style="flex: 1; background: rgba(255,255,255,0.1); color: #fff;">Cancel</button>
+            <button id="btnConfirmPay" class="btn btn-primary" style="flex: 1.5;">Complete Payment</button>
+        </div>
+    </div>
+</div>
+
+<script>
+var ordersData = <?php echo json_encode($orders_by_id); ?>;
+var activeOrderId = null;
+
+function openOrderDetailsModal(orderId) {
+    var order = ordersData[orderId];
+    if (!order) return;
+    
+    document.getElementById('modalOrderTitle').innerText = "Order #ORD-" + String(orderId).padStart(4, '0');
+    
+    var itemsHtml = '';
+    order.items.forEach(function(item) {
+        itemsHtml += `
+            <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.6rem; border-bottom: 1px solid rgba(255,255,255,0.04); padding-bottom: 0.6rem;">
+                <img src="${item.medicine_image}" alt="${escapeHtml(item.medicine_name)}" style="width: 42px; height: 42px; object-fit: cover; border-radius: 6px; background: rgba(0,0,0,0.3);">
+                <div style="flex: 1;">
+                    <div style="font-weight: bold; color: var(--text-primary); font-size: 0.88rem;">${escapeHtml(item.medicine_name)}</div>
+                    <div style="font-size: 0.78rem; color: var(--text-secondary);">Qty: ${item.quantity} × ₹${item.unit_price.toFixed(2)}</div>
+                </div>
+                <div style="font-weight: bold; color: var(--secondary-color); font-size: 0.9rem;">₹${item.item_total.toFixed(2)}</div>
+            </div>
+        `;
+    });
+    
+    var txHtml = order.gateway_payment_id ? `
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.4rem; margin-bottom: 0.4rem; font-size: 0.85rem;">
+            <span style="color: var(--text-secondary);">Transaction ID:</span>
+            <strong style="color: var(--primary-color);">${escapeHtml(order.gateway_payment_id)}</strong>
+        </div>
+    ` : '';
+
+    var html = `
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 12px; padding: 1rem; margin-bottom: 1.2rem;">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.4rem; margin-bottom: 0.4rem; font-size: 0.85rem;">
+                <span style="color: var(--text-secondary);">Order Date:</span>
+                <strong style="color: var(--text-primary);">${new Date(order.created_at).toLocaleString()}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.4rem; margin-bottom: 0.4rem; font-size: 0.85rem;">
+                <span style="color: var(--text-secondary);">Order Status:</span>
+                <strong style="color: var(--primary-color); text-transform: capitalize;">${escapeHtml(order.order_status)}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.4rem; margin-bottom: 0.4rem; font-size: 0.85rem;">
+                <span style="color: var(--text-secondary);">Payment Method:</span>
+                <strong style="color: var(--text-primary);">${escapeHtml(order.payment_method)}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.4rem; margin-bottom: 0.4rem; font-size: 0.85rem;">
+                <span style="color: var(--text-secondary);">Payment Status:</span>
+                <strong style="color: #2ed573;">${escapeHtml(order.payment_status)}</strong>
+            </div>
+            ${txHtml}
+        </div>
+
+        <div style="margin-bottom: 1.2rem;">
+            <div style="font-size: 0.85rem; font-weight: bold; color: var(--text-secondary); margin-bottom: 0.6rem;">Ordered Items:</div>
+            ${itemsHtml}
+        </div>
+
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 12px; padding: 1rem; margin-bottom: 1rem;">
+            <div style="font-size: 0.85rem; font-weight: bold; color: var(--text-secondary); margin-bottom: 0.4rem;">Delivery Address:</div>
+            <div style="font-size: 0.85rem; color: var(--text-primary); line-height: 1.4;">
+                <i class="fas fa-map-marker-alt" style="color: var(--primary-color);"></i> ${escapeHtml(order.address)}
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--glass-border); padding-top: 0.8rem;">
+            <span style="font-size: 1rem; font-weight: bold; color: var(--text-primary);">Final Payable Amount:</span>
+            <span style="font-size: 1.4rem; font-weight: 800; color: var(--secondary-color);">₹${order.total_amount.toFixed(2)}</span>
+        </div>
+    `;
+    
+    document.getElementById('orderDetailsContent').innerHTML = html;
+    document.getElementById('orderDetailsModal').style.display = 'flex';
+}
+
+function closeOrderDetailsModal() {
+    document.getElementById('orderDetailsModal').style.display = 'none';
+}
+
+function retryPayment(orderId, totalAmount, medicineName) {
+    var amountPaise = Math.round(totalAmount * 100);
+    triggerRazorpayCheckout(orderId, amountPaise, medicineName);
+}
+
+function triggerRazorpayCheckout(orderId, amountPaise, medicineName) {
+    activeOrderId = orderId;
+    var razorpayKey = "<?php echo RAZORPAY_KEY_ID; ?>";
+    
+    if (!razorpayKey || razorpayKey.indexOf('samplekey') !== -1 || razorpayKey === 'rzp_test_samplekeyid') {
+        openDemoPaymentModal(orderId, (amountPaise / 100).toFixed(2), medicineName);
+        return;
+    }
+
+    try {
+        var options = {
+            "key": razorpayKey,
+            "amount": amountPaise,
+            "currency": "INR",
+            "name": "MedicalAk Medicine Delivery",
+            "description": "Payment for " + medicineName,
+            "handler": function (response){
+                submitPaymentVerification(orderId, response.razorpay_payment_id || ('pay_test_' + Date.now()), response.razorpay_order_id || '', response.razorpay_signature || '');
+            },
+            "modal": {
+                "ondismiss": function() {
+                    alert('Payment window closed. You can retry payment anytime.');
+                }
+            },
+            "theme": {
+                "color": "#4a90e2"
+            }
+        };
+        var rzp1 = new Razorpay(options);
+        rzp1.on('payment.failed', function (response){
+            openDemoPaymentModal(orderId, (amountPaise / 100).toFixed(2), medicineName);
+        });
+        rzp1.open();
+    } catch (e) {
+        openDemoPaymentModal(orderId, (amountPaise / 100).toFixed(2), medicineName);
+    }
+}
+
+function openDemoPaymentModal(orderId, amountDisplay, medicineName) {
+    activeOrderId = orderId;
+    document.getElementById('modalMedName').innerText = "Payment for " + medicineName;
+    document.getElementById('modalAmount').innerText = "₹" + amountDisplay;
+    document.getElementById('paymentGatewayModal').style.display = 'flex';
+}
+
+document.getElementById('btnCancelPay').addEventListener('click', function() {
+    document.getElementById('paymentGatewayModal').style.display = 'none';
+});
+
+document.getElementById('btnConfirmPay').addEventListener('click', function() {
+    if (!activeOrderId) return;
+    document.getElementById('paymentGatewayModal').style.display = 'none';
+    
+    var simPaymentId = 'pay_online_' + Date.now();
+    submitPaymentVerification(activeOrderId, simPaymentId, 'order_online_' + Date.now(), 'simulated_sig_' + Date.now());
+});
+
+function submitPaymentVerification(orderId, paymentId, razorpayOrderId, signature) {
+    fetch('verify_payment.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            order_id: orderId,
+            razorpay_payment_id: paymentId,
+            razorpay_order_id: razorpayOrderId,
+            razorpay_signature: signature
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            window.location.href = 'your_orders.php';
+        } else {
+            alert('Payment verification error: ' + data.message);
+            window.location.href = 'your_orders.php';
+        }
+    })
+    .catch(err => {
+        alert('Connection error during verification. Please refresh.');
+        window.location.href = 'your_orders.php';
+    });
+}
+
+function escapeHtml(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+</script>
+
+<?php include 'includes/footer.php'; ?>
