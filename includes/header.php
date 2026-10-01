@@ -71,9 +71,21 @@ if (session_status() === PHP_SESSION_NONE) {
             });
         }
 
+        function resetPWAInstallState() {
+            localStorage.removeItem('pwa_installed');
+            document.querySelectorAll('.pwaInstallBtn').forEach(function(btn) {
+                btn.innerHTML = '<i class="fas fa-download" style="margin-right: 0.5rem;"></i> Install App';
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+            });
+        }
+
         window.addEventListener('beforeinstallprompt', function(e) {
             e.preventDefault();
             deferredInstallPrompt = e;
+            if (!window.matchMedia('(display-mode: standalone)').matches && window.navigator.standalone !== true) {
+                resetPWAInstallState();
+            }
         });
 
         document.addEventListener('DOMContentLoaded', function() {
