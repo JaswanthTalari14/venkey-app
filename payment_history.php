@@ -146,6 +146,7 @@ include 'includes/header.php';
                 <li><a href="book_tests.php"><i class="fas fa-vial"></i> Book Labs (RMP)</a></li>
                 <li><a href="payment_history.php" class="active"><i class="fas fa-receipt"></i> Payment History</a></li>
                 <li><a href="chatbot.php"><i class="fas fa-robot"></i> AI Chatbot</a></li>
+                <li><a href="javascript:void(0);" class="pwaInstallBtn"><i class="fas fa-download"></i> Install App</a></li>
             <?php elseif ($role === 'doctor'): ?>
                 <li><a href="doctor_dashboard.php"><i class="fas fa-chart-line"></i> Dashboard</a></li>
                 <li><a href="doctor_appointments.php"><i class="fas fa-calendar-day"></i> Appointments</a></li>

@@ -21,6 +21,8 @@ if (session_status() === PHP_SESSION_NONE) {
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="images/icons/apple-touch-icon.png">
     <meta name="theme-color" content="#121212">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="MedicalAk">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="MedicalAk">
@@ -34,7 +36,7 @@ if (session_status() === PHP_SESSION_NONE) {
         // Register PWA Service Worker
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
-                navigator.serviceWorker.register('sw.js')
+                navigator.serviceWorker.register('sw.js', { scope: './' })
                     .then(function(reg) {
                         console.log('PWA ServiceWorker registered with scope:', reg.scope);
                     })
@@ -49,34 +51,53 @@ if (session_status() === PHP_SESSION_NONE) {
         window.addEventListener('beforeinstallprompt', function(e) {
             e.preventDefault();
             deferredInstallPrompt = e;
-            const installBtn = document.getElementById('pwaInstallBtn');
-            if (installBtn && !window.matchMedia('(display-mode: standalone)').matches) {
-                installBtn.style.display = 'inline-flex';
-            }
+            document.querySelectorAll('.pwaInstallBtn').forEach(function(btn) {
+                if (!window.matchMedia('(display-mode: standalone)').matches) {
+                    const li = btn.closest('li');
+                    if (li) li.style.display = 'block';
+                    btn.style.display = btn.tagName === 'BUTTON' ? 'inline-flex' : 'flex';
+                }
+            });
         });
 
         document.addEventListener('DOMContentLoaded', function() {
-            const installBtn = document.getElementById('pwaInstallBtn');
-            if (installBtn) {
-                installBtn.addEventListener('click', function() {
+            document.addEventListener('click', function(e) {
+                const installBtn = e.target.closest('.pwaInstallBtn');
+                if (installBtn) {
+                    e.preventDefault();
                     if (deferredInstallPrompt) {
                         deferredInstallPrompt.prompt();
                         deferredInstallPrompt.userChoice.then(function(choiceResult) {
                             if (choiceResult.outcome === 'accepted') {
-                                installBtn.style.display = 'none';
+                                document.querySelectorAll('.pwaInstallBtn').forEach(function(btn) {
+                                    const li = btn.closest('li');
+                                    if (li) li.style.display = 'none';
+                                    else btn.style.display = 'none';
+                                });
                             }
                             deferredInstallPrompt = null;
                         });
                     } else {
                         alert('To install MedicalAk:\n\n1. Tap your browser menu (3 dots or Share icon)\n2. Select "Add to Home screen" or "Install App".');
                     }
+                }
+            });
+
+            if (window.matchMedia('(display-mode: standalone)').matches) {
+                document.querySelectorAll('.pwaInstallBtn').forEach(function(btn) {
+                    const li = btn.closest('li');
+                    if (li) li.style.display = 'none';
+                    else btn.style.display = 'none';
                 });
             }
         });
 
         window.addEventListener('appinstalled', function() {
-            const installBtn = document.getElementById('pwaInstallBtn');
-            if (installBtn) installBtn.style.display = 'none';
+            document.querySelectorAll('.pwaInstallBtn').forEach(function(btn) {
+                const li = btn.closest('li');
+                if (li) li.style.display = 'none';
+                else btn.style.display = 'none';
+            });
         });
     </script>
 </head>
@@ -90,9 +111,6 @@ if (isset($_SESSION['user_id'])) {
     <header>
         <a href="index.php" class="logo">MedicalAk</a>
         <div class="header-actions">
-            <button id="pwaInstallBtn" class="theme-toggle" style="display: none; font-size: 0.82rem; padding: 0.45rem 0.8rem; font-weight: 600; border-color: rgba(80, 227, 194, 0.4); color: var(--secondary-color);" title="Install MedicalAk App">
-                <i class="fas fa-download" style="margin-right: 0.3rem;"></i> Install App
-            </button>
             <?php if (isset($_SESSION['user_id'])): ?>
                 <div class="notif-wrapper" style="position: relative; display: inline-block;">
                     <button id="notifBellBtn" class="theme-toggle" aria-label="Notifications" title="Notifications" style="position: relative; margin-right: 0.4rem;">

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'medicalak-pwa-v1';
+const CACHE_NAME = 'medicalak-pwa-v2';
 
 const STATIC_ASSETS = [
     './',
@@ -21,7 +21,9 @@ const STATIC_ASSETS = [
 self.addEventListener('install', (e) => {
     e.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(STATIC_ASSETS);
+            return cache.addAll(STATIC_ASSETS).catch((err) => {
+                console.warn('PWA Asset Caching warning:', err);
+            });
         }).then(() => self.skipWaiting())
     );
 });

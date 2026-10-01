@@ -51,6 +51,7 @@ $my_orders = $conn->query("
             <li><a href="refer_earn.php"><i class="fas fa-gift"></i> Refer & Earn</a></li>
             <li><a href="my_wallet.php"><i class="fas fa-wallet"></i> My Wallet</a></li>
             <li><a href="chatbot.php"><i class="fas fa-robot"></i> AI Chatbot</a></li>
+            <li><a href="javascript:void(0);" class="pwaInstallBtn"><i class="fas fa-download"></i> Install App</a></li>
         </ul>
     </aside>
     
