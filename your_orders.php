@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'includes/wallet_functions.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'patient') {
     header("Location: login.php");
@@ -7,6 +8,44 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'patient') {
 }
 
 $patient_id = (int)$_SESSION['user_id'];
+$success = '';
+$error = '';
+
+// Handle Cancel Order and Delete Order Requests
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    $action = $_POST['action'];
+    $order_id = isset($_POST['order_id']) ? (int)$_POST['order_id'] : 0;
+    
+    if ($order_id > 0) {
+        $chk_q = $conn->query("SELECT * FROM orders WHERE id = $order_id AND patient_id = $patient_id");
+        if ($chk_q && $chk_q->num_rows > 0) {
+            $ord_data = $chk_q->fetch_assoc();
+            
+            if ($action === 'cancel_order') {
+                if ($ord_data['status'] === 'cancelled') {
+                    $error = "Order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . " is already cancelled.";
+                } elseif ($ord_data['status'] === 'delivered') {
+                    $error = "Order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . " has already been delivered and cannot be cancelled.";
+                } else {
+                    $conn->query("UPDATE orders SET status = 'cancelled' WHERE id = $order_id AND patient_id = $patient_id");
+                    
+                    // Refund to wallet if paid via Wallet
+                    if ($ord_data['payment_method'] === 'Wallet' || $ord_data['payment_status'] === 'Paid via Wallet') {
+                        add_wallet_transaction($patient_id, 'refund', 'credit', $ord_data['total_amount'], "Refund for cancelled Order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT), $order_id);
+                    }
+                    
+                    $success = "Order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . " has been cancelled successfully.";
+                }
+            } elseif ($action === 'delete_order') {
+                $conn->query("DELETE FROM order_items WHERE order_id = $order_id");
+                $conn->query("DELETE FROM orders WHERE id = $order_id AND patient_id = $patient_id");
+                $success = "Order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . " record deleted successfully.";
+            }
+        } else {
+            $error = "Order not found or unauthorized access.";
+        }
+    }
+}
 
 include 'includes/header.php';
 
@@ -68,6 +107,45 @@ if ($orders_query) {
 }
 ?>
 
+<style>
+.btn-delete-card {
+    background: rgba(255, 71, 87, 0.1);
+    border: 1px solid rgba(255, 71, 87, 0.3);
+    color: #ff4757;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+.btn-delete-card:hover {
+    background: #ff4757;
+    color: #ffffff;
+    transform: scale(1.05);
+}
+.btn-cancel-order {
+    background: rgba(255, 71, 87, 0.1);
+    border: 1px solid rgba(255, 71, 87, 0.35);
+    color: #ff4757;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.2s ease;
+}
+.btn-cancel-order:hover {
+    background: #ff4757;
+    color: #ffffff;
+}
+</style>
+
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 
 <div class="dashboard-layout">
@@ -102,6 +180,18 @@ if ($orders_query) {
                 <i class="fas fa-plus"></i> Order New Medicines
             </a>
         </div>
+
+        <?php if($success): ?>
+            <p style="color: #2ed573; margin-bottom: 1.5rem; padding: 1rem; background: rgba(46, 213, 115, 0.1); border-radius: 10px; border-left: 4px solid #2ed573;">
+                <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success); ?>
+            </p>
+        <?php endif; ?>
+        
+        <?php if($error): ?>
+            <p style="color: #ff4757; margin-bottom: 1.5rem; padding: 1rem; background: rgba(255, 71, 87, 0.1); border-radius: 10px; border-left: 4px solid #ff4757;">
+                <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+            </p>
+        <?php endif; ?>
 
         <?php if (!empty($orders_by_id)): ?>
             <div style="display: flex; flex-direction: column; gap: 1.5rem;">
@@ -142,14 +232,24 @@ if ($orders_query) {
                                 </div>
                             </div>
                             
-                            <div style="text-align: right; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                            <div style="text-align: right; display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
                                 <div>
                                     <div style="font-size: 0.78rem; color: var(--text-secondary);">Total Payable</div>
                                     <div style="font-size: 1.3rem; font-weight: 800; color: var(--secondary-color);">₹<?php echo number_format($order['total_amount'], 2); ?></div>
                                 </div>
+
                                 <button type="button" class="btn btn-outline" style="padding: 0.4rem 0.9rem; font-size: 0.85rem;" onclick="openOrderDetailsModal(<?php echo $ord_id; ?>)">
                                     <i class="fas fa-eye"></i> View Details
                                 </button>
+
+                                <!-- Delete Order Card Icon Button -->
+                                <form method="POST" action="" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete <?php echo $formatted_id; ?> record?');">
+                                    <input type="hidden" name="action" value="delete_order">
+                                    <input type="hidden" name="order_id" value="<?php echo $ord_id; ?>">
+                                    <button type="submit" class="btn-delete-card" title="Delete Order Record">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
+                                </form>
                             </div>
                         </div>
 
@@ -179,14 +279,25 @@ if ($orders_query) {
                                 <span style="color: var(--text-primary);"><?php echo htmlspecialchars($order['address']); ?></span>
                             </div>
 
-                            <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                            <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
                                 <div>
                                     <span style="color: var(--text-secondary);">Payment:</span> 
                                     <strong style="color: var(--text-primary);"><?php echo htmlspecialchars($order['payment_method']); ?></strong> 
                                     (<span style="color: <?php echo $pay_color; ?>; font-weight: bold;"><?php echo htmlspecialchars($pay_status); ?></span>)
                                 </div>
 
-                                <?php if ($pay_status === 'Pending' && $order['payment_method'] === 'Online Payment'): ?>
+                                <!-- Cancel Order Button -->
+                                <?php if (!in_array($order['order_status'], ['cancelled', 'delivered'])): ?>
+                                    <form method="POST" action="" style="display: inline;" onsubmit="return confirm('Are you sure you want to cancel Order <?php echo $formatted_id; ?>?');">
+                                        <input type="hidden" name="action" value="cancel_order">
+                                        <input type="hidden" name="order_id" value="<?php echo $ord_id; ?>">
+                                        <button type="submit" class="btn-cancel-order">
+                                            <i class="fas fa-ban"></i> Cancel Order
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+
+                                <?php if ($pay_status === 'Pending' && $order['payment_method'] === 'Online Payment' && $order['order_status'] !== 'cancelled'): ?>
                                     <button type="button" class="btn btn-primary" style="padding: 0.3rem 0.8rem; font-size: 0.8rem;" onclick="retryPayment(<?php echo $ord_id; ?>, <?php echo $order['total_amount']; ?>, '<?php echo htmlspecialchars(addslashes($order['items'][0]['medicine_name'] ?? 'Medicine Order')); ?>')">
                                         <i class="fas fa-redo"></i> Pay Again
                                     </button>
