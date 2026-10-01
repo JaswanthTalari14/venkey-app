@@ -8,7 +8,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'patient') {
     exit;
 }
 
-$patient_id = $_SESSION['user_id'];
+$patient_id = (int)$_SESSION['user_id'];
 $avail_ref_balance = get_customer_referral_balance($patient_id);
 $avail_wallet_balance = get_wallet_balance($patient_id);
 
@@ -17,8 +17,34 @@ include 'includes/header.php';
 $success = '';
 $error = '';
 $online_order_data = null;
+$order_success_details = null;
 
-if (isset($_GET['success'])) {
+// Fetch Patient Saved Addresses
+$saved_addresses_res = $conn->query("SELECT * FROM patient_addresses WHERE patient_id = $patient_id ORDER BY is_default DESC, id DESC");
+$saved_addresses = [];
+if ($saved_addresses_res) {
+    while ($addr = $saved_addresses_res->fetch_assoc()) {
+        $saved_addresses[] = $addr;
+    }
+}
+
+// Fetch Patient profile for default fallback name/phone
+$user_info_res = $conn->query("SELECT name, phone FROM users WHERE id = $patient_id");
+$patient_info = $user_info_res ? $user_info_res->fetch_assoc() : ['name' => '', 'phone' => ''];
+
+if (isset($_GET['success']) && isset($_GET['order_id'])) {
+    $success_order_id = (int)$_GET['order_id'];
+    $succ_q = $conn->query("
+        SELECT o.id, o.total_amount, o.payment_method, o.payment_status, o.address, o.created_at, m.name as medicine_name, oi.quantity 
+        FROM orders o 
+        JOIN order_items oi ON o.id = oi.order_id 
+        JOIN medicines m ON oi.medicine_id = m.id 
+        WHERE o.id = $success_order_id AND o.patient_id = $patient_id
+    ");
+    if ($succ_q && $succ_q->num_rows > 0) {
+        $order_success_details = $succ_q->fetch_assoc();
+    }
+} elseif (isset($_GET['success'])) {
     $success = "Medicine ordered successfully! It will be delivered soon.";
 }
 
@@ -42,113 +68,149 @@ if (!isset($GLOBALS['medicines_initialized'])) {
     }
 }
 
+// Handle Order Creation Request
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
     $medicine_id = (int)$_POST['medicine_id'];
-    $qty = (int)$_POST['quantity'];
+    $qty = max(1, (int)$_POST['quantity']);
     $payment_method = isset($_POST['payment_method']) && $_POST['payment_method'] === 'Online Payment' ? 'Online Payment' : 'COD';
-    $patient_id = $_SESSION['user_id'];
     
-    // Get price & name
-    $med_res = $conn->query("SELECT price, name FROM medicines WHERE id=$medicine_id");
-    if ($med_res && $med_res->num_rows > 0) {
-        $med = $med_res->fetch_assoc();
-        $original_total = $med['price'] * $qty;
-        $total = $original_total;
-
-        // 1. Handle optional Referral Reward Balance Deduction
-        if (isset($_POST['use_referral_balance']) && $_POST['use_referral_balance'] == '1' && $avail_ref_balance > 0) {
-            $deduction = min($avail_ref_balance, $total);
-            $total = max(0.00, $total - $deduction);
-            
-            $tx_red = 'RED_' . time() . '_' . rand(1000, 9999);
-            $conn->query("INSERT INTO referral_rewards (customer_id, reward_type, amount, status, description, transaction_id) 
-                          VALUES ($patient_id, 'redemption', -$deduction, 'redeemed', 'Redeemed referral reward balance at order checkout', '$tx_red')");
-            $avail_ref_balance = get_customer_referral_balance($patient_id);
+    // Address Handling & Backend Validation
+    $delivery_address = '';
+    $address_id = isset($_POST['address_id']) ? (int)$_POST['address_id'] : 0;
+    
+    if ($address_id > 0) {
+        $addr_q = $conn->query("SELECT * FROM patient_addresses WHERE id = $address_id AND patient_id = $patient_id");
+        if ($addr_q && $addr_q->num_rows > 0) {
+            $a = $addr_q->fetch_assoc();
+            $delivery_address = $a['full_name'] . " (" . $a['phone'] . "), " . $a['address_line'] . ", " . $a['city'] . ", " . $a['state'] . " - " . $a['pincode'];
         }
-
-        // 2. Handle optional Wallet Balance Deduction
-        $wallet_used = 0.00;
-        if (isset($_POST['use_wallet_balance']) && $_POST['use_wallet_balance'] == '1' && $avail_wallet_balance > 0 && $total > 0) {
-            $wallet_used = min($avail_wallet_balance, $total);
-            $total = max(0.00, $total - $wallet_used);
-        }
+    }
+    
+    // Fallback: Check if new address details submitted directly in form
+    if (empty($delivery_address) && !empty($_POST['new_address_line'])) {
+        $full_name = trim($conn->real_escape_string($_POST['new_full_name'] ?? $patient_info['name']));
+        $phone = trim($conn->real_escape_string($_POST['new_phone'] ?? $patient_info['phone']));
+        $address_line = trim($conn->real_escape_string($_POST['new_address_line']));
+        $city = trim($conn->real_escape_string($_POST['new_city']));
+        $state = trim($conn->real_escape_string($_POST['new_state']));
+        $pincode = trim($conn->real_escape_string($_POST['new_pincode']));
         
-        if ($total == 0.00 && $wallet_used > 0) {
-            // FULL WALLET PAYMENT
-            $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, 'User Default Address', 'Wallet', 'Paid via Wallet')");
-            $stmt->bind_param("id", $patient_id, $original_total);
-            $stmt->execute();
-            $order_id = $stmt->insert_id;
-            
-            $item_stmt = $conn->prepare("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES (?, ?, ?, ?)");
-            $item_stmt->bind_param("iiid", $order_id, $medicine_id, $qty, $med['price']);
-            $item_stmt->execute();
+        if (!empty($full_name) && !empty($phone) && !empty($address_line) && !empty($city) && !empty($pincode)) {
+            $conn->query("UPDATE patient_addresses SET is_default = 0 WHERE patient_id = $patient_id");
+            $ins_stmt = $conn->prepare("INSERT INTO patient_addresses (patient_id, full_name, phone, address_line, city, state, pincode, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, 1)");
+            $ins_stmt->bind_param("issssss", $patient_id, $full_name, $phone, $address_line, $city, $state, $pincode);
+            $ins_stmt->execute();
+            $delivery_address = "$full_name ($phone), $address_line, $city, $state - $pincode";
+        }
+    }
 
-            // Deduct Wallet Balance
-            process_wallet_payment($patient_id, $order_id, $wallet_used);
-            $avail_wallet_balance = get_wallet_balance($patient_id);
+    // MANDATORY ADDRESS VALIDATION
+    if (empty($delivery_address)) {
+        $error = "Please add a delivery address to continue.";
+    } else {
+        // Fetch Medicine Details & Backend Pricing Validation
+        $med_res = $conn->query("SELECT price, name FROM medicines WHERE id=$medicine_id");
+        if ($med_res && $med_res->num_rows > 0) {
+            $med = $med_res->fetch_assoc();
+            $original_total = $med['price'] * $qty;
+            $total = $original_total;
 
-            // Evaluate Referral qualification on full wallet order placement
-            process_referral_order_qualification($order_id, $patient_id, $original_total, true);
-            
-            $success = "🎉 Order placed successfully using your Medicineak Wallet balance!";
-        } else if ($payment_method === 'COD') {
-            $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, 'User Default Address', 'COD', 'Cash on Delivery')");
-            $stmt->bind_param("id", $patient_id, $original_total);
-            $stmt->execute();
-            $order_id = $stmt->insert_id;
-            
-            $item_stmt = $conn->prepare("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES (?, ?, ?, ?)");
-            $item_stmt->bind_param("iiid", $order_id, $medicine_id, $qty, $med['price']);
-            $item_stmt->execute();
-
-            if ($wallet_used > 0) {
-                process_wallet_payment($patient_id, $order_id, $wallet_used);
-                $avail_wallet_balance = get_wallet_balance($patient_id);
+            // 1. Handle optional Referral Reward Balance Deduction
+            if (isset($_POST['use_referral_balance']) && $_POST['use_referral_balance'] == '1' && $avail_ref_balance > 0) {
+                $deduction = min($avail_ref_balance, $total);
+                $total = max(0.00, $total - $deduction);
+                
+                $tx_red = 'RED_' . time() . '_' . rand(1000, 9999);
+                $conn->query("INSERT INTO referral_rewards (customer_id, reward_type, amount, status, description, transaction_id) 
+                              VALUES ($patient_id, 'redemption', -$deduction, 'redeemed', 'Redeemed referral reward balance at order checkout', '$tx_red')");
+                $avail_ref_balance = get_customer_referral_balance($patient_id);
             }
 
-            // Evaluate Referral qualification on COD order placement
-            process_referral_order_qualification($order_id, $patient_id, $original_total, true);
+            // 2. Handle optional Wallet Balance Deduction
+            $wallet_used = 0.00;
+            if (isset($_POST['use_wallet_balance']) && $_POST['use_wallet_balance'] == '1' && $avail_wallet_balance > 0 && $total > 0) {
+                $wallet_used = min($avail_wallet_balance, $total);
+                $total = max(0.00, $total - $wallet_used);
+            }
             
-            $success = "Medicine ordered successfully! It will be delivered soon.";
-        } else {
-            // Online Payment Flow for Remaining Total
-            $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, 'User Default Address', 'Online Payment', 'Pending')");
-            $stmt->bind_param("id", $patient_id, $original_total);
-            $stmt->execute();
-            $order_id = $stmt->insert_id;
-            
-            $item_stmt = $conn->prepare("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES (?, ?, ?, ?)");
-            $item_stmt->bind_param("iiid", $order_id, $medicine_id, $qty, $med['price']);
-            $item_stmt->execute();
+            $escaped_address = $conn->real_escape_string($delivery_address);
 
-            if ($wallet_used > 0) {
+            if ($total == 0.00 && $wallet_used > 0) {
+                // FULL WALLET PAYMENT
+                $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, ?, 'Wallet', 'Paid via Wallet')");
+                $stmt->bind_param("ids", $patient_id, $original_total, $escaped_address);
+                $stmt->execute();
+                $order_id = $stmt->insert_id;
+                
+                $item_stmt = $conn->prepare("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES (?, ?, ?, ?)");
+                $item_stmt->bind_param("iiid", $order_id, $medicine_id, $qty, $med['price']);
+                $item_stmt->execute();
+
                 process_wallet_payment($patient_id, $order_id, $wallet_used);
                 $avail_wallet_balance = get_wallet_balance($patient_id);
-            }
-
-            if (defined('PHONEPE_MERCHANT_ID') && !empty(PHONEPE_MERCHANT_ID)) {
-                header("Location: phonepe_pay.php?order_id=" . $order_id);
+                process_referral_order_qualification($order_id, $patient_id, $original_total, true);
+                
+                header("Location: medicines.php?success=1&order_id=" . $order_id);
                 exit;
+            } else if ($payment_method === 'COD') {
+                // CASH ON DELIVERY FLOW
+                $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, ?, 'COD', 'Cash on Delivery')");
+                $stmt->bind_param("ids", $patient_id, $original_total, $escaped_address);
+                $stmt->execute();
+                $order_id = $stmt->insert_id;
+                
+                $item_stmt = $conn->prepare("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES (?, ?, ?, ?)");
+                $item_stmt->bind_param("iiid", $order_id, $medicine_id, $qty, $med['price']);
+                $item_stmt->execute();
+
+                if ($wallet_used > 0) {
+                    process_wallet_payment($patient_id, $order_id, $wallet_used);
+                    $avail_wallet_balance = get_wallet_balance($patient_id);
+                }
+
+                process_referral_order_qualification($order_id, $patient_id, $original_total, true);
+                
+                header("Location: medicines.php?success=1&order_id=" . $order_id);
+                exit;
+            } else {
+                // ONLINE PAYMENT FLOW FOR REMAINING TOTAL
+                $stmt = $conn->prepare("INSERT INTO orders (patient_id, total_amount, address, payment_method, payment_status) VALUES (?, ?, ?, 'Online Payment', 'Pending')");
+                $stmt->bind_param("ids", $patient_id, $original_total, $escaped_address);
+                $stmt->execute();
+                $order_id = $stmt->insert_id;
+                
+                $item_stmt = $conn->prepare("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES (?, ?, ?, ?)");
+                $item_stmt->bind_param("iiid", $order_id, $medicine_id, $qty, $med['price']);
+                $item_stmt->execute();
+
+                if ($wallet_used > 0) {
+                    process_wallet_payment($patient_id, $order_id, $wallet_used);
+                    $avail_wallet_balance = get_wallet_balance($patient_id);
+                }
+
+                if (defined('PHONEPE_MERCHANT_ID') && !empty(PHONEPE_MERCHANT_ID)) {
+                    header("Location: phonepe_pay.php?order_id=" . $order_id);
+                    exit;
+                }
+                
+                $online_order_data = [
+                    'order_id' => $order_id,
+                    'amount_paise' => (int)round($total * 100),
+                    'amount_display' => number_format($total, 2),
+                    'medicine_name' => $med['name'],
+                    'patient_id' => $patient_id
+                ];
             }
-            
-            $online_order_data = [
-                'order_id' => $order_id,
-                'amount_paise' => (int)($total * 100),
-                'amount_display' => number_format($total, 2),
-                'medicine_name' => $med['name'],
-                'patient_id' => $patient_id
-            ];
         }
     }
 }
 
 $medicines = $conn->query("SELECT * FROM medicines");
 
-// Fetch patient's medicine orders
+// Fetch patient's medicine orders including delivery address
 $patient_id_for_orders = $_SESSION['user_id'];
 $my_orders = $conn->query("
-    SELECT o.id, o.created_at, o.status, o.total_amount, o.payment_method, o.payment_status, m.name as medicine_name, oi.quantity 
+    SELECT o.id, o.created_at, o.status, o.total_amount, o.payment_method, o.payment_status, o.address, m.name as medicine_name, oi.quantity 
     FROM orders o
     JOIN order_items oi ON o.id = oi.order_id
     JOIN medicines m ON oi.medicine_id = m.id
@@ -184,9 +246,19 @@ $my_orders = $conn->query("
         <h2>Medicine Delivery</h2>
         <p style="color: var(--text-secondary); margin-bottom: 2rem;">Order prescribed or over-the-counter medicines delivered directly to your home.</p>
         
-        <?php if($success): ?><p style="color: #2ed573; margin-bottom: 1rem; padding: 1rem; background: rgba(46, 213, 115, 0.1); border-radius: 8px;"><?php echo $success; ?></p><?php endif; ?>
-        <?php if($error): ?><p style="color: #ff4757; margin-bottom: 1rem; padding: 1rem; background: rgba(255, 71, 87, 0.1); border-radius: 8px;"><?php echo $error; ?></p><?php endif; ?>
+        <?php if($success): ?>
+            <p style="color: #2ed573; margin-bottom: 1rem; padding: 1rem; background: rgba(46, 213, 115, 0.1); border-radius: 8px; border-left: 4px solid #2ed573;">
+                <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success); ?>
+            </p>
+        <?php endif; ?>
+        
+        <?php if($error): ?>
+            <p style="color: #ff4757; margin-bottom: 1rem; padding: 1rem; background: rgba(255, 71, 87, 0.1); border-radius: 8px; border-left: 4px solid #ff4757;">
+                <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+            </p>
+        <?php endif; ?>
 
+        <!-- Medicine Cards Grid -->
         <div class="features-grid" style="margin-top: 1rem;">
             <?php while($med = $medicines->fetch_assoc()): ?>
                 <?php 
@@ -203,56 +275,27 @@ $my_orders = $conn->query("
                 ?>
                 <div class="feature-card glass-panel" style="padding: 1rem; display: flex; flex-direction: column;">
                     <div style="width: 100%; height: 125px; overflow: hidden; border-radius: 10px; margin-bottom: 0.6rem; background: rgba(0,0,0,0.2);">
-                        <img src="<?php echo htmlspecialchars($img_src); ?>" alt="<?php echo htmlspecialchars($med['name']); ?>" style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px; transition: transform 0.3s ease;">
+                        <img src="<?php echo htmlspecialchars($img_src); ?>" alt="<?php echo htmlspecialchars($med['name']); ?>" loading="lazy" style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px; transition: transform 0.3s ease;">
                     </div>
                     <h4 style="color: var(--text-primary); margin-bottom: 0.25rem; font-size: 1.05rem;"><?php echo htmlspecialchars($med['name']); ?></h4>
                     <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem; min-height: 32px; line-height: 1.3;"><?php echo htmlspecialchars($med['description']); ?></p>
-                    <p style="font-size: 1.3rem; font-weight: bold; color: var(--secondary-color); margin-bottom: 0.5rem;">₹<?php echo $med['price']; ?></p>
+                    <p style="font-size: 1.3rem; font-weight: bold; color: var(--secondary-color); margin-bottom: 0.5rem;">₹<?php echo number_format($med['price'], 2); ?></p>
                     
-                    <form method="POST" action="" style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: auto;">
-                        <input type="hidden" name="medicine_id" value="<?php echo $med['id']; ?>">
-                        
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: auto;">
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
                             <label style="font-size: 0.8rem; color: var(--text-secondary);">Quantity:</label>
-                            <input type="number" name="quantity" value="1" min="1" max="10" class="form-control" style="width: 75px; padding: 0.3rem 0.5rem;" required>
+                            <input type="number" id="qty_med_<?php echo $med['id']; ?>" value="1" min="1" max="10" class="form-control" style="width: 75px; padding: 0.3rem 0.5rem;" required>
                         </div>
                         
-                        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 8px; padding: 0.4rem 0.6rem;">
-                            <div style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 0.25rem;">Payment Method:</div>
-                            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
-                                <label style="font-size: 0.8rem; color: var(--text-primary); cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
-                                    <input type="radio" name="payment_method" value="COD" checked> Cash on Delivery
-                                </label>
-                                <label style="font-size: 0.8rem; color: var(--text-primary); cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
-                                    <input type="radio" name="payment_method" value="Online Payment"> Online Payment
-                                </label>
-                            </div>
-                        </div>
-
-                        <?php if ($avail_ref_balance > 0): ?>
-                        <div style="background: rgba(80, 227, 194, 0.08); border: 1px solid rgba(80, 227, 194, 0.3); border-radius: 8px; padding: 0.4rem 0.6rem;">
-                            <label style="font-size: 0.8rem; color: var(--secondary-color); cursor: pointer; display: flex; align-items: center; gap: 0.3rem; font-weight: 600;">
-                                <input type="checkbox" name="use_referral_balance" value="1"> 
-                                <i class="fas fa-gift"></i> Use Referral Balance (₹<?php echo number_format($avail_ref_balance, 2); ?>)
-                            </label>
-                        </div>
-                        <?php endif; ?>
-
-                        <?php if ($avail_wallet_balance > 0): ?>
-                        <div style="background: rgba(46, 213, 115, 0.08); border: 1px solid rgba(46, 213, 115, 0.3); border-radius: 8px; padding: 0.4rem 0.6rem;">
-                            <label style="font-size: 0.8rem; color: #2ed573; cursor: pointer; display: flex; align-items: center; gap: 0.3rem; font-weight: 600;">
-                                <input type="checkbox" name="use_wallet_balance" value="1"> 
-                                <i class="fas fa-wallet"></i> Use Wallet Balance (Available: ₹<?php echo number_format($avail_wallet_balance, 2); ?>)
-                            </label>
-                        </div>
-                        <?php endif; ?>
-
-                        <button type="submit" name="order" class="btn btn-primary" style="width: 100%; padding: 0.5rem 1rem;">Order Now</button>
-                    </form>
+                        <button type="button" class="btn btn-primary" style="width: 100%; padding: 0.5.rem 1rem;" onclick="openCheckoutModal(<?php echo $med['id']; ?>, '<?php echo htmlspecialchars(addslashes($med['name'])); ?>', <?php echo $med['price']; ?>, '<?php echo htmlspecialchars(addslashes($img_src)); ?>')">
+                            <i class="fas fa-shopping-cart"></i> Order Now
+                        </button>
+                    </div>
                 </div>
             <?php endwhile; ?>
         </div>
 
+        <!-- Your Medicine Orders Table -->
         <h3 style="margin-top: 3rem; margin-bottom: 1rem;">Your Medicine Orders</h3>
         <div class="glass-panel" style="overflow-x: auto; padding: 1rem;">
             <table style="width: 100%; text-align: left; border-collapse: collapse;">
@@ -262,6 +305,7 @@ $my_orders = $conn->query("
                         <th style="padding: 1rem;">Medicine</th>
                         <th style="padding: 1rem;">Qty</th>
                         <th style="padding: 1rem;">Total Amount</th>
+                        <th style="padding: 1rem;">Delivery Address</th>
                         <th style="padding: 1rem;">Payment Method</th>
                         <th style="padding: 1rem;">Payment Status</th>
                         <th style="padding: 1rem;">Date Ordered</th>
@@ -272,16 +316,19 @@ $my_orders = $conn->query("
                     <?php if ($my_orders && $my_orders->num_rows > 0): ?>
                         <?php while($o = $my_orders->fetch_assoc()): ?>
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                <td style="padding: 1rem;">#<?php echo $o['id']; ?></td>
+                                <td style="padding: 1rem;">#ORD-<?php echo str_pad($o['id'], 4, '0', STR_PAD_LEFT); ?></td>
                                 <td style="padding: 1rem; font-weight: bold; color: var(--primary-color);"><?php echo htmlspecialchars($o['medicine_name']); ?></td>
                                 <td style="padding: 1rem;"><?php echo $o['quantity']; ?></td>
-                                <td style="padding: 1rem; color: var(--secondary-color);">₹<?php echo $o['total_amount']; ?></td>
-                                <td style="padding: 1rem; font-size: 0.9rem; color: var(--text-secondary);"><?php echo htmlspecialchars($o['payment_method'] ?? 'COD'); ?></td>
+                                <td style="padding: 1rem; color: var(--secondary-color); font-weight: bold;">₹<?php echo number_format($o['total_amount'], 2); ?></td>
+                                <td style="padding: 1rem; font-size: 0.82rem; color: var(--text-secondary); max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="<?php echo htmlspecialchars($o['address']); ?>">
+                                    <i class="fas fa-map-marker-alt" style="color: var(--primary-color);"></i> <?php echo htmlspecialchars($o['address']); ?>
+                                </td>
+                                <td style="padding: 1rem; font-size: 0.88rem; color: var(--text-secondary);"><?php echo htmlspecialchars($o['payment_method'] ?? 'COD'); ?></td>
                                 <td style="padding: 1rem;">
                                     <?php
                                         $pay_status = $o['payment_status'] ?? 'Cash on Delivery';
                                         $pay_color = '#f5a623';
-                                        if ($pay_status === 'Paid') $pay_color = '#2ed573';
+                                        if (in_array($pay_status, ['Paid', 'Paid via Wallet'])) $pay_color = '#2ed573';
                                         if ($pay_status === 'Failed') $pay_color = '#ff4757';
                                         if ($pay_status === 'Cash on Delivery') $pay_color = '#3498db';
                                     ?>
@@ -289,10 +336,10 @@ $my_orders = $conn->query("
                                         <?php echo htmlspecialchars($pay_status); ?>
                                     </span>
                                     <?php if ($pay_status === 'Pending' && ($o['payment_method'] ?? '') === 'Online Payment'): ?>
-                                        <button onclick="retryPayment(<?php echo $o['id']; ?>, <?php echo $o['total_amount']; ?>, '<?php echo htmlspecialchars($o['medicine_name']); ?>')" class="btn btn-primary" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; margin-left: 0.5rem;">Pay Again</button>
+                                        <button onclick="retryPayment(<?php echo $o['id']; ?>, <?php echo $o['total_amount']; ?>, '<?php echo htmlspecialchars(addslashes($o['medicine_name'])); ?>')" class="btn btn-primary" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; margin-left: 0.5rem;"><i class="fas fa-redo"></i> Pay Again</button>
                                     <?php endif; ?>
                                 </td>
-                                <td style="padding: 1rem;"><?php echo date('M d, Y', strtotime($o['created_at'])); ?></td>
+                                <td style="padding: 1rem; font-size: 0.85rem; color: var(--text-secondary);"><?php echo date('M d, Y', strtotime($o['created_at'])); ?></td>
                                 <td style="padding: 1rem;">
                                     <?php
                                         $status_color = 'var(--text-primary)';
@@ -308,7 +355,7 @@ $my_orders = $conn->query("
                             </tr>
                         <?php endwhile; ?>
                     <?php else: ?>
-                        <tr><td colspan="8" style="padding: 1rem; text-align: center;">You have not ordered any medicines yet.</td></tr>
+                        <tr><td colspan="9" style="padding: 1rem; text-align: center; color: var(--text-secondary);">You have not ordered any medicines yet.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>
@@ -316,9 +363,201 @@ $my_orders = $conn->query("
     </main>
 </div>
 
+<!-- ========================================================= -->
+<!-- MEDICINE CHECKOUT MODAL (PART 2 - PART 6) -->
+<!-- ========================================================= -->
+<div id="medicineCheckoutModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 99998; align-items: center; justify-content: center; padding: 1rem; overflow-y: auto;">
+    <div class="glass-panel" style="background: var(--darker-bg); border: 1px solid var(--glass-border); width: 100%; max-width: 580px; padding: 1.8rem; border-radius: 20px; box-shadow: 0 25px 60px rgba(0,0,0,0.6); position: relative; max-height: 90vh; overflow-y: auto;">
+        
+        <!-- Modal Header -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.8rem;">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                <i class="fas fa-shopping-bag" style="color: var(--primary-color); font-size: 1.4rem;"></i>
+                <h3 style="color: var(--text-primary); margin: 0; font-size: 1.25rem;">Medicine Checkout</h3>
+            </div>
+            <button type="button" onclick="closeCheckoutModal()" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.3rem; cursor: pointer;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <form method="POST" action="" id="checkoutForm" onsubmit="return validateAndSubmitCheckout(event);">
+            <input type="hidden" name="order" value="1">
+            <input type="hidden" id="modal_medicine_id" name="medicine_id" value="">
+            <input type="hidden" id="modal_quantity" name="quantity" value="1">
+            <input type="hidden" id="modal_address_id" name="address_id" value="">
+
+            <!-- Validation Error Alert Box -->
+            <div id="checkoutAlert" style="display: none; background: rgba(255, 71, 87, 0.12); border: 1px solid #ff4757; color: #ff4757; padding: 0.75rem 1rem; border-radius: 10px; font-size: 0.88rem; margin-bottom: 1rem;">
+                <i class="fas fa-exclamation-circle"></i> <span id="checkoutAlertText">Please add a delivery address to continue.</span>
+            </div>
+
+            <!-- STEP 1: DELIVERY ADDRESS -->
+            <div style="margin-bottom: 1.5rem; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 12px; padding: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                    <h4 style="margin: 0; font-size: 0.95rem; color: var(--text-primary);"><i class="fas fa-map-marker-alt" style="color: var(--secondary-color);"></i> Delivery Address</h4>
+                    <button type="button" id="btnToggleAddressForm" onclick="toggleAddressForm()" style="background: none; border: none; color: var(--primary-color); font-size: 0.8rem; font-weight: 600; cursor: pointer;">
+                        <i class="fas fa-plus"></i> Add / Edit Address
+                    </button>
+                </div>
+
+                <!-- Saved Address Display Card -->
+                <div id="savedAddressContainer">
+                    <?php if (!empty($saved_addresses)): ?>
+                        <?php $default_addr = $saved_addresses[0]; ?>
+                        <div id="selectedAddressCard" style="background: rgba(80, 227, 194, 0.08); border: 1px solid rgba(80, 227, 194, 0.3); border-radius: 10px; padding: 0.8rem 1rem;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.3rem;">
+                                <strong style="color: var(--text-primary); font-size: 0.9rem;" id="disp_addr_name"><?php echo htmlspecialchars($default_addr['full_name']); ?> (<?php echo htmlspecialchars($default_addr['phone']); ?>)</strong>
+                                <span style="background: var(--secondary-color); color: #000; font-size: 0.68rem; font-weight: bold; padding: 0.15rem 0.5rem; border-radius: 10px;">DEFAULT</span>
+                            </div>
+                            <p style="color: var(--text-secondary); font-size: 0.82rem; margin: 0; line-height: 1.4;" id="disp_addr_text">
+                                <?php echo htmlspecialchars($default_addr['address_line'] . ", " . $default_addr['city'] . ", " . $default_addr['state'] . " - " . $default_addr['pincode']); ?>
+                            </p>
+                        </div>
+                        <script>document.getElementById('modal_address_id').value = "<?php echo $default_addr['id']; ?>";</script>
+                    <?php else: ?>
+                        <div id="noAddressNotice" style="text-align: center; color: var(--text-secondary); padding: 0.75rem; font-size: 0.85rem; border: 1px dashed var(--glass-border); border-radius: 10px;">
+                            No delivery address saved yet. Please add your delivery address below.
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <!-- Add/Edit Delivery Address Inline Form -->
+                <div id="addAddressForm" style="display: <?php echo empty($saved_addresses) ? 'block' : 'none'; ?>; margin-top: 0.8rem; border-top: 1px dashed var(--glass-border); padding-top: 0.8rem;">
+                    <div style="font-size: 0.85rem; font-weight: 600; color: var(--primary-color); margin-bottom: 0.6rem;">Provide Delivery Address Details:</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.6rem;">
+                        <input type="text" id="new_full_name" name="new_full_name" class="form-control" placeholder="Full Name *" value="<?php echo htmlspecialchars($patient_info['name']); ?>" style="padding: 0.4rem 0.6rem; font-size: 0.82rem;">
+                        <input type="text" id="new_phone" name="new_phone" class="form-control" placeholder="Phone Number *" value="<?php echo htmlspecialchars($patient_info['phone']); ?>" style="padding: 0.4rem 0.6rem; font-size: 0.82rem;">
+                    </div>
+                    <div style="margin-bottom: 0.6rem;">
+                        <input type="text" id="new_address_line" name="new_address_line" class="form-control" placeholder="House No, Street, Colony, Area *" style="padding: 0.4rem 0.6rem; font-size: 0.82rem;">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.6rem; margin-bottom: 0.6rem;">
+                        <input type="text" id="new_city" name="new_city" class="form-control" placeholder="City *" style="padding: 0.4rem 0.6rem; font-size: 0.82rem;">
+                        <input type="text" id="new_state" name="new_state" class="form-control" placeholder="State" value="Telangana" style="padding: 0.4rem 0.6rem; font-size: 0.82rem;">
+                        <input type="text" id="new_pincode" name="new_pincode" class="form-control" placeholder="Pincode *" style="padding: 0.4rem 0.6rem; font-size: 0.82rem;">
+                    </div>
+                    <button type="button" class="btn btn-outline" onclick="saveAddressViaAjax()" style="width: 100%; padding: 0.35rem 0.6rem; font-size: 0.8rem;">
+                        <i class="fas fa-save"></i> Save & Use This Address
+                    </button>
+                </div>
+            </div>
+
+            <!-- STEP 2: ORDER SUMMARY -->
+            <div style="margin-bottom: 1.5rem; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 12px; padding: 1rem;">
+                <h4 style="margin: 0 0 0.75rem 0; font-size: 0.95rem; color: var(--text-primary);"><i class="fas fa-list-alt" style="color: var(--primary-color);"></i> Order Summary</h4>
+                
+                <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.8rem;">
+                    <img id="summary_img" src="" alt="Medicine" style="width: 50px; height: 50px; object-fit: cover; border-radius: 8px; background: rgba(0,0,0,0.3);">
+                    <div style="flex: 1;">
+                        <div id="summary_med_name" style="font-weight: bold; color: var(--text-primary); font-size: 0.92rem;">Medicine Name</div>
+                        <div style="font-size: 0.8rem; color: var(--text-secondary);">Qty: <span id="summary_qty_display">1</span> x ₹<span id="summary_unit_price">0.00</span></div>
+                    </div>
+                    <div style="font-weight: bold; color: var(--text-primary); font-size: 0.95rem;">₹<span id="summary_subtotal">0.00</span></div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.4rem;">
+                    <span>Delivery Charges:</span>
+                    <span style="color: #2ed573; font-weight: bold;">FREE</span>
+                </div>
+
+                <!-- Wallet / Referral Balance Checkboxes -->
+                <?php if ($avail_ref_balance > 0): ?>
+                <div style="margin-top: 0.4rem;">
+                    <label style="font-size: 0.8rem; color: var(--secondary-color); cursor: pointer; display: flex; align-items: center; gap: 0.3rem; font-weight: 600;">
+                        <input type="checkbox" id="modal_use_ref" name="use_referral_balance" value="1" onchange="recalculateModalTotals()"> 
+                        <i class="fas fa-gift"></i> Use Referral Balance (Available: ₹<?php echo number_format($avail_ref_balance, 2); ?>)
+                    </label>
+                </div>
+                <?php endif; ?>
+
+                <?php if ($avail_wallet_balance > 0): ?>
+                <div style="margin-top: 0.4rem;">
+                    <label style="font-size: 0.8rem; color: #2ed573; cursor: pointer; display: flex; align-items: center; gap: 0.3rem; font-weight: 600;">
+                        <input type="checkbox" id="modal_use_wallet" name="use_wallet_balance" value="1" onchange="recalculateModalTotals()"> 
+                        <i class="fas fa-wallet"></i> Use Wallet Balance (Available: ₹<?php echo number_format($avail_wallet_balance, 2); ?>)
+                    </label>
+                </div>
+                <?php endif; ?>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--glass-border); margin-top: 0.8rem; padding-top: 0.8rem;">
+                    <span style="font-size: 1rem; font-weight: bold; color: var(--text-primary);">Final Payable Amount:</span>
+                    <span style="font-size: 1.4rem; font-weight: 800; color: var(--secondary-color);">₹<span id="summary_final_payable">0.00</span></span>
+                </div>
+            </div>
+
+            <!-- STEP 3: PAYMENT METHOD -->
+            <div style="margin-bottom: 1.5rem; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 12px; padding: 1rem;">
+                <h4 style="margin: 0 0 0.75rem 0; font-size: 0.95rem; color: var(--text-primary);"><i class="fas fa-credit-card" style="color: var(--accent);"></i> Payment Method</h4>
+                <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+                    <label style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.8rem; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 8px; cursor: pointer; font-size: 0.88rem; color: var(--text-primary);">
+                        <input type="radio" name="payment_method" value="COD" checked onclick="updateSubmitButtonLabel()">
+                        <i class="fas fa-truck-loading" style="color: #3498db;"></i> Cash on Delivery (Pay when delivered)
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.8rem; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 8px; cursor: pointer; font-size: 0.88rem; color: var(--text-primary);">
+                        <input type="radio" name="payment_method" value="Online Payment" onclick="updateSubmitButtonLabel()">
+                        <i class="fas fa-shield-alt" style="color: #2ed573;"></i> Online Payment (UPI / Cards / Net Banking)
+                    </label>
+                </div>
+            </div>
+
+            <!-- STEP 4: SUBMIT ORDER BUTTON WITH DUPLICATE PROTECTION -->
+            <button type="submit" id="btnPlaceMedicineOrder" class="btn btn-primary" style="width: 100%; font-size: 1.05rem; padding: 0.8rem; font-weight: bold;">
+                <i class="fas fa-check-circle"></i> Place Order (COD)
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================================= -->
+<!-- ORDER SUCCESS CONFIRMATION MODAL (PART 15) -->
+<!-- ========================================================= -->
+<?php if ($order_success_details): ?>
+<div id="orderSuccessModal" style="display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); z-index: 99999; align-items: center; justify-content: center; padding: 1rem;">
+    <div class="glass-panel" style="background: var(--darker-bg); border: 1px solid rgba(46, 213, 115, 0.4); width: 100%; max-width: 480px; padding: 2rem; border-radius: 20px; box-shadow: 0 25px 60px rgba(0,0,0,0.7); text-align: center;">
+        
+        <div style="width: 70px; height: 70px; background: rgba(46, 213, 115, 0.15); border: 2px solid #2ed573; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.2rem auto; box-shadow: 0 0 25px rgba(46, 213, 115, 0.3);">
+            <i class="fas fa-check" style="font-size: 2.2rem; color: #2ed573;"></i>
+        </div>
+
+        <h3 style="color: #fff; margin-bottom: 0.5rem; font-size: 1.5rem;">Order Successfully Placed!</h3>
+        <p style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 1.5rem;">Your medicine order has been confirmed and is being processed for delivery.</p>
+
+        <div style="background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 12px; padding: 1.2rem; margin-bottom: 1.5rem; text-align: left;">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.5rem; margin-bottom: 0.5rem; font-size: 0.88rem;">
+                <span style="color: var(--text-secondary);">Order Reference:</span>
+                <strong style="color: var(--primary-color);">#ORD-<?php echo str_pad($order_success_details['id'], 4, '0', STR_PAD_LEFT); ?></strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.5rem; margin-bottom: 0.5rem; font-size: 0.88rem;">
+                <span style="color: var(--text-secondary);">Medicine:</span>
+                <strong style="color: #fff;"><?php echo htmlspecialchars($order_success_details['medicine_name']); ?> (x<?php echo $order_success_details['quantity']; ?>)</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.5rem; margin-bottom: 0.5rem; font-size: 0.88rem;">
+                <span style="color: var(--text-secondary);">Payment Method:</span>
+                <strong style="color: var(--secondary-color);"><?php echo htmlspecialchars($order_success_details['payment_method']); ?></strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.5rem; margin-bottom: 0.5rem; font-size: 0.88rem;">
+                <span style="color: var(--text-secondary);">Payment Status:</span>
+                <strong style="color: #2ed573;"><?php echo htmlspecialchars($order_success_details['payment_status']); ?></strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.95rem; font-weight: bold; margin-top: 0.5rem;">
+                <span style="color: var(--text-primary);">Total Amount:</span>
+                <span style="color: var(--secondary-color);">₹<?php echo number_format($order_success_details['total_amount'], 2); ?></span>
+            </div>
+            <div style="margin-top: 0.8rem; font-size: 0.8rem; color: var(--text-secondary); border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 0.6rem;">
+                <i class="fas fa-map-marker-alt" style="color: var(--primary-color);"></i> Delivered to: <?php echo htmlspecialchars($order_success_details['address']); ?>
+            </div>
+        </div>
+
+        <button type="button" class="btn btn-primary" onclick="window.location.href='medicines.php'" style="width: 100%; padding: 0.75rem;">
+            <i class="fas fa-boxes"></i> Done / View Orders
+        </button>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- Payment Modal Dialog for Test/Sandbox Mode & Fallback -->
-<div id="paymentGatewayModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); z-index: 9999; align-items: center; justify-content: center;">
-    <div class="glass-panel" style="background: #1a1f2c; border: 1px solid var(--glass-border); width: 90%; max-width: 440px; padding: 2rem; border-radius: 16px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); text-align: center;">
+<div id="paymentGatewayModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 99999; align-items: center; justify-content: center; padding: 1rem;">
+    <div class="glass-panel" style="background: #1a1f2c; border: 1px solid var(--glass-border); width: 100%; max-width: 440px; padding: 2rem; border-radius: 16px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); text-align: center;">
         <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 1rem;">
             <i class="fas fa-shield-alt" style="color: var(--secondary-color); font-size: 1.8rem;"></i>
             <h3 style="color: #fff; margin: 0;">Online Payment Gateway</h3>
@@ -352,20 +591,156 @@ document.addEventListener("DOMContentLoaded", function() {
     triggerRazorpayCheckout(
         <?php echo $online_order_data['order_id']; ?>,
         <?php echo $online_order_data['amount_paise']; ?>,
-        "<?php echo htmlspecialchars($online_order_data['medicine_name']); ?>"
+        "<?php echo htmlspecialchars(addslashes($online_order_data['medicine_name'])); ?>"
     );
 });
 </script>
 <?php endif; ?>
 
 <script>
+var activeMedicine = { id: 0, name: '', price: 0, img: '' };
 var activeOrderId = null;
+var availRefBalance = <?php echo (float)$avail_ref_balance; ?>;
+var availWalletBalance = <?php echo (float)$avail_wallet_balance; ?>;
+
+function openCheckoutModal(medId, medName, medPrice, medImg) {
+    var qtyInput = document.getElementById('qty_med_' + medId);
+    var qty = qtyInput ? parseInt(qtyInput.value) || 1 : 1;
+    
+    activeMedicine = { id: medId, name: medName, price: medPrice, img: medImg };
+    
+    document.getElementById('modal_medicine_id').value = medId;
+    document.getElementById('modal_quantity').value = qty;
+    document.getElementById('summary_img').src = medImg;
+    document.getElementById('summary_med_name').innerText = medName;
+    document.getElementById('summary_qty_display').innerText = qty;
+    document.getElementById('summary_unit_price').innerText = medPrice.toFixed(2);
+    
+    document.getElementById('checkoutAlert').style.display = 'none';
+    recalculateModalTotals();
+    updateSubmitButtonLabel();
+    
+    document.getElementById('medicineCheckoutModal').style.display = 'flex';
+}
+
+function closeCheckoutModal() {
+    document.getElementById('medicineCheckoutModal').style.display = 'none';
+}
+
+function recalculateModalTotals() {
+    var qty = parseInt(document.getElementById('modal_quantity').value) || 1;
+    var subtotal = activeMedicine.price * qty;
+    document.getElementById('summary_subtotal').innerText = subtotal.toFixed(2);
+    
+    var finalAmount = subtotal;
+    
+    var useRefCb = document.getElementById('modal_use_ref');
+    if (useRefCb && useRefCb.checked && availRefBalance > 0) {
+        var refDeduct = Math.min(availRefBalance, finalAmount);
+        finalAmount = Math.max(0, finalAmount - refDeduct);
+    }
+    
+    var useWalletCb = document.getElementById('modal_use_wallet');
+    if (useWalletCb && useWalletCb.checked && availWalletBalance > 0 && finalAmount > 0) {
+        var walletDeduct = Math.min(availWalletBalance, finalAmount);
+        finalAmount = Math.max(0, finalAmount - walletDeduct);
+    }
+    
+    document.getElementById('summary_final_payable').innerText = finalAmount.toFixed(2);
+}
+
+function updateSubmitButtonLabel() {
+    var btn = document.getElementById('btnPlaceMedicineOrder');
+    var isOnline = document.querySelector('input[name="payment_method"][value="Online Payment"]').checked;
+    if (isOnline) {
+        btn.innerHTML = '<i class="fas fa-shield-alt"></i> Proceed to Pay (Online)';
+    } else {
+        btn.innerHTML = '<i class="fas fa-check-circle"></i> Place Order (COD)';
+    }
+}
+
+function toggleAddressForm() {
+    var form = document.getElementById('addAddressForm');
+    form.style.display = (form.style.display === 'none' || !form.style.display) ? 'block' : 'none';
+}
+
+function saveAddressViaAjax() {
+    var fullName = document.getElementById('new_full_name').value.trim();
+    var phone = document.getElementById('new_phone').value.trim();
+    var addressLine = document.getElementById('new_address_line').value.trim();
+    var city = document.getElementById('new_city').value.trim();
+    var state = document.getElementById('new_state').value.trim();
+    var pincode = document.getElementById('new_pincode').value.trim();
+    
+    if (!fullName || !phone || !addressLine || !city || !pincode) {
+        alert('Please fill all required address fields (*).');
+        return;
+    }
+    
+    fetch('api_address.php?action=save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            full_name: fullName,
+            phone: phone,
+            address_line: addressLine,
+            city: city,
+            state: state,
+            pincode: pincode
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('modal_address_id').value = data.address_id;
+            
+            var container = document.getElementById('savedAddressContainer');
+            container.innerHTML = `
+                <div id="selectedAddressCard" style="background: rgba(80, 227, 194, 0.08); border: 1px solid rgba(80, 227, 194, 0.3); border-radius: 10px; padding: 0.8rem 1rem;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.3rem;">
+                        <strong style="color: var(--text-primary); font-size: 0.9rem;">${escapeHtml(fullName)} (${escapeHtml(phone)})</strong>
+                        <span style="background: var(--secondary-color); color: #000; font-size: 0.68rem; font-weight: bold; padding: 0.15rem 0.5rem; border-radius: 10px;">DEFAULT</span>
+                    </div>
+                    <p style="color: var(--text-secondary); font-size: 0.82rem; margin: 0; line-height: 1.4;">
+                        ${escapeHtml(addressLine)}, ${escapeHtml(city)}, ${escapeHtml(state)} - ${escapeHtml(pincode)}
+                    </p>
+                </div>
+            `;
+            document.getElementById('addAddressForm').style.display = 'none';
+            document.getElementById('checkoutAlert').style.display = 'none';
+        } else {
+            alert('Failed to save address: ' + data.message);
+        }
+    })
+    .catch(err => {
+        alert('Failed to connect to server to save address.');
+    });
+}
+
+function validateAndSubmitCheckout(event) {
+    var addressId = document.getElementById('modal_address_id').value;
+    var newAddressLine = document.getElementById('new_address_line').value.trim();
+    
+    if (!addressId && !newAddressLine) {
+        event.preventDefault();
+        var alertBox = document.getElementById('checkoutAlert');
+        document.getElementById('checkoutAlertText').innerText = "Please add a delivery address to continue.";
+        alertBox.style.display = 'block';
+        document.getElementById('addAddressForm').style.display = 'block';
+        return false;
+    }
+    
+    // Anti-double-submit protection
+    var btn = document.getElementById('btnPlaceMedicineOrder');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing Order...';
+    return true;
+}
 
 function triggerRazorpayCheckout(orderId, amountPaise, medicineName) {
     activeOrderId = orderId;
     var razorpayKey = "<?php echo RAZORPAY_KEY_ID; ?>";
     
-    // If Key ID is default sample placeholder, fallback to sleek built-in Payment Gateway Modal
     if (!razorpayKey || razorpayKey.indexOf('samplekey') !== -1 || razorpayKey === 'rzp_test_samplekeyid') {
         openDemoPaymentModal(orderId, (amountPaise / 100).toFixed(2), medicineName);
         return;
@@ -387,8 +762,8 @@ function triggerRazorpayCheckout(orderId, amountPaise, medicineName) {
                 }
             },
             "prefill": {
-                "name": "Patient User",
-                "email": "patient@medicalak.com"
+                "name": "<?php echo htmlspecialchars(addslashes($patient_info['name'])); ?>",
+                "phone": "<?php echo htmlspecialchars(addslashes($patient_info['phone'])); ?>"
             },
             "theme": {
                 "color": "#4a90e2"
@@ -396,7 +771,6 @@ function triggerRazorpayCheckout(orderId, amountPaise, medicineName) {
         };
         var rzp1 = new Razorpay(options);
         rzp1.on('payment.failed', function (response){
-            console.warn('Razorpay checkout failed, opening fallback gateway modal...', response);
             openDemoPaymentModal(orderId, (amountPaise / 100).toFixed(2), medicineName);
         });
         rzp1.open();
@@ -414,7 +788,7 @@ function openDemoPaymentModal(orderId, amountDisplay, medicineName) {
 
 document.getElementById('btnCancelPay').addEventListener('click', function() {
     document.getElementById('paymentGatewayModal').style.display = 'none';
-    alert('Payment cancelled. Your order remains Pending. You can click "Pay Again" anytime.');
+    alert('Payment cancelled. Your order remains Pending. You can click "Pay Again" anytime in your order history.');
 });
 
 document.getElementById('btnConfirmPay').addEventListener('click', function() {
@@ -439,7 +813,7 @@ function submitPaymentVerification(orderId, paymentId, razorpayOrderId, signatur
     .then(res => res.json())
     .then(data => {
         if (data.success) {
-            window.location.href = 'medicines.php?success=1';
+            window.location.href = 'medicines.php?success=1&order_id=' + orderId;
         } else {
             alert('Payment verification error: ' + data.message);
             window.location.href = 'medicines.php';
@@ -454,6 +828,10 @@ function submitPaymentVerification(orderId, paymentId, razorpayOrderId, signatur
 function retryPayment(orderId, totalAmount, medicineName) {
     var amountPaise = Math.round(totalAmount * 100);
     triggerRazorpayCheckout(orderId, amountPaise, medicineName);
+}
+
+function escapeHtml(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 </script>
 

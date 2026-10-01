@@ -50,8 +50,25 @@ define('PHONEPE_ENV', getenv('PHONEPE_ENV') ?: 'PROD');
 
 // Auto-Ensure Database Query Indexes for High-Speed Navigation
 function ensure_database_indexes($conn) {
-    if (isset($GLOBALS['db_indexes_checked'])) return;
+    if (isset($GLOBALS['db_indexes_checked']) || (isset($_SESSION) && !empty($_SESSION['db_indexes_checked']))) return;
     $GLOBALS['db_indexes_checked'] = true;
+    if (isset($_SESSION)) {
+        $_SESSION['db_indexes_checked'] = true;
+    }
+
+    $conn->query("CREATE TABLE IF NOT EXISTS patient_addresses (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        full_name VARCHAR(100) NOT NULL,
+        phone VARCHAR(20) NOT NULL,
+        address_line TEXT NOT NULL,
+        city VARCHAR(50) NOT NULL,
+        state VARCHAR(50) NOT NULL,
+        pincode VARCHAR(10) NOT NULL,
+        is_default TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (patient_id) REFERENCES users(id) ON DELETE CASCADE
+    )");
 
     $add_index_if_missing = function($table, $index_name, $columns) use ($conn) {
         $check = @$conn->query("SHOW INDEX FROM `$table` WHERE Key_name = '$index_name'");
@@ -82,6 +99,7 @@ function ensure_database_indexes($conn) {
     $add_index_if_missing('wallet_topups', 'idx_wtup_customer', 'customer_id, status');
     $add_index_if_missing('user_notifications', 'idx_un_user_read', 'user_id, is_read');
     $add_index_if_missing('medicines', 'idx_med_name', 'name');
+    $add_index_if_missing('patient_addresses', 'idx_pa_patient', 'patient_id');
 }
 
 ensure_database_indexes($conn);

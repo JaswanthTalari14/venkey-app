@@ -13,6 +13,7 @@ $action = isset($_REQUEST['action']) ? trim($_REQUEST['action']) : 'fetch';
 
 // 1. Server-Sent Events (SSE) Real-Time Notification Stream
 if ($action === 'stream') {
+    session_write_close();
     // Disable output buffering
     if (function_exists('apache_setenv')) {
         @apache_setenv('no-gzip', 1);
