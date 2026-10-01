@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline - MedicalAk</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1.5rem;
+            text-align: center;
+            background-color: var(--dark-bg);
+            color: var(--text-primary);
+        }
+        .offline-card {
+            max-width: 480px;
+            width: 100%;
+            padding: 2.5rem 2rem;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+        .offline-icon {
+            width: 80px;
+            height: 80px;
+            background: rgba(74, 144, 226, 0.12);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem auto;
+            color: var(--primary-color);
+            font-size: 2.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-card">
+        <div class="offline-icon">
+            📡
+        </div>
+        <h2 style="font-size: 1.6rem; margin-bottom: 0.75rem;">You are currently offline</h2>
+        <p style="color: var(--text-secondary); font-size: 0.95rem; line-height: 1.5; margin-bottom: 2rem;">
+            Internet connection unavailable. Please check your network connection to access live healthcare services, doctor consultations, and medicine ordering.
+        </p>
+        <button onclick="window.location.reload()" class="btn btn-primary" style="width: 100%; padding: 0.8rem 1.5rem; font-size: 1rem;">
+            Retry Connection
+        </button>
+    </div>
+</body>
+</html>
