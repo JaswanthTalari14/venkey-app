@@ -46,34 +46,59 @@ if (session_status() === PHP_SESSION_NONE) {
             });
         }
 
-        // PWA Install Prompt Handler
+        // PWA Install Prompt Handler & State Management
         let deferredInstallPrompt = null;
+
+        function showPWAInstalledToast() {
+            if (document.getElementById('pwaToast')) return;
+            const toast = document.createElement('div');
+            toast.id = 'pwaToast';
+            toast.style.cssText = 'position: fixed; bottom: 25px; right: 25px; z-index: 999999; background: rgba(18, 18, 18, 0.92); color: #50e3c2; padding: 0.85rem 1.4rem; border-radius: 12px; border: 1px solid rgba(80, 227, 194, 0.4); font-weight: 600; font-size: 0.9rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(10px); display: flex; align-items: center; gap: 0.6rem; transition: opacity 0.4s ease;';
+            toast.innerHTML = '<i class="fas fa-check-circle" style="font-size: 1.1rem; color: #2ed573;"></i> App Installed Successfully ✅';
+            document.body.appendChild(toast);
+            setTimeout(function() {
+                toast.style.opacity = '0';
+                setTimeout(function() { toast.remove(); }, 400);
+            }, 4000);
+        }
+
+        function markPWAInstalledState() {
+            localStorage.setItem('pwa_installed', 'true');
+            document.querySelectorAll('.pwaInstallBtn').forEach(function(btn) {
+                btn.innerHTML = '<i class="fas fa-check-circle" style="color: #2ed573; margin-right: 0.5rem;"></i> App Installed';
+                btn.style.opacity = '0.8';
+                btn.style.cursor = 'default';
+            });
+        }
+
         window.addEventListener('beforeinstallprompt', function(e) {
             e.preventDefault();
             deferredInstallPrompt = e;
-            document.querySelectorAll('.pwaInstallBtn').forEach(function(btn) {
-                if (!window.matchMedia('(display-mode: standalone)').matches) {
-                    const li = btn.closest('li');
-                    if (li) li.style.display = 'block';
-                    btn.style.display = btn.tagName === 'BUTTON' ? 'inline-flex' : 'flex';
-                }
-            });
         });
 
         document.addEventListener('DOMContentLoaded', function() {
+            const isInstalled = window.matchMedia('(display-mode: standalone)').matches || 
+                                window.navigator.standalone === true || 
+                                localStorage.getItem('pwa_installed') === 'true';
+
+            if (isInstalled) {
+                markPWAInstalledState();
+            }
+
             document.addEventListener('click', function(e) {
                 const installBtn = e.target.closest('.pwaInstallBtn');
                 if (installBtn) {
                     e.preventDefault();
+                    if (localStorage.getItem('pwa_installed') === 'true' || window.matchMedia('(display-mode: standalone)').matches) {
+                        showPWAInstalledToast();
+                        return;
+                    }
                     if (deferredInstallPrompt) {
                         deferredInstallPrompt.prompt();
                         deferredInstallPrompt.userChoice.then(function(choiceResult) {
                             if (choiceResult.outcome === 'accepted') {
-                                document.querySelectorAll('.pwaInstallBtn').forEach(function(btn) {
-                                    const li = btn.closest('li');
-                                    if (li) li.style.display = 'none';
-                                    else btn.style.display = 'none';
-                                });
+                                markPWAInstalledState();
+                                showPWAInstalledToast();
                             }
                             deferredInstallPrompt = null;
                         });
@@ -82,22 +107,11 @@ if (session_status() === PHP_SESSION_NONE) {
                     }
                 }
             });
-
-            if (window.matchMedia('(display-mode: standalone)').matches) {
-                document.querySelectorAll('.pwaInstallBtn').forEach(function(btn) {
-                    const li = btn.closest('li');
-                    if (li) li.style.display = 'none';
-                    else btn.style.display = 'none';
-                });
-            }
         });
 
         window.addEventListener('appinstalled', function() {
-            document.querySelectorAll('.pwaInstallBtn').forEach(function(btn) {
-                const li = btn.closest('li');
-                if (li) li.style.display = 'none';
-                else btn.style.display = 'none';
-            });
+            markPWAInstalledState();
+            showPWAInstalledToast();
         });
     </script>
 </head>
