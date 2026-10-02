@@ -30,8 +30,6 @@ function get_order_status_style($status) {
             return ['color' => '#f5a623', 'bg' => 'rgba(245, 166, 35, 0.12)', 'border' => '#f5a623'];
     }
 }
-
-<?php
 // Search and Status filter parameters
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $status_filter = isset($_GET['status']) ? strtolower(trim($_GET['status'])) : 'all';
