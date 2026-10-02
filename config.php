@@ -27,28 +27,67 @@ $dbname = getenv('DB_NAME') ?: "medicalak";
 $port   = getenv('DB_PORT') ? intval(getenv('DB_PORT')) : 3306;
 
 $conn = null;
-try {
-    $conn = @new mysqli($host, $user, $pass, $dbname, $port);
-} catch (Throwable $e) {
-    $conn = null;
-}
+$max_retries = 3;
+$retry_count = 0;
 
-if (!$conn || $conn->connect_error) {
+while ($retry_count < $max_retries) {
     try {
-        $conn = @new mysqli($host, $user, $pass, "", $port);
-        if ($conn && !$conn->connect_error) {
-            @$conn->query("CREATE DATABASE IF NOT EXISTS `$dbname`");
-            @$conn->select_db($dbname);
-        }
-    } catch (Throwable $e2) {
+        $conn = @new mysqli($host, $user, $pass, $dbname, $port);
+    } catch (Throwable $e) {
         $conn = null;
     }
+
+    if ($conn && !$conn->connect_error) {
+        break; // Connected successfully!
+    }
+
+    $err_str = ($conn && $conn->connect_error) ? $conn->connect_error : "";
+    if ($conn) {
+        @$conn->close();
+        $conn = null;
+    }
+
+    // Auto-retry if max_user_connections resource limit is reached
+    if (strpos($err_str, 'max_user_connections') !== false || strpos($err_str, 'Too many connections') !== false) {
+        $retry_count++;
+        usleep(150000); // Wait 150ms for a connection slot to free up
+        continue;
+    }
+
+    // Fallback: If database does not exist on localhost, attempt creation
+    if (($host === 'localhost' || $host === '127.0.0.1') && (strpos($err_str, 'Unknown database') !== false || strpos($err_str, '1049') !== false)) {
+        try {
+            $conn = @new mysqli($host, $user, $pass, "", $port);
+            if ($conn && !$conn->connect_error) {
+                @$conn->query("CREATE DATABASE IF NOT EXISTS `$dbname`");
+                @$conn->select_db($dbname);
+                break;
+            }
+        } catch (Throwable $e2) {
+            if ($conn) { @$conn->close(); $conn = null; }
+        }
+    }
+    break;
 }
 
 if (!$conn || $conn->connect_error) {
-    $err_msg = ($conn && $conn->connect_error) ? $conn->connect_error : "Connection refused/failed";
+    $err_msg = ($conn && $conn->connect_error) ? $conn->connect_error : "Connection failed";
+    if (strpos($err_msg, 'max_user_connections') !== false || strpos($err_msg, 'Too many connections') !== false) {
+        die("<div style='font-family:sans-serif; text-align:center; padding:3rem; color:#fff; background:#121826; min-height:100vh;'>
+            <h2 style='color:#ff4757;'>Server Busy (Database Connection Limit)</h2>
+            <p style='color:#94a3b8;'>The database server is currently experiencing high demand. Please refresh the page in a few seconds.</p>
+            <button onclick='location.reload()' style='padding:0.75rem 1.5rem; background:#4a90e2; color:#fff; border:none; border-radius:8px; font-weight:bold; cursor:pointer;'>Retry Now</button>
+        </div>");
+    }
     die("Database Connection Error: " . htmlspecialchars($err_msg) . ". Please check database credentials.");
 }
+
+// Auto-close MySQL connection immediately when PHP finishes response to free connection slots
+register_shutdown_function(function() use (&$conn) {
+    if ($conn && $conn instanceof mysqli) {
+        @$conn->close();
+    }
+});
 
 $gemini_api_key = getenv('GEMINI_API_KEY') ?: 'AIzaSyB2jB_N-GL6O0ad_lgtD5xxOlv6h0xcA2Q';
 
