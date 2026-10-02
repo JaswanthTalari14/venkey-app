@@ -1,63 +1,66 @@
     </main>
 
 <?php
-// Mobile Bottom Navigation (Mobile Devices Only < 768px)
-$mobile_user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'guest';
+// Mobile Bottom Navigation (Mobile Devices Only < 768px - LOGGED-IN USERS ONLY)
+$is_logged_in = isset($_SESSION['user_id']) && !empty($_SESSION['role']);
+$mobile_user_role = $is_logged_in ? $_SESSION['role'] : '';
 $current_page = basename($_SERVER['PHP_SELF']);
 
 $mobile_nav_items = [];
 
-if ($mobile_user_role === 'patient') {
-    $mobile_nav_items = [
-        ['label' => 'Home', 'icon' => 'fas fa-home', 'url' => 'patient_dashboard.php', 'active_pages' => ['patient_dashboard.php', 'index.php']],
-        ['label' => 'Medicines', 'icon' => 'fas fa-pills', 'url' => 'medicines.php', 'active_pages' => ['medicines.php', 'your_orders.php']],
-        ['label' => 'Doctors', 'icon' => 'fas fa-user-md', 'url' => 'nearby_doctors.php', 'active_pages' => ['nearby_doctors.php', 'book_consult.php']],
-        ['label' => 'Notifs', 'icon' => 'fas fa-bell', 'url' => '#', 'is_notif' => true, 'active_pages' => []],
-        ['label' => 'Profile', 'icon' => 'fas fa-user-circle', 'url' => 'profile.php', 'active_pages' => ['profile.php', 'prescription_vault.php', 'my_wallet.php']]
-    ];
-} elseif ($mobile_user_role === 'doctor') {
-    $mobile_nav_items = [
-        ['label' => 'Dashboard', 'icon' => 'fas fa-chart-line', 'url' => 'doctor_dashboard.php', 'active_pages' => ['doctor_dashboard.php']],
-        ['label' => 'Appointments', 'icon' => 'fas fa-calendar-alt', 'url' => 'doctor_appointments.php', 'active_pages' => ['doctor_appointments.php']],
-        ['label' => 'Referrals', 'icon' => 'fas fa-exchange-alt', 'url' => 'doctor_referrals.php', 'active_pages' => ['doctor_referrals.php']],
-        ['label' => 'Orders', 'icon' => 'fas fa-box', 'url' => 'doctor_orders.php', 'active_pages' => ['doctor_orders.php', 'doctor_medicines.php']],
-        ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'active_pages' => ['profile.php']]
-    ];
-} elseif ($mobile_user_role === 'rmp') {
-    $mobile_nav_items = [
-        ['label' => 'Dashboard', 'icon' => 'fas fa-flask', 'url' => 'rmp_dashboard.php', 'active_pages' => ['rmp_dashboard.php']],
-        ['label' => 'Referrals', 'icon' => 'fas fa-user-md', 'url' => 'rmp_referral.php', 'active_pages' => ['rmp_referral.php']],
-        ['label' => 'Upload', 'icon' => 'fas fa-file-upload', 'url' => 'rmp_upload.php', 'active_pages' => ['rmp_upload.php']],
-        ['label' => 'Payments', 'icon' => 'fas fa-receipt', 'url' => 'payment_history.php', 'active_pages' => ['payment_history.php']],
-        ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'active_pages' => ['profile.php']]
-    ];
-} elseif ($mobile_user_role === 'admin') {
-    $mobile_nav_items = [
-        ['label' => 'Overview', 'icon' => 'fas fa-chart-pie', 'url' => 'admin_dashboard.php', 'active_pages' => ['admin_dashboard.php']],
-        ['label' => 'Orders', 'icon' => 'fas fa-boxes', 'url' => 'admin_orders_management.php', 'active_pages' => ['admin_orders_management.php', 'admin_orders.php']],
-        ['label' => 'Users', 'icon' => 'fas fa-users-cog', 'url' => 'admin_users.php', 'active_pages' => ['admin_users.php', 'admin_verify.php']],
-        ['label' => 'Refunds', 'icon' => 'fas fa-undo', 'url' => 'admin_refunds.php', 'active_pages' => ['admin_refunds.php']],
-        ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'active_pages' => ['profile.php']]
-    ];
-} else { // Guest
-    $mobile_nav_items = [
-        ['label' => 'Home', 'icon' => 'fas fa-home', 'url' => 'index.php', 'active_pages' => ['index.php']],
-        ['label' => 'Medicines', 'icon' => 'fas fa-pills', 'url' => 'medicines.php', 'active_pages' => ['medicines.php']],
-        ['label' => 'Doctors', 'icon' => 'fas fa-user-md', 'url' => 'nearby_doctors.php', 'active_pages' => ['nearby_doctors.php']],
-        ['label' => 'Login', 'icon' => 'fas fa-sign-in-alt', 'url' => 'login.php', 'active_pages' => ['login.php']],
-        ['label' => 'Sign Up', 'icon' => 'fas fa-user-plus', 'url' => 'register.php', 'active_pages' => ['register.php']]
-    ];
+if ($is_logged_in) {
+    if ($mobile_user_role === 'patient') {
+        $mobile_nav_items = [
+            ['label' => 'Home', 'icon' => 'fas fa-home', 'url' => 'patient_dashboard.php', 'active_pages' => ['patient_dashboard.php', 'index.php']],
+            ['label' => 'Medicines', 'icon' => 'fas fa-pills', 'url' => 'medicines.php', 'active_pages' => ['medicines.php', 'your_orders.php']],
+            ['label' => 'Doctors', 'icon' => 'fas fa-user-md', 'url' => 'nearby_doctors.php', 'active_pages' => ['nearby_doctors.php', 'book_consult.php']],
+            ['label' => 'Notifs', 'icon' => 'fas fa-bell', 'url' => '#', 'is_notif' => true, 'active_pages' => []],
+            ['label' => 'Profile', 'icon' => 'fas fa-user-circle', 'url' => 'profile.php', 'active_pages' => ['profile.php', 'prescription_vault.php', 'my_wallet.php']]
+        ];
+    } elseif ($mobile_user_role === 'doctor') {
+        $mobile_nav_items = [
+            ['label' => 'Dashboard', 'icon' => 'fas fa-chart-line', 'url' => 'doctor_dashboard.php', 'active_pages' => ['doctor_dashboard.php']],
+            ['label' => 'Appointments', 'icon' => 'fas fa-calendar-alt', 'url' => 'doctor_appointments.php', 'active_pages' => ['doctor_appointments.php']],
+            ['label' => 'Referrals', 'icon' => 'fas fa-exchange-alt', 'url' => 'doctor_referrals.php', 'active_pages' => ['doctor_referrals.php']],
+            ['label' => 'Orders', 'icon' => 'fas fa-box', 'url' => 'doctor_orders.php', 'active_pages' => ['doctor_orders.php', 'doctor_medicines.php']],
+            ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'active_pages' => ['profile.php']]
+        ];
+    } elseif ($mobile_user_role === 'rmp') {
+        $mobile_nav_items = [
+            ['label' => 'Dashboard', 'icon' => 'fas fa-flask', 'url' => 'rmp_dashboard.php', 'active_pages' => ['rmp_dashboard.php']],
+            ['label' => 'Referrals', 'icon' => 'fas fa-user-md', 'url' => 'rmp_referral.php', 'active_pages' => ['rmp_referral.php']],
+            ['label' => 'Upload', 'icon' => 'fas fa-file-upload', 'url' => 'rmp_upload.php', 'active_pages' => ['rmp_upload.php']],
+            ['label' => 'Payments', 'icon' => 'fas fa-receipt', 'url' => 'payment_history.php', 'active_pages' => ['payment_history.php']],
+            ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'active_pages' => ['profile.php']]
+        ];
+    } elseif ($mobile_user_role === 'admin') {
+        $mobile_nav_items = [
+            ['label' => 'Overview', 'icon' => 'fas fa-chart-pie', 'url' => 'admin_dashboard.php', 'active_pages' => ['admin_dashboard.php']],
+            ['label' => 'Orders', 'icon' => 'fas fa-boxes', 'url' => 'admin_orders_management.php', 'active_pages' => ['admin_orders_management.php', 'admin_orders.php']],
+            ['label' => 'Users', 'icon' => 'fas fa-users-cog', 'url' => 'admin_users.php', 'active_pages' => ['admin_users.php', 'admin_verify.php']],
+            ['label' => 'Refunds', 'icon' => 'fas fa-undo', 'url' => 'admin_refunds.php', 'active_pages' => ['admin_refunds.php']],
+            ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'active_pages' => ['profile.php']]
+        ];
+    }
 }
 
 $mobile_unread_cnt = 0;
 if (isset($header_unread)) {
     $mobile_unread_cnt = $header_unread;
-} elseif (isset($_SESSION['user_id']) && function_exists('get_unread_notification_count')) {
+} elseif ($is_logged_in && function_exists('get_unread_notification_count')) {
     $mobile_unread_cnt = get_unread_notification_count($_SESSION['user_id']);
 }
 ?>
 
-<!-- Mobile Bottom Navigation Bar (Appears on Mobile screens < 768px ONLY) -->
+<?php if ($is_logged_in && !empty($mobile_nav_items)): ?>
+<style>
+@media (max-width: 767px) {
+  body {
+    padding-bottom: calc(65px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+</style>
+<!-- Mobile Bottom Navigation Bar (Appears ONLY for Logged-in Users on Mobile screens < 768px) -->
 <nav class="mobile-bottom-nav" aria-label="Mobile Navigation">
     <?php foreach ($mobile_nav_items as $item): 
         $is_active = in_array($current_page, $item['active_pages']);
@@ -76,6 +79,7 @@ if (isset($header_unread)) {
         </a>
     <?php endforeach; ?>
 </nav>
+<?php endif; ?>
 
     <footer>
         <p>&copy; <?php echo date("Y"); ?> MedicalAk. All Rights Reserved. Transforming Healthcare with Smart Innovation.</p>

@@ -197,7 +197,7 @@ if (isset($_SESSION['user_id'])) {
     </header>
 
     <!-- Notification Toast Container -->
-    <div id="notifToastContainer" style="position: fixed; bottom: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 10px; max-width: 350px;"></div>
+    <div id="notifToastContainer" style="position: fixed; bottom: 20px; right: 20px; z-index: 99999; pointer-events: none; display: flex; flex-direction: column; gap: 10px; max-width: 350px;"></div>
 
     <!-- Clear Notifications Confirmation Modal -->
     <div id="clearNotifModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 1000000; align-items: center; justify-content: center; padding: 1rem;">

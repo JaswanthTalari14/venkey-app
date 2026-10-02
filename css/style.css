@@ -927,10 +927,6 @@ footer {
 
 /* Mobile Devices Only (< 768px) */
 @media (max-width: 767px) {
-  body {
-    padding-bottom: calc(65px + env(safe-area-inset-bottom, 0px)) !important;
-  }
-
   .mobile-bottom-nav {
     display: flex !important;
     position: fixed !important;
@@ -944,7 +940,9 @@ footer {
     border-top: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12)) !important;
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    z-index: 99998 !important;
+    z-index: 999999 !important;
+    pointer-events: auto !important;
+    touch-action: manipulation !important;
     align-items: center !important;
     justify-content: space-around !important;
     padding: 0 0.25rem !important;
@@ -964,6 +962,10 @@ footer {
     font-size: 0.68rem !important;
     font-weight: 500 !important;
     position: relative !important;
+    pointer-events: auto !important;
+    touch-action: manipulation !important;
+    z-index: 10 !important;
+    cursor: pointer !important;
     transition: color 0.2s ease, transform 0.15s ease !important;
     padding: 0.25rem 0 !important;
     user-select: none !important;
