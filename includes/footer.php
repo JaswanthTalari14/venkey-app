@@ -1,9 +1,109 @@
     </main>
+
+<?php
+// Mobile Bottom Navigation (Mobile Devices Only < 768px)
+$mobile_user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'guest';
+$current_page = basename($_SERVER['PHP_SELF']);
+
+$mobile_nav_items = [];
+
+if ($mobile_user_role === 'patient') {
+    $mobile_nav_items = [
+        ['label' => 'Home', 'icon' => 'fas fa-home', 'url' => 'patient_dashboard.php', 'active_pages' => ['patient_dashboard.php', 'index.php']],
+        ['label' => 'Medicines', 'icon' => 'fas fa-pills', 'url' => 'medicines.php', 'active_pages' => ['medicines.php', 'your_orders.php']],
+        ['label' => 'Doctors', 'icon' => 'fas fa-user-md', 'url' => 'nearby_doctors.php', 'active_pages' => ['nearby_doctors.php', 'book_consult.php']],
+        ['label' => 'Notifs', 'icon' => 'fas fa-bell', 'url' => '#', 'is_notif' => true, 'active_pages' => []],
+        ['label' => 'Profile', 'icon' => 'fas fa-user-circle', 'url' => 'profile.php', 'active_pages' => ['profile.php', 'prescription_vault.php', 'my_wallet.php']]
+    ];
+} elseif ($mobile_user_role === 'doctor') {
+    $mobile_nav_items = [
+        ['label' => 'Dashboard', 'icon' => 'fas fa-chart-line', 'url' => 'doctor_dashboard.php', 'active_pages' => ['doctor_dashboard.php']],
+        ['label' => 'Appointments', 'icon' => 'fas fa-calendar-alt', 'url' => 'doctor_appointments.php', 'active_pages' => ['doctor_appointments.php']],
+        ['label' => 'Referrals', 'icon' => 'fas fa-exchange-alt', 'url' => 'doctor_referrals.php', 'active_pages' => ['doctor_referrals.php']],
+        ['label' => 'Orders', 'icon' => 'fas fa-box', 'url' => 'doctor_orders.php', 'active_pages' => ['doctor_orders.php', 'doctor_medicines.php']],
+        ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'active_pages' => ['profile.php']]
+    ];
+} elseif ($mobile_user_role === 'rmp') {
+    $mobile_nav_items = [
+        ['label' => 'Dashboard', 'icon' => 'fas fa-flask', 'url' => 'rmp_dashboard.php', 'active_pages' => ['rmp_dashboard.php']],
+        ['label' => 'Referrals', 'icon' => 'fas fa-user-md', 'url' => 'rmp_referral.php', 'active_pages' => ['rmp_referral.php']],
+        ['label' => 'Upload', 'icon' => 'fas fa-file-upload', 'url' => 'rmp_upload.php', 'active_pages' => ['rmp_upload.php']],
+        ['label' => 'Payments', 'icon' => 'fas fa-receipt', 'url' => 'payment_history.php', 'active_pages' => ['payment_history.php']],
+        ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'active_pages' => ['profile.php']]
+    ];
+} elseif ($mobile_user_role === 'admin') {
+    $mobile_nav_items = [
+        ['label' => 'Overview', 'icon' => 'fas fa-chart-pie', 'url' => 'admin_dashboard.php', 'active_pages' => ['admin_dashboard.php']],
+        ['label' => 'Orders', 'icon' => 'fas fa-boxes', 'url' => 'admin_orders_management.php', 'active_pages' => ['admin_orders_management.php', 'admin_orders.php']],
+        ['label' => 'Users', 'icon' => 'fas fa-users-cog', 'url' => 'admin_users.php', 'active_pages' => ['admin_users.php', 'admin_verify.php']],
+        ['label' => 'Refunds', 'icon' => 'fas fa-undo', 'url' => 'admin_refunds.php', 'active_pages' => ['admin_refunds.php']],
+        ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'active_pages' => ['profile.php']]
+    ];
+} else { // Guest
+    $mobile_nav_items = [
+        ['label' => 'Home', 'icon' => 'fas fa-home', 'url' => 'index.php', 'active_pages' => ['index.php']],
+        ['label' => 'Medicines', 'icon' => 'fas fa-pills', 'url' => 'medicines.php', 'active_pages' => ['medicines.php']],
+        ['label' => 'Doctors', 'icon' => 'fas fa-user-md', 'url' => 'nearby_doctors.php', 'active_pages' => ['nearby_doctors.php']],
+        ['label' => 'Login', 'icon' => 'fas fa-sign-in-alt', 'url' => 'login.php', 'active_pages' => ['login.php']],
+        ['label' => 'Sign Up', 'icon' => 'fas fa-user-plus', 'url' => 'register.php', 'active_pages' => ['register.php']]
+    ];
+}
+
+$mobile_unread_cnt = 0;
+if (isset($header_unread)) {
+    $mobile_unread_cnt = $header_unread;
+} elseif (isset($_SESSION['user_id']) && function_exists('get_unread_notification_count')) {
+    $mobile_unread_cnt = get_unread_notification_count($_SESSION['user_id']);
+}
+?>
+
+<!-- Mobile Bottom Navigation Bar (Appears on Mobile screens < 768px ONLY) -->
+<nav class="mobile-bottom-nav" aria-label="Mobile Navigation">
+    <?php foreach ($mobile_nav_items as $item): 
+        $is_active = in_array($current_page, $item['active_pages']);
+        $is_notif = !empty($item['is_notif']);
+    ?>
+        <a href="<?php echo htmlspecialchars($item['url']); ?>" 
+           class="mobile-nav-item <?php echo $is_active ? 'active' : ''; ?>"
+           <?php if ($is_notif): ?>onclick="handleMobileNotifToggle(event);"<?php endif; ?>>
+            <i class="<?php echo $item['icon']; ?>"></i>
+            <span><?php echo htmlspecialchars($item['label']); ?></span>
+            <?php if ($is_notif): ?>
+                <span id="mobileNotifBadge" class="mobile-nav-badge" style="display: <?php echo $mobile_unread_cnt > 0 ? 'inline-flex' : 'none'; ?>;">
+                    <?php echo $mobile_unread_cnt; ?>
+                </span>
+            <?php endif; ?>
+        </a>
+    <?php endforeach; ?>
+</nav>
+
     <footer>
         <p>&copy; <?php echo date("Y"); ?> MedicalAk. All Rights Reserved. Transforming Healthcare with Smart Innovation.</p>
     </footer>
     <script>
+    function handleMobileNotifToggle(e) {
+        e.preventDefault();
+        const bellBtn = document.getElementById('notifBellBtn');
+        if (bellBtn) {
+            bellBtn.click();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
+        // Synchronize Mobile Bottom Nav Notification Badge with Header Bell Badge
+        const headerBadge = document.getElementById('notifBadge');
+        const mobileBadge = document.getElementById('mobileNotifBadge');
+        if (headerBadge && mobileBadge) {
+            const syncBadge = function() {
+                mobileBadge.innerText = headerBadge.innerText;
+                mobileBadge.style.display = (headerBadge.style.display !== 'none' && headerBadge.innerText.trim() !== '0') ? 'inline-flex' : 'none';
+            };
+            syncBadge();
+            const observer = new MutationObserver(syncBadge);
+            observer.observe(headerBadge, { childList: true, characterData: true, attributes: true, subtree: true });
+        }
+
         // Dark / Light Mode Toggle Logic
         const themeToggle = document.getElementById('themeToggle');
         const themeIcon = document.getElementById('themeIcon');
@@ -156,7 +256,7 @@
                 if (!toast) {
                     toast = document.createElement('div');
                     toast.id = 'networkToast';
-                    toast.style.cssText = 'position: fixed; bottom: 20px; left: 20px; z-index: 999999; padding: 0.75rem 1.25rem; border-radius: 12px; font-weight: 600; font-size: 0.88rem; backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 0.5rem; transition: all 0.3s ease;';
+                    toast.style.cssText = 'position: fixed; bottom: 80px; left: 20px; z-index: 999999; padding: 0.75rem 1.25rem; border-radius: 12px; font-weight: 600; font-size: 0.88rem; backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 0.5rem; transition: all 0.3s ease;';
                     document.body.appendChild(toast);
                 }
                 if (isOnline) {
@@ -203,3 +303,4 @@
     </script>
 </body>
 </html>
+

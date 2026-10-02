@@ -921,3 +921,96 @@ footer {
   }
 }
 
+/* ==================================================
+   MOBILE-ONLY BOTTOM NAVIGATION (STRICT IMPLEMENTATION)
+   ================================================== */
+
+/* Mobile Devices Only (< 768px) */
+@media (max-width: 767px) {
+  body {
+    padding-bottom: calc(65px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .mobile-bottom-nav {
+    display: flex !important;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 60px;
+    background: var(--darker-bg, #121826);
+    border-top: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    z-index: 99998;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 0.25rem;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-shadow: 0 -5px 25px rgba(0, 0, 0, 0.5);
+  }
+
+  .mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    height: 100%;
+    color: var(--text-secondary, #94a3b8);
+    text-decoration: none;
+    font-size: 0.68rem;
+    font-weight: 500;
+    position: relative;
+    transition: color 0.2s ease, transform 0.15s ease;
+    padding: 0.25rem 0;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-nav-item i {
+    font-size: 1.15rem;
+    margin-bottom: 0.25rem;
+    transition: color 0.2s ease, transform 0.2s ease;
+  }
+
+  .mobile-nav-item.active {
+    color: var(--primary-color, #4a90e2);
+    font-weight: 700;
+  }
+
+  .mobile-nav-item.active i {
+    color: var(--primary-color, #4a90e2);
+    transform: translateY(-1px);
+  }
+
+  .mobile-nav-badge {
+    position: absolute;
+    top: 5px;
+    right: calc(50% - 15px);
+    background: #ff4757;
+    color: #ffffff;
+    font-size: 0.62rem;
+    font-weight: 700;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    line-height: 1;
+    box-shadow: 0 2px 6px rgba(255, 71, 87, 0.4);
+    border: 1px solid rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* Tablet, Laptop, and Desktop Devices (>= 768px) - MUST BE HIDDEN */
+@media (min-width: 768px) {
+  .mobile-bottom-nav {
+    display: none !important;
+  }
+}
+
+
