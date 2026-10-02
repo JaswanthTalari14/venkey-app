@@ -102,6 +102,7 @@ function ensure_database_indexes($conn) {
     $add_index_if_missing('patient_addresses', 'idx_pa_patient', 'patient_id');
 
     // Auto-migrate columns for orders table
+    @$conn->query("ALTER TABLE orders MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
     $col_res = @$conn->query("SHOW COLUMNS FROM orders");
     if ($col_res) {
         $existing_cols = [];

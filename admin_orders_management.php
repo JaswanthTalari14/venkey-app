@@ -7,6 +7,30 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     exit;
 }
 
+function get_order_status_style($status) {
+    $st = strtolower(trim($status ?? ''));
+    switch ($st) {
+        case 'delivered':
+            return ['color' => '#2ed573', 'bg' => 'rgba(46, 213, 115, 0.12)', 'border' => '#2ed573'];
+        case 'shipped':
+            return ['color' => '#4a90e2', 'bg' => 'rgba(74, 144, 226, 0.12)', 'border' => '#4a90e2'];
+        case 'packing':
+        case 'packed':
+            return ['color' => '#a55eea', 'bg' => 'rgba(165, 94, 234, 0.12)', 'border' => '#a55eea'];
+        case 'processing':
+            return ['color' => '#3498db', 'bg' => 'rgba(52, 152, 219, 0.12)', 'border' => '#3498db'];
+        case 'out for delivery':
+            return ['color' => '#fa8231', 'bg' => 'rgba(250, 130, 49, 0.12)', 'border' => '#fa8231'];
+        case 'rejected':
+        case 'cancelled':
+        case 'failed':
+            return ['color' => '#ff4757', 'bg' => 'rgba(255, 71, 87, 0.12)', 'border' => '#ff4757'];
+        case 'pending':
+        default:
+            return ['color' => '#f5a623', 'bg' => 'rgba(245, 166, 35, 0.12)', 'border' => '#f5a623'];
+    }
+}
+
 // Fetch all non-deleted orders with patient details and medicine items
 $orders_query = $conn->query("
     SELECT o.id as order_id, o.patient_id, o.total_amount, o.status as order_status, 
@@ -103,9 +127,13 @@ if ($orders_query) {
                     <select id="adminStatusFilter" class="form-control" style="width: auto; min-width: 150px;" onchange="filterAdminOrders()">
                         <option value="all">All Statuses</option>
                         <option value="pending">Pending</option>
+                        <option value="processing">Processing</option>
+                        <option value="packing">Packing</option>
                         <option value="shipped">Shipped</option>
+                        <option value="out for delivery">Out for Delivery</option>
                         <option value="delivered">Delivered</option>
                         <option value="cancelled">Cancelled</option>
+                        <option value="rejected">Rejected</option>
                     </select>
                     <button type="button" class="btn btn-outline" onclick="resetAdminFilters()" style="padding: 0.55rem 1rem; font-size: 0.85rem;">
                         <i class="fas fa-redo-alt"></i> Reset
@@ -134,12 +162,10 @@ if ($orders_query) {
                         $search_index = strtolower($formatted_id . ' ' . $order['patient_name'] . ' ' . $order['patient_phone'] . ' ' . implode(' ', $med_names) . ' ' . $order['address'] . ' ' . $order['payment_method'] . ' ' . $order['payment_status'] . ' ' . $order['order_status']);
 
                         // Status Color Mapping
-                        $status_color = 'var(--text-primary)';
-                        $status_bg = 'rgba(255,255,255,0.06)';
-                        if ($order['order_status'] === 'pending') { $status_color = 'var(--accent)'; $status_bg = 'rgba(245, 166, 35, 0.12)'; }
-                        elseif ($order['order_status'] === 'shipped') { $status_color = '#3498db'; $status_bg = 'rgba(52, 152, 219, 0.12)'; }
-                        elseif ($order['order_status'] === 'delivered') { $status_color = '#2ed573'; $status_bg = 'rgba(46, 213, 115, 0.12)'; }
-                        elseif ($order['order_status'] === 'cancelled') { $status_color = '#ff4757'; $status_bg = 'rgba(255, 71, 87, 0.12)'; }
+                        $st_style = get_order_status_style($order['order_status']);
+                        $status_color = $st_style['color'];
+                        $status_bg = $st_style['bg'];
+                        $status_border = $st_style['border'];
 
                         // Payment Status Colors
                         $pay_status = $order['payment_status'];
@@ -161,7 +187,7 @@ if ($orders_query) {
                             <div>
                                 <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
                                     <strong style="font-size: 1.15rem; color: var(--primary-color); font-weight: 800;"><?php echo $formatted_id; ?></strong>
-                                    <span id="card-status-badge-<?php echo $ord_id; ?>" style="color: <?php echo $status_color; ?>; background: <?php echo $status_bg; ?>; font-weight: 700; text-transform: capitalize; padding: 0.3rem 0.85rem; border-radius: 20px; font-size: 0.82rem; border: 1px solid <?php echo $status_color; ?>; display: inline-flex; align-items: center; gap: 0.35rem;">
+                                    <span id="card-status-badge-<?php echo $ord_id; ?>" style="color: <?php echo $status_color; ?>; background: <?php echo $status_bg; ?>; font-weight: 700; text-transform: capitalize; padding: 0.3rem 0.85rem; border-radius: 20px; font-size: 0.82rem; border: 1px solid <?php echo $status_border; ?>; display: inline-flex; align-items: center; gap: 0.35rem;">
                                         <i class="fas fa-circle" style="font-size: 0.5rem;"></i><span class="status-text"><?php echo htmlspecialchars($order['order_status']); ?></span>
                                     </span>
                                 </div>
@@ -251,15 +277,22 @@ if ($orders_query) {
 
                         <!-- Card Action Buttons Toolbar -->
                         <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; justify-content: space-between; border-top: 1px solid var(--glass-border); padding-top: 1rem;">
-                            <!-- Status Change Dropdown -->
+                            <!-- Status Change Dropdown + Update Button -->
                             <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                                 <label style="font-size: 0.82rem; color: var(--text-secondary); font-weight: 600;">Status:</label>
-                                <select class="form-control" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.82rem;" onchange="updateOrderStatusInline(<?php echo $ord_id; ?>, this.value)">
-                                    <option value="pending" <?php echo ($order['order_status'] === 'pending') ? 'selected' : ''; ?>>Pending</option>
-                                    <option value="shipped" <?php echo ($order['order_status'] === 'shipped') ? 'selected' : ''; ?>>Shipped</option>
-                                    <option value="delivered" <?php echo ($order['order_status'] === 'delivered') ? 'selected' : ''; ?>>Delivered</option>
-                                    <option value="cancelled" <?php echo ($order['order_status'] === 'cancelled') ? 'selected' : ''; ?>>Cancelled</option>
+                                <select id="status-select-<?php echo $ord_id; ?>" class="form-control" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.82rem;">
+                                    <option value="pending" <?php echo (strtolower($order['order_status']) === 'pending') ? 'selected' : ''; ?>>Pending</option>
+                                    <option value="processing" <?php echo (strtolower($order['order_status']) === 'processing') ? 'selected' : ''; ?>>Processing</option>
+                                    <option value="packing" <?php echo (in_array(strtolower($order['order_status']), ['packing', 'packed'])) ? 'selected' : ''; ?>>Packing</option>
+                                    <option value="shipped" <?php echo (strtolower($order['order_status']) === 'shipped') ? 'selected' : ''; ?>>Shipped</option>
+                                    <option value="out for delivery" <?php echo (strtolower($order['order_status']) === 'out for delivery') ? 'selected' : ''; ?>>Out for Delivery</option>
+                                    <option value="delivered" <?php echo (strtolower($order['order_status']) === 'delivered') ? 'selected' : ''; ?>>Delivered</option>
+                                    <option value="cancelled" <?php echo (strtolower($order['order_status']) === 'cancelled') ? 'selected' : ''; ?>>Cancelled</option>
+                                    <option value="rejected" <?php echo (strtolower($order['order_status']) === 'rejected') ? 'selected' : ''; ?>>Rejected</option>
                                 </select>
+                                <button type="button" id="update-btn-<?php echo $ord_id; ?>" class="btn btn-primary" style="padding: 0.35rem 0.85rem; font-size: 0.82rem;" onclick="submitCardStatusUpdate(<?php echo $ord_id; ?>)">
+                                    <i class="fas fa-sync-alt"></i> Update
+                                </button>
                             </div>
 
                             <!-- Admin Actions -->
@@ -270,7 +303,7 @@ if ($orders_query) {
                                 <button type="button" class="btn btn-outline" style="padding: 0.45rem 0.85rem; font-size: 0.82rem; color: var(--primary-color); border-color: var(--primary-color);" onclick="openEstTimeModal(<?php echo $ord_id; ?>, '<?php echo htmlspecialchars(addslashes($order['estimated_delivery_time'])); ?>')" title="Set/Update Estimated Delivery Time">
                                     <i class="fas fa-clock"></i> Set Est. Time
                                 </button>
-                                <?php if ($order['order_status'] !== 'cancelled'): ?>
+                                <?php if (strtolower($order['order_status']) !== 'cancelled'): ?>
                                     <button type="button" class="btn btn-outline" style="padding: 0.45rem 0.85rem; font-size: 0.82rem; color: #ffa502; border-color: #ffa502;" onclick="openCancelModal(<?php echo $ord_id; ?>)" title="Cancel Order">
                                         <i class="fas fa-times-circle"></i> Cancel Order
                                     </button>
@@ -402,8 +435,69 @@ function resetAdminFilters() {
     filterAdminOrders();
 }
 
-// Inline Status Update
-function updateOrderStatusInline(orderId, newStatus) {
+// Status Style Color Mapping for JavaScript
+function getStatusStyleJS(status) {
+    var st = (status || '').toLowerCase().trim();
+    switch (st) {
+        case 'delivered':
+            return { color: '#2ed573', bg: 'rgba(46, 213, 115, 0.12)', border: '#2ed573' };
+        case 'shipped':
+            return { color: '#4a90e2', bg: 'rgba(74, 144, 226, 0.12)', border: '#4a90e2' };
+        case 'packing':
+        case 'packed':
+            return { color: '#a55eea', bg: 'rgba(165, 94, 234, 0.12)', border: '#a55eea' };
+        case 'processing':
+            return { color: '#3498db', bg: 'rgba(52, 152, 219, 0.12)', border: '#3498db' };
+        case 'out for delivery':
+            return { color: '#fa8231', bg: 'rgba(250, 130, 49, 0.12)', border: '#fa8231' };
+        case 'rejected':
+        case 'cancelled':
+        case 'failed':
+            return { color: '#ff4757', bg: 'rgba(255, 71, 87, 0.12)', border: '#ff4757' };
+        case 'pending':
+        default:
+            return { color: '#f5a623', bg: 'rgba(245, 166, 35, 0.12)', border: '#f5a623' };
+    }
+}
+
+// Toast notification helper
+function showStatusToast(message, isSuccess = true) {
+    var toast = document.getElementById('statusToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'statusToast';
+        toast.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 10000000; padding: 12px 20px; border-radius: 12px; font-weight: 600; font-size: 0.9rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: all 0.3s ease; display: flex; align-items: center; gap: 8px; max-width: 380px;';
+        document.body.appendChild(toast);
+    }
+    toast.style.background = isSuccess ? 'rgba(46, 213, 115, 0.95)' : 'rgba(255, 71, 87, 0.95)';
+    toast.style.color = '#ffffff';
+    toast.innerHTML = (isSuccess ? '<i class="fas fa-check-circle"></i> ' : '<i class="fas fa-exclamation-circle"></i> ') + escapeHtml(message);
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+
+    setTimeout(function() {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(-10px)';
+    }, 3500);
+}
+
+// Submit Same Card Status Update
+function submitCardStatusUpdate(orderId) {
+    var selectElem = document.getElementById('status-select-' + orderId);
+    var btnElem = document.getElementById('update-btn-' + orderId);
+    if (!selectElem || !btnElem) return;
+
+    var newStatus = selectElem.value;
+
+    if (newStatus === 'cancelled') {
+        openCancelModal(orderId);
+        return;
+    }
+
+    var originalBtnText = btnElem.innerHTML;
+    btnElem.disabled = true;
+    btnElem.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+
     fetch('api_admin_order_action.php?action=update_status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -411,21 +505,57 @@ function updateOrderStatusInline(orderId, newStatus) {
     })
     .then(res => res.json())
     .then(data => {
+        btnElem.disabled = false;
+        btnElem.innerHTML = originalBtnText;
+
         if (data.success) {
             var card = document.getElementById('order-card-' + orderId);
             if (card) {
-                card.setAttribute('data-status', newStatus);
+                // 1. Update data-status attribute on card
+                card.setAttribute('data-status', newStatus.toLowerCase());
+
+                // 2. Update search index attribute
+                var oldSearch = card.getAttribute('data-search') || '';
+                card.setAttribute('data-search', oldSearch + ' ' + newStatus.toLowerCase());
+
+                // 3. Immediately update badge text & status color on the SAME card
                 var badge = document.getElementById('card-status-badge-' + orderId);
                 if (badge) {
-                    var statusText = badge.querySelector('.status-text');
-                    if (statusText) statusText.innerText = newStatus;
+                    var style = getStatusStyleJS(newStatus);
+                    badge.style.color = style.color;
+                    badge.style.borderColor = style.border;
+                    badge.style.background = style.bg;
+
+                    var statusTextSpan = badge.querySelector('.status-text');
+                    if (statusTextSpan) {
+                        statusTextSpan.innerText = newStatus;
+                    }
+                }
+
+                // 4. Hide cancellation reason box if status moved away from cancelled
+                var reasonBox = document.getElementById('card-cancel-reason-box-' + orderId);
+                if (reasonBox && newStatus !== 'cancelled') {
+                    reasonBox.style.display = 'none';
                 }
             }
+
+            showStatusToast('Order status updated successfully.', true);
             filterAdminOrders();
         } else {
-            alert(data.message || 'Failed to update order status');
+            showStatusToast(data.message || 'Failed to update order status', false);
         }
+    })
+    .catch(err => {
+        btnElem.disabled = false;
+        btnElem.innerHTML = originalBtnText;
+        showStatusToast('Network error while updating order status.', false);
     });
+}
+
+function updateOrderStatusInline(orderId, newStatus) {
+    var selectElem = document.getElementById('status-select-' + orderId);
+    if (selectElem) selectElem.value = newStatus;
+    submitCardStatusUpdate(orderId);
 }
 
 // Cancel Modal Functions

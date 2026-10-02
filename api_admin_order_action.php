@@ -121,9 +121,9 @@ if ($action === 'set_delivery_time') {
 if ($action === 'update_status') {
     $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
     $order_id = isset($input['order_id']) ? (int)$input['order_id'] : 0;
-    $status = isset($input['status']) ? trim($input['status']) : '';
+    $status = isset($input['status']) ? strtolower(trim($input['status'])) : '';
 
-    $allowed = ['pending', 'shipped', 'delivered', 'cancelled'];
+    $allowed = ['pending', 'processing', 'packing', 'packed', 'shipped', 'out for delivery', 'delivered', 'cancelled', 'rejected'];
     if ($order_id <= 0 || !in_array($status, $allowed)) {
         echo json_encode(['success' => false, 'message' => 'Invalid order status parameter']);
         exit;
@@ -134,11 +134,21 @@ if ($action === 'update_status') {
     if ($stmt->execute()) {
         require_once 'includes/referral_functions.php';
         sync_pending_referrals();
+
+        $reason = '';
+        if ($status === 'cancelled') {
+            $res = $conn->query("SELECT cancellation_reason FROM orders WHERE id = $order_id");
+            if ($res && $r = $res->fetch_assoc()) {
+                $reason = $r['cancellation_reason'] ?? '';
+            }
+        }
+
         echo json_encode([
             'success' => true,
             'order_id' => $order_id,
             'status' => $status,
-            'message' => 'Order status updated to ' . ucfirst($status)
+            'cancellation_reason' => $reason,
+            'message' => 'Order status updated to ' . ucwords($status) . ' successfully'
         ]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Failed to update order status']);
