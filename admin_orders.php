@@ -134,10 +134,10 @@ $orders = $conn->query("
                                     <form method="POST" action="" style="display: flex; gap: 0.5rem; align-items: center;">
                                         <input type="hidden" name="order_id" value="<?php echo $o['id']; ?>">
                                         <select name="status" class="form-control" style="padding: 0.3rem; font-size: 0.8rem; width: 110px;">
-                                            <option value="pending" <?php if($o['status']=='pending') echo 'selected'; ?>>Pending</option>
-                                            <option value="shipped" <?php if($o['status']=='shipped') echo 'selected'; ?>>Shipped</option>
-                                            <option value="delivered" <?php if($o['status']=='delivered') echo 'selected'; ?>>Delivered</option>
-                                            <option value="cancelled" <?php if($o['status']=='cancelled') echo 'selected'; ?>>Cancelled</option>
+                                            <option value="pending" <?php echo ($o['status'] === 'pending') ? 'selected' : ''; ?>>Pending</option>
+                                            <option value="shipped" <?php echo ($o['status'] === 'shipped') ? 'selected' : ''; ?>>Shipped</option>
+                                            <option value="delivered" <?php echo ($o['status'] === 'delivered') ? 'selected' : ''; ?>>Delivered</option>
+                                            <option value="cancelled" <?php echo ($o['status'] === 'cancelled') ? 'selected' : ''; ?>>Cancelled</option>
                                         </select>
                                         <button type="submit" name="update_status" class="btn btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">Update</button>
                                     </form>

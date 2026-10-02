@@ -254,11 +254,11 @@ if ($orders_query) {
                             <!-- Status Change Dropdown -->
                             <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                                 <label style="font-size: 0.82rem; color: var(--text-secondary); font-weight: 600;">Status:</label>
-                                <select class="form-control" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.82rem;" onchange="updateOrderStatusInline(<?php echo $ord_id; />, this.value)">
-                                    <option value="pending" <?php if($order['order_status']=='pending') echo 'selected'; ?>>Pending</option>
-                                    <option value="shipped" <?php if($order['order_status']=='shipped') echo 'selected'; ?>>Shipped</option>
-                                    <option value="delivered" <?php if($order['order_status']=='delivered') echo 'selected'; ?>>Delivered</option>
-                                    <option value="cancelled" <?php if($order['order_status']=='cancelled') echo 'selected'; ?>>Cancelled</option>
+                                <select class="form-control" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.82rem;" onchange="updateOrderStatusInline(<?php echo $ord_id; ?>, this.value)">
+                                    <option value="pending" <?php echo ($order['order_status'] === 'pending') ? 'selected' : ''; ?>>Pending</option>
+                                    <option value="shipped" <?php echo ($order['order_status'] === 'shipped') ? 'selected' : ''; ?>>Shipped</option>
+                                    <option value="delivered" <?php echo ($order['order_status'] === 'delivered') ? 'selected' : ''; ?>>Delivered</option>
+                                    <option value="cancelled" <?php echo ($order['order_status'] === 'cancelled') ? 'selected' : ''; ?>>Cancelled</option>
                                 </select>
                             </div>
 
