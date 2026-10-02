@@ -100,6 +100,26 @@ function ensure_database_indexes($conn) {
     $add_index_if_missing('user_notifications', 'idx_un_user_read', 'user_id, is_read');
     $add_index_if_missing('medicines', 'idx_med_name', 'name');
     $add_index_if_missing('patient_addresses', 'idx_pa_patient', 'patient_id');
+
+    // Auto-migrate columns for orders table
+    $col_res = @$conn->query("SHOW COLUMNS FROM orders");
+    if ($col_res) {
+        $existing_cols = [];
+        while ($col_row = $col_res->fetch_assoc()) {
+            $existing_cols[] = strtolower($col_row['Field']);
+        }
+        if (!empty($existing_cols)) {
+            if (!in_array('cancellation_reason', $existing_cols)) {
+                @$conn->query("ALTER TABLE orders ADD COLUMN cancellation_reason TEXT DEFAULT NULL AFTER status");
+            }
+            if (!in_array('estimated_delivery_time', $existing_cols)) {
+                @$conn->query("ALTER TABLE orders ADD COLUMN estimated_delivery_time VARCHAR(100) DEFAULT NULL AFTER cancellation_reason");
+            }
+            if (!in_array('is_deleted', $existing_cols)) {
+                @$conn->query("ALTER TABLE orders ADD COLUMN is_deleted TINYINT(1) DEFAULT 0 AFTER estimated_delivery_time");
+            }
+        }
+    }
 }
 
 ensure_database_indexes($conn);

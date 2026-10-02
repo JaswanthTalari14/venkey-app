@@ -153,6 +153,7 @@ include 'includes/header.php';
             <li><a href="admin_users.php"><i class="fas fa-users-cog"></i> Manage Users</a></li>
             <li><a href="admin_verify.php"><i class="fas fa-user-md"></i> Verify Doctors & RMPs</a></li>
             <li><a href="admin_bookings.php"><i class="fas fa-calendar-check"></i> All Bookings</a></li>
+            <li><a href="admin_orders_management.php"><i class="fas fa-boxes"></i> Order Management</a></li>
             <li><a href="admin_orders.php"><i class="fas fa-box"></i> Medicine Orders</a></li>
             <li><a href="admin_medicines.php"><i class="fas fa-pills"></i> Manage Medicines</a></li>
             <li><a href="admin_referrals.php"><i class="fas fa-gift"></i> Referral Management</a></li>

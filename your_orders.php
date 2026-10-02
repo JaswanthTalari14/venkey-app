@@ -57,13 +57,13 @@ $payment_param = isset($_GET['payment']) ? trim($_GET['payment']) : 'all';
 // Fetch all medicine orders belonging strictly to the currently authenticated patient
 $orders_query = $conn->query("
     SELECT o.id as order_id, o.total_amount, o.status as order_status, o.payment_method, o.payment_status, 
-           o.gateway_payment_id, o.gateway_order_id, o.address, o.created_at,
+           o.gateway_payment_id, o.gateway_order_id, o.address, o.created_at, o.cancellation_reason, o.estimated_delivery_time,
            oi.id as item_id, oi.medicine_id, oi.quantity, oi.price as unit_price,
            m.name as medicine_name, m.image as medicine_image, m.description as medicine_desc
     FROM orders o
     JOIN order_items oi ON o.id = oi.order_id
     JOIN medicines m ON oi.medicine_id = m.id
-    WHERE o.patient_id = $patient_id
+    WHERE o.patient_id = $patient_id AND (o.is_deleted = 0 OR o.is_deleted IS NULL)
     ORDER BY o.created_at DESC, o.id DESC
 ");
 
@@ -83,6 +83,8 @@ if ($orders_query) {
                 'gateway_order_id' => $row['gateway_order_id'],
                 'address' => $row['address'],
                 'created_at' => $row['created_at'],
+                'cancellation_reason' => $row['cancellation_reason'] ?? '',
+                'estimated_delivery_time' => $row['estimated_delivery_time'] ?? '',
                 'items' => []
             ];
         }
@@ -330,6 +332,16 @@ if ($orders_query) {
                                 <div style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 0.3rem;">
                                     <i class="fas fa-calendar-alt"></i> Placed on <?php echo $order_date; ?> at <?php echo $order_time; ?>
                                 </div>
+                                <?php if (!empty($order['estimated_delivery_time']) && !in_array(strtolower($order['order_status']), ['delivered', 'cancelled'])): ?>
+                                    <div style="font-size: 0.82rem; color: var(--primary-color); font-weight: 600; margin-top: 0.3rem;">
+                                        <i class="fas fa-shipping-fast"></i> Est. Delivery: <?php echo htmlspecialchars($order['estimated_delivery_time']); ?>
+                                    </div>
+                                <?php endif; ?>
+                                <?php if (strtolower($order['order_status']) === 'cancelled' && !empty($order['cancellation_reason'])): ?>
+                                    <div style="margin-top: 0.4rem; font-size: 0.8rem; color: #ff4757; background: rgba(255, 71, 87, 0.1); border-left: 3px solid #ff4757; padding: 0.35rem 0.6rem; border-radius: 4px; overflow-wrap: anywhere; word-break: break-word;">
+                                        <strong>Cancellation Reason:</strong> <?php echo htmlspecialchars($order['cancellation_reason']); ?>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                             
                             <div style="text-align: right; display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">

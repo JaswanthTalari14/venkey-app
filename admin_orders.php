@@ -22,9 +22,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
 }
 
 $orders = $conn->query("
-    SELECT o.id, o.total_amount, o.status, o.payment_method, o.payment_status, o.address, o.created_at, p.name as patient_name 
+    SELECT o.id, o.total_amount, o.status, o.payment_method, o.payment_status, o.address, o.created_at, o.cancellation_reason, o.estimated_delivery_time, p.name as patient_name, p.phone as patient_phone, p.email as patient_email
     FROM orders o
     JOIN users p ON o.patient_id = p.id
+    WHERE (o.is_deleted = 0 OR o.is_deleted IS NULL)
     ORDER BY o.created_at DESC
 ");
 ?>
@@ -41,6 +42,7 @@ $orders = $conn->query("
             <li><a href="admin_users.php"><i class="fas fa-users-cog"></i> Manage Users</a></li>
             <li><a href="admin_verify.php"><i class="fas fa-user-md"></i> Verify Doctors & RMPs</a></li>
             <li><a href="admin_bookings.php"><i class="fas fa-calendar-check"></i> All Bookings</a></li>
+            <li><a href="admin_orders_management.php"><i class="fas fa-boxes"></i> Order Management</a></li>
             <li><a href="admin_orders.php" class="active"><i class="fas fa-box"></i> Medicine Orders</a></li>
             <li><a href="admin_medicines.php"><i class="fas fa-pills"></i> Manage Medicines</a></li>
             <li><a href="admin_referrals.php"><i class="fas fa-gift"></i> Referral Management</a></li>
@@ -52,8 +54,15 @@ $orders = $conn->query("
     </aside>
     
     <main class="dashboard-content">
-        <h2>Medicine Delivery Orders</h2>
-        <p style="color: var(--text-secondary); margin-bottom: 2rem;">Manage and track all medicine delivery orders placed by patients.</p>
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;">
+            <div>
+                <h2>Medicine Delivery Orders</h2>
+                <p style="color: var(--text-secondary); margin-top: 0.2rem;">Manage and track all medicine delivery orders placed by patients.</p>
+            </div>
+            <a href="admin_orders_management.php" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; padding: 0.6rem 1.2rem; text-decoration: none;">
+                <i class="fas fa-boxes"></i> Open Order Management
+            </a>
+        </div>
 
         <?php if($success): ?><p style="color: #2ed573; margin-bottom: 1rem; padding: 1rem; background: rgba(46, 213, 115, 0.1); border-radius: 8px;"><?php echo $success; ?></p><?php endif; ?>
 
@@ -62,7 +71,8 @@ $orders = $conn->query("
                 <thead>
                     <tr style="border-bottom: 1px solid var(--glass-border);">
                         <th style="padding: 1rem;">Order ID</th>
-                        <th style="padding: 1rem;">Patient</th>
+                        <th style="padding: 1rem;">Patient Details</th>
+                        <th style="padding: 1rem;">Delivery Address</th>
                         <th style="padding: 1rem;">Total Amount</th>
                         <th style="padding: 1rem;">Payment Method</th>
                         <th style="padding: 1rem;">Payment Status</th>
@@ -75,11 +85,22 @@ $orders = $conn->query("
                     <?php if ($orders && $orders->num_rows > 0): ?>
                         <?php while($o = $orders->fetch_assoc()): ?>
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                <td style="padding: 1rem;">#ORD-<?php echo str_pad($o['id'], 4, '0', STR_PAD_LEFT); ?></td>
-                                <td style="padding: 1rem; font-weight: bold;"><?php echo htmlspecialchars($o['patient_name']); ?></td>
-                                <td style="padding: 1rem; color: var(--secondary-color);">₹<?php echo $o['total_amount']; ?></td>
-                                <td style="padding: 1rem; font-size: 0.9rem; color: var(--text-secondary);"><?php echo htmlspecialchars($o['payment_method'] ?? 'COD'); ?></td>
+                                <td style="padding: 1rem; font-weight: bold; white-space: nowrap;">#ORD-<?php echo str_pad($o['id'], 4, '0', STR_PAD_LEFT); ?></td>
                                 <td style="padding: 1rem;">
+                                    <div style="font-weight: bold; color: var(--text-primary);"><?php echo htmlspecialchars($o['patient_name']); ?></div>
+                                    <?php if (!empty($o['patient_phone'])): ?>
+                                        <div style="font-size: 0.8rem; color: var(--text-secondary);"><i class="fas fa-phone" style="font-size: 0.75rem; margin-right: 3px;"></i><?php echo htmlspecialchars($o['patient_phone']); ?></div>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="padding: 1rem; max-width: 240px; min-width: 180px; overflow-wrap: anywhere; word-break: break-word; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
+                                    <?php echo !empty($o['address']) ? htmlspecialchars($o['address']) : '<em style="opacity: 0.6;">Address Not Available</em>'; ?>
+                                    <?php if (!empty($o['estimated_delivery_time'])): ?>
+                                        <div style="margin-top: 0.3rem; font-size: 0.78rem; color: var(--primary-color); font-weight: 600;"><i class="fas fa-clock"></i> Est: <?php echo htmlspecialchars($o['estimated_delivery_time']); ?></div>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="padding: 1rem; color: var(--secondary-color); font-weight: bold; white-space: nowrap;">₹<?php echo number_format((float)$o['total_amount'], 2); ?></td>
+                                <td style="padding: 1rem; font-size: 0.9rem; color: var(--text-secondary); white-space: nowrap;"><?php echo htmlspecialchars($o['payment_method'] ?? 'COD'); ?></td>
+                                <td style="padding: 1rem; white-space: nowrap;">
                                     <?php
                                         $pay_status = $o['payment_status'] ?? 'Cash on Delivery';
                                         $pay_color = '#f5a623';
@@ -91,8 +112,8 @@ $orders = $conn->query("
                                         <?php echo htmlspecialchars($pay_status); ?>
                                     </span>
                                 </td>
-                                <td style="padding: 1rem; color: var(--text-secondary);"><?php echo date('M d, Y', strtotime($o['created_at'])); ?></td>
-                                <td style="padding: 1rem;">
+                                <td style="padding: 1rem; color: var(--text-secondary); white-space: nowrap;"><?php echo date('M d, Y', strtotime($o['created_at'])); ?></td>
+                                <td style="padding: 1rem; white-space: nowrap;">
                                     <?php
                                         $status_color = 'var(--text-primary)';
                                         if ($o['status'] == 'pending') $status_color = 'var(--accent)';
@@ -103,8 +124,13 @@ $orders = $conn->query("
                                     <span style="color: <?php echo $status_color; ?>; font-weight: bold; text-transform: capitalize; background: rgba(255,255,255,0.05); padding: 0.3rem 0.8rem; border-radius: 12px; font-size: 0.8rem;">
                                         <?php echo $o['status']; ?>
                                     </span>
+                                    <?php if ($o['status'] == 'cancelled' && !empty($o['cancellation_reason'])): ?>
+                                        <div style="font-size: 0.75rem; color: #ff4757; margin-top: 0.2rem; max-width: 150px; overflow-wrap: anywhere; word-break: break-word;" title="<?php echo htmlspecialchars($o['cancellation_reason']); ?>">
+                                            Reason: <?php echo htmlspecialchars($o['cancellation_reason']); ?>
+                                        </div>
+                                    <?php endif; ?>
                                 </td>
-                                <td style="padding: 1rem;">
+                                <td style="padding: 1rem; white-space: nowrap;">
                                     <form method="POST" action="" style="display: flex; gap: 0.5rem; align-items: center;">
                                         <input type="hidden" name="order_id" value="<?php echo $o['id']; ?>">
                                         <select name="status" class="form-control" style="padding: 0.3rem; font-size: 0.8rem; width: 110px;">
@@ -119,7 +145,7 @@ $orders = $conn->query("
                             </tr>
                         <?php endwhile; ?>
                     <?php else: ?>
-                        <tr><td colspan="6" style="padding: 1rem; text-align: center;">No orders found.</td></tr>
+                        <tr><td colspan="9" style="padding: 1rem; text-align: center;">No orders found.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>
@@ -127,3 +153,4 @@ $orders = $conn->query("
     </main>
 </div>
 <?php include 'includes/footer.php'; ?>
+
