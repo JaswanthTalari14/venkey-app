@@ -17,6 +17,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
     $email = $conn->real_escape_string($_POST['email']);
     $phone = $conn->real_escape_string($_POST['phone']);
     $specialization = isset($_POST['specialization']) ? $conn->real_escape_string($_POST['specialization']) : null;
+    $qualification = isset($_POST['qualification']) ? $conn->real_escape_string($_POST['qualification']) : null;
+    $experience = isset($_POST['experience']) ? $conn->real_escape_string($_POST['experience']) : null;
     
     // Check if email belongs to someone else
     $check = $conn->query("SELECT id FROM users WHERE email='$email' AND id != $user_id");
@@ -26,6 +28,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
         $query = "UPDATE users SET name='$name', email='$email', phone='$phone'";
         if ($specialization !== null) {
             $query .= ", specialization='$specialization'";
+        }
+        if ($qualification !== null) {
+            $query .= ", qualification='$qualification'";
+        }
+        if ($experience !== null) {
+            $query .= ", experience='$experience'";
         }
         
         // Password update logic if filled
@@ -68,6 +76,34 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
                     $query .= ", profile_image='$target_file'";
                 } else {
                     $error = "Failed to save profile photo upload.";
+                }
+            }
+        }
+
+        // Handle Medical Verification Document Upload for Doctor & RMP
+        if (isset($_FILES['verification_doc']) && $_FILES['verification_doc']['error'] === UPLOAD_ERR_OK) {
+            $doc_file = $_FILES['verification_doc'];
+            $doc_name = $doc_file['name'];
+            $doc_tmp = $doc_file['tmp_name'];
+            $doc_size = $doc_file['size'];
+
+            $allowed_doc_exts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+            $d_ext = strtolower(pathinfo($doc_name, PATHINFO_EXTENSION));
+
+            if (!in_array($d_ext, $allowed_doc_exts)) {
+                $error = "Invalid document type. Allowed formats: PDF, JPG, PNG, WEBP.";
+            } elseif ($doc_size > 10 * 1024 * 1024) {
+                $error = "Verification document exceeds 10MB limit.";
+            } else {
+                $doc_dir = 'uploads/verification_docs/';
+                if (!is_dir($doc_dir)) {
+                    @mkdir($doc_dir, 0755, true);
+                }
+                $target_doc = $doc_dir . 'doc_' . $user_id . '_' . time() . '.' . $d_ext;
+                if (move_uploaded_file($doc_tmp, $target_doc)) {
+                    $query .= ", verification_document='$target_doc'";
+                } else {
+                    $error = "Failed to upload verification document.";
                 }
             }
         }
@@ -195,6 +231,30 @@ $user = $conn->query("SELECT * FROM users WHERE id=$user_id")->fetch_assoc();
             <div class="form-group" style="margin-bottom: 1.5rem;">
                 <label style="font-weight: 500;"><i class="fas fa-briefcase-medical"></i> Specialization / Professional Title</label>
                 <input type="text" name="specialization" class="form-control" value="<?php echo htmlspecialchars($user['specialization']); ?>" placeholder="e.g. Cardiologist, General Checkups" style="background: rgba(0,0,0,0.2);">
+            </div>
+
+            <div style="display: flex; gap: 1.5rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+                <div class="form-group" style="flex: 1; min-width: 180px; margin: 0;">
+                    <label style="font-weight: 500;"><i class="fas fa-graduation-cap"></i> Qualification</label>
+                    <input type="text" name="qualification" class="form-control" value="<?php echo htmlspecialchars($user['qualification'] ?? 'MBBS, MD'); ?>" placeholder="e.g. MBBS, MD, MS" style="background: rgba(0,0,0,0.2);">
+                </div>
+                <div class="form-group" style="flex: 1; min-width: 180px; margin: 0;">
+                    <label style="font-weight: 500;"><i class="fas fa-award"></i> Experience</label>
+                    <input type="text" name="experience" class="form-control" value="<?php echo htmlspecialchars($user['experience'] ?? '5+ Years'); ?>" placeholder="e.g. 5+ Years" style="background: rgba(0,0,0,0.2);">
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label style="font-weight: 500;"><i class="fas fa-file-medical"></i> Verification / License Document</label>
+                <input type="file" name="verification_doc" class="form-control" accept=".pdf,image/png,image/jpeg,image/webp" style="background: rgba(0,0,0,0.2);">
+                <?php
+                    $v_doc_path = $user['verification_document'] ?? ($user['license_document'] ?? ($user['document_path'] ?? ''));
+                ?>
+                <?php if (!empty($v_doc_path) && file_exists($v_doc_path)): ?>
+                    <small style="color: #2ed573; display: block; margin-top: 0.35rem;"><i class="fas fa-check-circle"></i> Document uploaded (<?php echo basename($v_doc_path); ?>). Upload a new file to replace.</small>
+                <?php else: ?>
+                    <small style="color: var(--text-secondary); display: block; margin-top: 0.35rem;"><i class="fas fa-info-circle"></i> Upload your medical license certificate (PDF, JPG, PNG - Max 10MB) for Admin verification.</small>
+                <?php endif; ?>
             </div>
             <?php endif; ?>
 

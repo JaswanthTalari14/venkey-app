@@ -150,6 +150,15 @@ function ensure_database_indexes($conn) {
         if (!in_array('is_verified', $u_cols)) {
             @$conn->query("ALTER TABLE users ADD COLUMN is_verified TINYINT(1) DEFAULT 0");
         }
+        if (!in_array('verification_document', $u_cols) && !in_array('license_document', $u_cols) && !in_array('document_path', $u_cols)) {
+            @$conn->query("ALTER TABLE users ADD COLUMN verification_document VARCHAR(255) DEFAULT NULL");
+        }
+        if (!in_array('qualification', $u_cols)) {
+            @$conn->query("ALTER TABLE users ADD COLUMN qualification VARCHAR(100) DEFAULT NULL");
+        }
+        if (!in_array('experience', $u_cols)) {
+            @$conn->query("ALTER TABLE users ADD COLUMN experience VARCHAR(50) DEFAULT NULL");
+        }
     }
 }
 

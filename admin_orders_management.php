@@ -31,59 +31,131 @@ function get_order_status_style($status) {
     }
 }
 
-// Fetch all non-deleted orders with patient details and medicine items
-$orders_query = $conn->query("
-    SELECT o.id as order_id, o.patient_id, o.total_amount, o.status as order_status, 
-           o.payment_method, o.payment_status, o.gateway_payment_id, o.gateway_order_id, 
-           o.address, o.created_at, o.cancellation_reason, o.estimated_delivery_time,
-           p.name as patient_name, p.phone as patient_phone, p.email as patient_email,
-           oi.id as item_id, oi.medicine_id, oi.quantity, oi.price as unit_price,
-           m.name as medicine_name, m.image as medicine_image
-    FROM orders o
-    JOIN users p ON o.patient_id = p.id
-    LEFT JOIN order_items oi ON o.id = oi.order_id
-    LEFT JOIN medicines m ON oi.medicine_id = m.id
-    WHERE (o.is_deleted = 0 OR o.is_deleted IS NULL)
-    ORDER BY o.created_at DESC, o.id DESC
-");
+<?php
+// Search and Status filter parameters
+$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$status_filter = isset($_GET['status']) ? strtolower(trim($_GET['status'])) : 'all';
+
+// Server-side Pagination parameters
+$per_page = 10;
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$offset = ($page - 1) * $per_page;
+
+$where_clauses = ["(o.is_deleted = 0 OR o.is_deleted IS NULL)"];
+$params = [];
+$types = "";
+
+if (!empty($search)) {
+    $where_clauses[] = "(p.name LIKE ? OR p.phone LIKE ? OR o.address LIKE ? OR o.id = ?)";
+    $search_like = "%" . $search . "%";
+    $search_id = (int)str_replace(['#ord-', '#ord', 'ord-', 'ord'], '', strtolower($search));
+    $params[] = &$search_like;
+    $params[] = &$search_like;
+    $params[] = &$search_like;
+    $params[] = &$search_id;
+    $types .= "sssi";
+}
+
+if (!empty($status_filter) && $status_filter !== 'all') {
+    $where_clauses[] = "LOWER(o.status) = ?";
+    $params[] = &$status_filter;
+    $types .= "s";
+}
+
+$where_sql = implode(" AND ", $where_clauses);
+
+// Count total distinct orders matching criteria
+$count_sql = "SELECT COUNT(DISTINCT o.id) as total FROM orders o JOIN users p ON o.patient_id = p.id WHERE $where_sql";
+$count_stmt = $conn->prepare($count_sql);
+if (!empty($types)) {
+    $count_stmt->bind_param($types, ...$params);
+}
+$count_stmt->execute();
+$count_res = $count_stmt->get_result();
+$total_orders = $count_res ? (int)$count_res->fetch_assoc()['total'] : 0;
+$total_pages = max(1, ceil($total_orders / $per_page));
+
+// Select order IDs for the requested page
+$ids_sql = "SELECT DISTINCT o.id FROM orders o JOIN users p ON o.patient_id = p.id WHERE $where_sql ORDER BY o.created_at DESC, o.id DESC LIMIT ? OFFSET ?";
+$params_ids = $params;
+$types_ids = $types . "ii";
+$params_ids[] = &$per_page;
+$params_ids[] = &$offset;
+
+$ids_stmt = $conn->prepare($ids_sql);
+$ids_stmt->bind_param($types_ids, ...$params_ids);
+$ids_stmt->execute();
+$ids_res = $ids_stmt->get_result();
+
+$page_order_ids = [];
+if ($ids_res) {
+    while ($r = $ids_res->fetch_assoc()) {
+        $page_order_ids[] = (int)$r['id'];
+    }
+}
 
 $orders_by_id = [];
-if ($orders_query) {
-    while ($row = $orders_query->fetch_assoc()) {
-        $oid = $row['order_id'];
-        if (!isset($orders_by_id[$oid])) {
-            $orders_by_id[$oid] = [
-                'order_id' => $row['order_id'],
-                'patient_id' => $row['patient_id'],
-                'patient_name' => $row['patient_name'],
-                'patient_phone' => $row['patient_phone'],
-                'patient_email' => $row['patient_email'],
-                'total_amount' => (float)$row['total_amount'],
-                'order_status' => $row['order_status'],
-                'payment_method' => $row['payment_method'] ?? 'COD',
-                'payment_status' => $row['payment_status'] ?? 'Cash on Delivery',
-                'gateway_payment_id' => $row['gateway_payment_id'],
-                'gateway_order_id' => $row['gateway_order_id'],
-                'address' => $row['address'],
-                'created_at' => $row['created_at'],
-                'cancellation_reason' => $row['cancellation_reason'] ?? '',
-                'estimated_delivery_time' => $row['estimated_delivery_time'] ?? '',
-                'items' => []
-            ];
-        }
+if (!empty($page_order_ids)) {
+    $id_list_str = implode(',', $page_order_ids);
+    $orders_query = $conn->query("
+        SELECT o.id as order_id, o.patient_id, o.total_amount, o.status as order_status, 
+               o.payment_method, o.payment_status, o.gateway_payment_id, o.gateway_order_id, 
+               o.address, o.created_at, o.cancellation_reason, o.estimated_delivery_time,
+               p.name as patient_name, p.phone as patient_phone, p.email as patient_email,
+               oi.id as item_id, oi.medicine_id, oi.quantity, oi.price as unit_price,
+               m.name as medicine_name, m.image as medicine_image
+        FROM orders o
+        JOIN users p ON o.patient_id = p.id
+        LEFT JOIN order_items oi ON o.id = oi.order_id
+        LEFT JOIN medicines m ON oi.medicine_id = m.id
+        WHERE o.id IN ($id_list_str)
+        ORDER BY FIELD(o.id, $id_list_str)
+    ");
 
-        if (!empty($row['medicine_id'])) {
-            $orders_by_id[$oid]['items'][] = [
-                'item_id' => $row['item_id'],
-                'medicine_id' => $row['medicine_id'],
-                'medicine_name' => $row['medicine_name'],
-                'medicine_image' => $row['medicine_image'],
-                'quantity' => (int)$row['quantity'],
-                'unit_price' => (float)$row['unit_price'],
-                'item_total' => (float)$row['unit_price'] * (int)$row['quantity']
-            ];
+    if ($orders_query) {
+        while ($row = $orders_query->fetch_assoc()) {
+            $oid = $row['order_id'];
+            if (!isset($orders_by_id[$oid])) {
+                $orders_by_id[$oid] = [
+                    'order_id' => $row['order_id'],
+                    'patient_id' => $row['patient_id'],
+                    'patient_name' => $row['patient_name'],
+                    'patient_phone' => $row['patient_phone'],
+                    'patient_email' => $row['patient_email'],
+                    'total_amount' => (float)$row['total_amount'],
+                    'order_status' => $row['order_status'],
+                    'payment_method' => $row['payment_method'] ?? 'COD',
+                    'payment_status' => $row['payment_status'] ?? 'Cash on Delivery',
+                    'gateway_payment_id' => $row['gateway_payment_id'],
+                    'gateway_order_id' => $row['gateway_order_id'],
+                    'address' => $row['address'],
+                    'created_at' => $row['created_at'],
+                    'cancellation_reason' => $row['cancellation_reason'] ?? '',
+                    'estimated_delivery_time' => $row['estimated_delivery_time'] ?? '',
+                    'items' => []
+                ];
+            }
+
+            if (!empty($row['medicine_id'])) {
+                $orders_by_id[$oid]['items'][] = [
+                    'item_id' => $row['item_id'],
+                    'medicine_id' => $row['medicine_id'],
+                    'medicine_name' => $row['medicine_name'],
+                    'medicine_image' => $row['medicine_image'],
+                    'quantity' => (int)$row['quantity'],
+                    'unit_price' => (float)$row['unit_price'],
+                    'item_total' => (float)$row['unit_price'] * (int)$row['quantity']
+                ];
+            }
         }
     }
+}
+
+function build_order_page_link($p, $search, $status) {
+    $q = ['page' => $p];
+    if (!empty($search)) $q['search'] = $search;
+    if (!empty($status) && $status !== 'all') $q['status'] = $status;
+    return '?' . http_build_query($q);
 }
 ?>
 
@@ -117,30 +189,35 @@ if ($orders_query) {
 
         <!-- Search and Status Filter Bar -->
         <div class="glass-panel" style="padding: 1.25rem; margin-bottom: 1.5rem; border-radius: 16px;">
-            <div style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; justify-content: space-between;">
-                <div style="flex: 1; min-width: 240px; position: relative;">
-                    <input type="text" id="adminOrderSearch" class="form-control" placeholder="Search by Order ID (#ORD-0001), Patient, Phone, Address, Medicine..." style="padding-left: 2.4rem;" onkeyup="filterAdminOrders()">
-                    <i class="fas fa-search" style="position: absolute; left: 0.9rem; top: 50%; transform: translateY(-50%); color: var(--text-secondary);"></i>
+            <form method="GET" action="" id="adminOrderFilterForm">
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; justify-content: space-between;">
+                    <div style="flex: 1; min-width: 240px; position: relative;">
+                        <input type="text" name="search" id="adminOrderSearch" class="form-control" placeholder="Search by Order ID (#ORD-0001), Patient, Phone, Address..." value="<?php echo htmlspecialchars($search); ?>" style="padding-left: 2.4rem;">
+                        <i class="fas fa-search" style="position: absolute; left: 0.9rem; top: 50%; transform: translateY(-50%); color: var(--text-secondary);"></i>
+                    </div>
+                    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+                        <select name="status" id="adminStatusFilter" class="form-control" style="width: auto; min-width: 150px;" onchange="this.form.submit()">
+                            <option value="all" <?php echo ($status_filter === 'all') ? 'selected' : ''; ?>>All Statuses</option>
+                            <option value="pending" <?php echo ($status_filter === 'pending') ? 'selected' : ''; ?>>Pending</option>
+                            <option value="processing" <?php echo ($status_filter === 'processing') ? 'selected' : ''; ?>>Processing</option>
+                            <option value="packing" <?php echo ($status_filter === 'packing') ? 'selected' : ''; ?>>Packing</option>
+                            <option value="shipped" <?php echo ($status_filter === 'shipped') ? 'selected' : ''; ?>>Shipped</option>
+                            <option value="out for delivery" <?php echo ($status_filter === 'out for delivery') ? 'selected' : ''; ?>>Out for Delivery</option>
+                            <option value="delivered" <?php echo ($status_filter === 'delivered') ? 'selected' : ''; ?>>Delivered</option>
+                            <option value="cancelled" <?php echo ($status_filter === 'cancelled') ? 'selected' : ''; ?>>Cancelled</option>
+                            <option value="rejected" <?php echo ($status_filter === 'rejected') ? 'selected' : ''; ?>>Rejected</option>
+                        </select>
+                        <button type="submit" class="btn btn-primary" style="padding: 0.55rem 1rem; font-size: 0.85rem;">Search</button>
+                        <?php if (!empty($search) || $status_filter !== 'all'): ?>
+                            <a href="admin_orders_management.php" class="btn btn-outline" style="padding: 0.55rem 1rem; font-size: 0.85rem;">
+                                <i class="fas fa-redo-alt"></i> Reset
+                            </a>
+                        <?php endif; ?>
+                    </div>
                 </div>
-                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
-                    <select id="adminStatusFilter" class="form-control" style="width: auto; min-width: 150px;" onchange="filterAdminOrders()">
-                        <option value="all">All Statuses</option>
-                        <option value="pending">Pending</option>
-                        <option value="processing">Processing</option>
-                        <option value="packing">Packing</option>
-                        <option value="shipped">Shipped</option>
-                        <option value="out for delivery">Out for Delivery</option>
-                        <option value="delivered">Delivered</option>
-                        <option value="cancelled">Cancelled</option>
-                        <option value="rejected">Rejected</option>
-                    </select>
-                    <button type="button" class="btn btn-outline" onclick="resetAdminFilters()" style="padding: 0.55rem 1rem; font-size: 0.85rem;">
-                        <i class="fas fa-redo-alt"></i> Reset
-                    </button>
-                </div>
-            </div>
+            </form>
             <div style="margin-top: 0.8rem; font-size: 0.85rem; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-                <span>Showing <strong id="visibleCount" style="color: var(--text-primary);"><?php echo count($orders_by_id); ?></strong> of <strong style="color: var(--primary-color);"><?php echo count($orders_by_id); ?></strong> total orders</span>
+                <span>Showing <strong id="visibleCount" style="color: var(--text-primary);"><?php echo count($orders_by_id); ?></strong> of <strong style="color: var(--primary-color);"><?php echo $total_orders; ?></strong> total orders</span>
             </div>
         </div>
 
@@ -320,8 +397,29 @@ if ($orders_query) {
                     <i class="fas fa-box-open" style="font-size: 3rem; color: var(--text-secondary); opacity: 0.4; margin-bottom: 1rem;"></i>
                     <h3 style="color: var(--text-primary);">No medicine orders found.</h3>
                     <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.4rem;">Orders placed by patients will appear here for complete management.</p>
+        <!-- Server-Side Pagination Controls -->
+        <?php if ($total_pages > 1): ?>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2rem; pt: 1rem; border-top: 1px solid var(--glass-border); flex-wrap: wrap; gap: 1rem;">
+                <span style="font-size: 0.88rem; color: var(--text-secondary);">
+                    Showing <?php echo min($offset + 1, $total_orders); ?>–<?php echo min($offset + $per_page, $total_orders); ?> of <?php echo $total_orders; ?> orders
+                </span>
+                <div style="display: flex; gap: 0.4rem; align-items: center;">
+                    <?php if ($page > 1): ?>
+                        <a href="<?php echo build_order_page_link($page - 1, $search, $status_filter); ?>" class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;"><i class="fas fa-chevron-left"></i> Previous</a>
+                    <?php endif; ?>
+
+                    <?php for ($i = 1; $i <= $total_pages; $i++): ?>
+                        <a href="<?php echo build_order_page_link($i, $search, $status_filter); ?>" class="btn <?php echo ($i === $page) ? 'btn-primary' : 'btn-outline'; ?>" style="padding: 0.4rem 0.75rem; font-size: 0.85rem; min-width: 36px; text-align: center;">
+                            <?php echo $i; ?>
+                        </a>
+                    <?php endfor; ?>
+
+                    <?php if ($page < $total_pages): ?>
+                        <a href="<?php echo build_order_page_link($page + 1, $search, $status_filter); ?>" class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">Next <i class="fas fa-chevron-right"></i></a>
+                    <?php endif; ?>
                 </div>
-            <?php endif; ?>
+            </div>
+        <?php endif; ?>
         </div>
     </main>
 </div>

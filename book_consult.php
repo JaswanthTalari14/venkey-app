@@ -73,6 +73,18 @@ $my_appointments = $conn->query("
         <?php if($error): ?><p style="color: #ff4757; margin-bottom: 1rem;"><?php echo $error; ?></p><?php endif; ?>
         <?php if($success): ?><p style="color: #2ed573; margin-bottom: 1rem;"><?php echo $success; ?></p><?php endif; ?>
 
+        <?php
+            $pre_doc_id = isset($_GET['doctor_id']) ? (int)$_GET['doctor_id'] : 0;
+            $pre_date = isset($_GET['date']) && !empty($_GET['date']) ? $_GET['date'] : date('Y-m-d');
+            $pre_time_raw = isset($_GET['time']) ? trim($_GET['time']) : '';
+            $pre_time = '';
+            if (!empty($pre_time_raw)) {
+                $time_ts = strtotime($pre_time_raw);
+                if ($time_ts !== false) {
+                    $pre_time = date('H:i', $time_ts);
+                }
+            }
+        ?>
         <div class="form-container glass-panel" style="margin: 0; max-width: 600px;">
             <form method="POST" action="">
                 <div class="form-group">
@@ -80,7 +92,9 @@ $my_appointments = $conn->query("
                     <select name="doctor_id" class="form-control" required>
                         <option value="">-- Choose Doctor --</option>
                         <?php while($doc = $doctors->fetch_assoc()): ?>
-                            <option value="<?php echo $doc['id']; ?>">Dr. <?php echo htmlspecialchars($doc['name']); ?> (<?php echo htmlspecialchars($doc['specialization'] ?? 'General'); ?>)</option>
+                            <option value="<?php echo $doc['id']; ?>" <?php echo ($doc['id'] == $pre_doc_id) ? 'selected' : ''; ?>>
+                                Dr. <?php echo htmlspecialchars($doc['name']); ?> (<?php echo htmlspecialchars($doc['specialization'] ?? 'General'); ?>)
+                            </option>
                         <?php endwhile; ?>
                     </select>
                 </div>
@@ -88,11 +102,11 @@ $my_appointments = $conn->query("
                 <div style="display: flex; gap: 1rem;">
                     <div class="form-group" style="flex: 1;">
                         <label>Date</label>
-                        <input type="date" name="date" class="form-control" required min="<?php echo date('Y-m-d'); ?>">
+                        <input type="date" name="date" class="form-control" required min="<?php echo date('Y-m-d'); ?>" value="<?php echo htmlspecialchars($pre_date); ?>">
                     </div>
                     <div class="form-group" style="flex: 1;">
                         <label>Time</label>
-                        <input type="time" name="time" class="form-control" required>
+                        <input type="time" name="time" class="form-control" required value="<?php echo htmlspecialchars($pre_time); ?>">
                     </div>
                 </div>
                 

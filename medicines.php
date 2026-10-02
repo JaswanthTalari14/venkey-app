@@ -205,18 +205,40 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
     }
 }
 
-$medicines = $conn->query("SELECT * FROM medicines");
+// 1. Medicine Catalog Smart Data Loading & Pagination
+$med_per_page = 8;
+$med_page = isset($_GET['med_page']) ? max(1, (int)$_GET['med_page']) : 1;
+$med_offset = ($med_page - 1) * $med_per_page;
 
-// Fetch patient's medicine orders including delivery address
-$patient_id_for_orders = $_SESSION['user_id'];
+$med_count_res = $conn->query("SELECT COUNT(*) as total FROM medicines");
+$total_meds = $med_count_res ? (int)$med_count_res->fetch_assoc()['total'] : 0;
+$total_med_pages = max(1, ceil($total_meds / $med_per_page));
+
+$medicines = $conn->query("SELECT * FROM medicines ORDER BY id ASC LIMIT $med_per_page OFFSET $med_offset");
+
+// 2. Patient Medicine Orders Smart Data Loading & Pagination
+$patient_id_for_orders = (int)$_SESSION['user_id'];
+$ord_per_page = 10;
+$ord_page = isset($_GET['ord_page']) ? max(1, (int)$_GET['ord_page']) : 1;
+$ord_offset = ($ord_page - 1) * $ord_per_page;
+
+$ord_count_res = $conn->query("SELECT COUNT(*) as total FROM orders WHERE patient_id = $patient_id_for_orders AND (is_deleted = 0 OR is_deleted IS NULL)");
+$total_my_orders = $ord_count_res ? (int)$ord_count_res->fetch_assoc()['total'] : 0;
+$total_ord_pages = max(1, ceil($total_my_orders / $ord_per_page));
+
 $my_orders = $conn->query("
     SELECT o.id, o.created_at, o.status, o.total_amount, o.payment_method, o.payment_status, o.address, m.name as medicine_name, oi.quantity 
     FROM orders o
     JOIN order_items oi ON o.id = oi.order_id
     JOIN medicines m ON oi.medicine_id = m.id
-    WHERE o.patient_id = $patient_id_for_orders
+    WHERE o.patient_id = $patient_id_for_orders AND (o.is_deleted = 0 OR o.is_deleted IS NULL)
     ORDER BY o.created_at DESC
+    LIMIT $ord_per_page OFFSET $ord_offset
 ");
+
+function build_med_link($m_page, $o_page) {
+    return "?med_page=$m_page&ord_page=$o_page";
+}
 ?>
 
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
@@ -246,7 +268,7 @@ $my_orders = $conn->query("
     
     <main class="dashboard-content">
         <h2>Medicine Delivery</h2>
-        <p style="color: var(--text-secondary); margin-bottom: 2rem;">Order prescribed or over-the-counter medicines delivered directly to your home.</p>
+        <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Order prescribed or over-the-counter medicines delivered directly to your home.</p>
         
         <?php if($success): ?>
             <p style="color: #2ed573; margin-bottom: 1rem; padding: 1rem; background: rgba(46, 213, 115, 0.1); border-radius: 8px; border-left: 4px solid #2ed573;">
@@ -289,13 +311,37 @@ $my_orders = $conn->query("
                             <input type="number" id="qty_med_<?php echo $med['id']; ?>" value="1" min="1" max="10" class="form-control" style="width: 75px; padding: 0.3rem 0.5rem;" required>
                         </div>
                         
-                        <button type="button" class="btn btn-primary" style="width: 100%; padding: 0.5.rem 1rem;" onclick="openCheckoutModal(<?php echo $med['id']; ?>, '<?php echo htmlspecialchars(addslashes($med['name'])); ?>', <?php echo $med['price']; ?>, '<?php echo htmlspecialchars(addslashes($img_src)); ?>')">
+                        <button type="button" class="btn btn-primary" style="width: 100%; padding: 0.5rem 1rem;" onclick="openCheckoutModal(<?php echo $med['id']; ?>, '<?php echo htmlspecialchars(addslashes($med['name'])); ?>', <?php echo $med['price']; ?>, '<?php echo htmlspecialchars(addslashes($img_src)); ?>')">
                             <i class="fas fa-shopping-cart"></i> Order Now
                         </button>
                     </div>
                 </div>
             <?php endwhile; ?>
         </div>
+
+        <!-- Medicine Catalog Pagination Controls -->
+        <?php if ($total_med_pages > 1): ?>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; pt: 1rem; border-top: 1px solid var(--glass-border); flex-wrap: wrap; gap: 1rem;">
+                <span style="font-size: 0.88rem; color: var(--text-secondary);">
+                    Showing <?php echo min($med_offset + 1, $total_meds); ?>–<?php echo min($med_offset + $med_per_page, $total_meds); ?> of <?php echo $total_meds; ?> medicines
+                </span>
+                <div style="display: flex; gap: 0.4rem; align-items: center;">
+                    <?php if ($med_page > 1): ?>
+                        <a href="<?php echo build_med_link($med_page - 1, $ord_page); ?>" class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;"><i class="fas fa-chevron-left"></i> Previous</a>
+                    <?php endif; ?>
+
+                    <?php for ($i = 1; $i <= $total_med_pages; $i++): ?>
+                        <a href="<?php echo build_med_link($i, $ord_page); ?>" class="btn <?php echo ($i === $med_page) ? 'btn-primary' : 'btn-outline'; ?>" style="padding: 0.4rem 0.75rem; font-size: 0.85rem; min-width: 36px; text-align: center;">
+                            <?php echo $i; ?>
+                        </a>
+                    <?php endfor; ?>
+
+                    <?php if ($med_page < $total_med_pages): ?>
+                        <a href="<?php echo build_med_link($med_page + 1, $ord_page); ?>" class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">Next <i class="fas fa-chevron-right"></i></a>
+                    <?php endif; ?>
+                </div>
+            </div>
+        <?php endif; ?>
 
         <!-- Your Medicine Orders Table -->
         <h3 style="margin-top: 3rem; margin-bottom: 1rem;">Your Medicine Orders</h3>
@@ -361,6 +407,30 @@ $my_orders = $conn->query("
                     <?php endif; ?>
                 </tbody>
             </table>
+
+            <!-- Patient Orders Pagination Controls -->
+            <?php if ($total_ord_pages > 1): ?>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; pt: 1rem; border-top: 1px solid var(--glass-border); flex-wrap: wrap; gap: 1rem;">
+                    <span style="font-size: 0.88rem; color: var(--text-secondary);">
+                        Showing <?php echo min($ord_offset + 1, $total_my_orders); ?>–<?php echo min($ord_offset + $ord_per_page, $total_my_orders); ?> of <?php echo $total_my_orders; ?> orders
+                    </span>
+                    <div style="display: flex; gap: 0.4rem; align-items: center;">
+                        <?php if ($ord_page > 1): ?>
+                            <a href="<?php echo build_med_link($med_page, $ord_page - 1); ?>" class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;"><i class="fas fa-chevron-left"></i> Previous</a>
+                        <?php endif; ?>
+
+                        <?php for ($j = 1; $j <= $total_ord_pages; $j++): ?>
+                            <a href="<?php echo build_med_link($med_page, $j); ?>" class="btn <?php echo ($j === $ord_page) ? 'btn-primary' : 'btn-outline'; ?>" style="padding: 0.4rem 0.75rem; font-size: 0.85rem; min-width: 36px; text-align: center;">
+                                <?php echo $j; ?>
+                            </a>
+                        <?php endfor; ?>
+
+                        <?php if ($ord_page < $total_ord_pages): ?>
+                            <a href="<?php echo build_med_link($med_page, $ord_page + 1); ?>" class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">Next <i class="fas fa-chevron-right"></i></a>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
         </div>
     </main>
 </div>
