@@ -6,16 +6,26 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-include 'includes/header.php';
-
 $user_id = $_SESSION['user_id'];
 $success = '';
 $error = '';
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
-    $name = $conn->real_escape_string($_POST['name']);
-    $email = $conn->real_escape_string($_POST['email']);
-    $phone = $conn->real_escape_string($_POST['phone']);
+if (isset($_SESSION['profile_success'])) {
+    $success = $_SESSION['profile_success'];
+    unset($_SESSION['profile_success']);
+}
+if (isset($_SESSION['profile_error'])) {
+    $error = $_SESSION['profile_error'];
+    unset($_SESSION['profile_error']);
+}
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && (isset($_POST['update_profile']) || isset($_FILES['profile_photo']) || isset($_FILES['verification_doc']))) {
+    // Fetch current user details to fallback unchanged fields
+    $curr_u = $conn->query("SELECT * FROM users WHERE id=$user_id")->fetch_assoc();
+    
+    $name = isset($_POST['name']) ? $conn->real_escape_string($_POST['name']) : $conn->real_escape_string($curr_u['name']);
+    $email = isset($_POST['email']) ? $conn->real_escape_string($_POST['email']) : $conn->real_escape_string($curr_u['email']);
+    $phone = isset($_POST['phone']) ? $conn->real_escape_string($_POST['phone']) : $conn->real_escape_string($curr_u['phone']);
     $specialization = isset($_POST['specialization']) ? $conn->real_escape_string($_POST['specialization']) : null;
     $qualification = isset($_POST['qualification']) ? $conn->real_escape_string($_POST['qualification']) : null;
     $experience = isset($_POST['experience']) ? $conn->real_escape_string($_POST['experience']) : null;
@@ -113,7 +123,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
             $query .= " WHERE id=$user_id";
             if ($conn->query($query)) {
                 $_SESSION['name'] = $name; // Update session name
-                $success = "Profile updated successfully!";
+                $_SESSION['profile_success'] = "Profile updated successfully!";
+                header("Location: profile.php");
+                exit;
             } else {
                 $error = "Database Error: Failed to update profile.";
             }
@@ -121,6 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
     }
 }
 
+include 'includes/header.php';
 $user = $conn->query("SELECT * FROM users WHERE id=$user_id")->fetch_assoc();
 ?>
 
@@ -202,6 +215,7 @@ $user = $conn->query("SELECT * FROM users WHERE id=$user_id")->fetch_assoc();
         <?php if($success): ?><div style="background: rgba(46, 213, 115, 0.1); border-left: 4px solid #2ed573; padding: 1rem; margin-bottom: 2rem; color: #2ed573; border-radius: 0 8px 8px 0;"><i class="fas fa-check-circle"></i> <?php echo $success; ?></div><?php endif; ?>
         
         <form method="POST" action="" enctype="multipart/form-data">
+            <input type="hidden" name="update_profile" value="1">
             <!-- Hidden quick upload input triggered by camera button -->
             <input type="file" id="avatar_quick_upload" name="profile_photo" accept="image/png, image/jpeg, image/webp, image/gif" style="display: none;" onchange="this.form.submit();">
 
