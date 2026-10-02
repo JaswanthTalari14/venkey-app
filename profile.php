@@ -33,14 +33,53 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
             $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
             $query .= ", password='$password'";
         }
-        
-        $query .= " WHERE id=$user_id";
-        
-        if ($conn->query($query)) {
-            $_SESSION['name'] = $name; // Update session name
-            $success = "Profile updated successfully!";
-        } else {
-            $error = "Database Error: Failed to update profile.";
+
+        // Handle Profile Photo Upload
+        if (isset($_FILES['profile_photo']) && $_FILES['profile_photo']['error'] === UPLOAD_ERR_OK) {
+            $file = $_FILES['profile_photo'];
+            $file_name = $file['name'];
+            $file_tmp = $file['tmp_name'];
+            $file_size = $file['size'];
+
+            $allowed_exts = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+            $ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+
+            if (!in_array($ext, $allowed_exts)) {
+                $error = "Invalid file format. Only JPG, JPEG, PNG, WEBP, and GIF images are allowed.";
+            } elseif ($file_size > 5 * 1024 * 1024) {
+                $error = "Image size exceeds 5MB limit.";
+            } else {
+                $upload_dir = 'uploads/profile_images/';
+                if (!is_dir($upload_dir)) {
+                    @mkdir($upload_dir, 0755, true);
+                }
+
+                $new_filename = 'user_' . $user_id . '_' . time() . '.' . $ext;
+                $target_file = $upload_dir . $new_filename;
+
+                if (move_uploaded_file($file_tmp, $target_file)) {
+                    // Remove old profile photo if present
+                    $old_photo_q = $conn->query("SELECT profile_image FROM users WHERE id = $user_id");
+                    if ($old_photo_q && $old_row = $old_photo_q->fetch_assoc()) {
+                        if (!empty($old_row['profile_image']) && file_exists($old_row['profile_image'])) {
+                            @unlink($old_row['profile_image']);
+                        }
+                    }
+                    $query .= ", profile_image='$target_file'";
+                } else {
+                    $error = "Failed to save profile photo upload.";
+                }
+            }
+        }
+
+        if (empty($error)) {
+            $query .= " WHERE id=$user_id";
+            if ($conn->query($query)) {
+                $_SESSION['name'] = $name; // Update session name
+                $success = "Profile updated successfully!";
+            } else {
+                $error = "Database Error: Failed to update profile.";
+            }
         }
     }
 }
@@ -56,10 +95,36 @@ $user = $conn->query("SELECT * FROM users WHERE id=$user_id")->fetch_assoc();
         <!-- Decorative Background Circle -->
         <div style="position: absolute; top: -50px; right: -50px; width: 150px; height: 150px; background: var(--primary-color); border-radius: 50%; opacity: 0.1; filter: blur(30px);"></div>
         
-        <div style="width: 130px; height: 130px; border-radius: 50%; background: linear-gradient(45deg, var(--primary-color), var(--secondary-color)); display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem; box-shadow: 0 10px 30px rgba(74, 144, 226, 0.4);">
-            <i class="fas fa-user-astronaut" style="font-size: 4rem; color: #fff;"></i>
+        <!-- Profile Avatar & Camera Upload Trigger -->
+        <div style="position: relative; width: 130px; height: 130px; margin-bottom: 1.5rem; margin-left: auto; margin-right: auto;">
+            <div style="width: 130px; height: 130px; border-radius: 50%; background: linear-gradient(45deg, var(--primary-color), var(--secondary-color)); display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 30px rgba(74, 144, 226, 0.4); overflow: hidden; border: 3px solid rgba(255,255,255,0.25);">
+                <?php
+                    $user_img = '';
+                    $possible_fields = ['profile_image', 'image', 'avatar', 'photo'];
+                    foreach ($possible_fields as $f) {
+                        if (!empty($user[$f]) && file_exists($user[$f])) {
+                            $user_img = $user[$f];
+                            break;
+                        }
+                    }
+                ?>
+                <?php if (!empty($user_img)): ?>
+                    <img src="<?php echo htmlspecialchars($user_img); ?>?v=<?php echo filemtime($user_img); ?>" alt="<?php echo htmlspecialchars($user['name']); ?>" style="width: 100%; height: 100%; object-fit: cover;">
+                <?php else: ?>
+                    <i class="fas <?php 
+                        if ($user['role'] === 'doctor') echo 'fa-user-md';
+                        elseif ($user['role'] === 'rmp') echo 'fa-user-nurse';
+                        else echo 'fa-user-astronaut';
+                    ?>" style="font-size: 4rem; color: #fff;"></i>
+                <?php endif; ?>
+            </div>
+
+            <!-- Quick Camera Upload Icon -->
+            <label for="avatar_quick_upload" title="Upload Profile Photo" style="position: absolute; bottom: 2px; right: 2px; width: 38px; height: 38px; border-radius: 50%; background: var(--primary-color); color: #ffffff; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.35); border: 2px solid #ffffff; transition: transform 0.2s ease;">
+                <i class="fas fa-camera" style="font-size: 0.95rem;"></i>
+            </label>
         </div>
-        
+
         <h2 style="font-size: 2rem; margin-bottom: 0.5rem; font-weight: 800; letter-spacing: -0.5px;"><?php echo htmlspecialchars($user['name']); ?></h2>
         
         <!-- Premium Role Badge -->
@@ -99,7 +164,17 @@ $user = $conn->query("SELECT * FROM users WHERE id=$user_id")->fetch_assoc();
         <?php if($error): ?><div style="background: rgba(255, 71, 87, 0.1); border-left: 4px solid #ff4757; padding: 1rem; margin-bottom: 2rem; color: #ff4757; border-radius: 0 8px 8px 0;"><i class="fas fa-exclamation-circle"></i> <?php echo $error; ?></div><?php endif; ?>
         <?php if($success): ?><div style="background: rgba(46, 213, 115, 0.1); border-left: 4px solid #2ed573; padding: 1rem; margin-bottom: 2rem; color: #2ed573; border-radius: 0 8px 8px 0;"><i class="fas fa-check-circle"></i> <?php echo $success; ?></div><?php endif; ?>
         
-        <form method="POST" action="">
+        <form method="POST" action="" enctype="multipart/form-data">
+            <!-- Hidden quick upload input triggered by camera button -->
+            <input type="file" id="avatar_quick_upload" name="profile_photo" accept="image/png, image/jpeg, image/webp, image/gif" style="display: none;" onchange="this.form.submit();">
+
+            <!-- Profile Photo Upload Field -->
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label style="font-weight: 500;"><i class="fas fa-camera"></i> Profile Photo</label>
+                <input type="file" name="profile_photo" class="form-control" accept="image/png, image/jpeg, image/webp, image/gif" style="background: rgba(0,0,0,0.2);">
+                <small style="color: var(--text-secondary); display: block; margin-top: 0.35rem;"><i class="fas fa-info-circle"></i> Select an image to upload or update your profile photo (Max 5MB).</small>
+            </div>
+
             <div style="display: flex; gap: 1.5rem; margin-bottom: 1.5rem;">
                 <div class="form-group" style="flex: 1; margin: 0;">
                     <label style="font-weight: 500;"><i class="fas fa-user"></i> Full Name</label>

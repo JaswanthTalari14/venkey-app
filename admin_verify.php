@@ -69,7 +69,7 @@ $professionals = $conn->query("SELECT * FROM users WHERE role IN ('doctor', 'rmp
                         <div style="display: flex; align-items: center; gap: 1rem; flex: 1; min-width: 260px;">
                             <!-- Doctor Profile Image / Avatar Display -->
                             <?php if (!empty($img_src)): ?>
-                                <img src="<?php echo htmlspecialchars($img_src); ?>" alt="<?php echo htmlspecialchars($p['name']); ?>" style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary-color); flex-shrink: 0; background: rgba(0,0,0,0.15);">
+                                <img src="<?php echo htmlspecialchars($img_src); ?>?v=<?php echo filemtime($img_src); ?>" alt="<?php echo htmlspecialchars($p['name']); ?>" style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary-color); flex-shrink: 0; background: rgba(0,0,0,0.15);">
                             <?php else: ?>
                                 <div style="width: 54px; height: 54px; border-radius: 50%; background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); display: flex; align-items: center; justify-content: center; color: #ffffff; font-size: 1.4rem; border: 2px solid var(--primary-color); flex-shrink: 0; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
                                     <i class="fas <?php echo ($p['role'] === 'rmp') ? 'fa-user-nurse' : 'fa-user-md'; ?>"></i>
