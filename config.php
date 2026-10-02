@@ -18,21 +18,36 @@ if (session_status() === PHP_SESSION_NONE) {
 @ini_set('zlib.output_compression', 'On');
 ob_start();
 
+mysqli_report(MYSQLI_REPORT_OFF);
+
 $host   = getenv('DB_HOST') ?: "localhost";
 $user   = getenv('DB_USER') ?: "root";
 $pass   = getenv('DB_PASS') ?: "";
 $dbname = getenv('DB_NAME') ?: "medicalak";
 $port   = getenv('DB_PORT') ? intval(getenv('DB_PORT')) : 3306;
 
-$conn = @new mysqli($host, $user, $pass, $dbname, $port);
+$conn = null;
+try {
+    $conn = @new mysqli($host, $user, $pass, $dbname, $port);
+} catch (Throwable $e) {
+    $conn = null;
+}
 
-if ($conn->connect_error) {
-    $conn = new mysqli($host, $user, $pass, "", $port);
-    if ($conn->connect_error) {
-        die("Connection failed: " . $conn->connect_error);
+if (!$conn || $conn->connect_error) {
+    try {
+        $conn = @new mysqli($host, $user, $pass, "", $port);
+        if ($conn && !$conn->connect_error) {
+            @$conn->query("CREATE DATABASE IF NOT EXISTS `$dbname`");
+            @$conn->select_db($dbname);
+        }
+    } catch (Throwable $e2) {
+        $conn = null;
     }
-    $conn->query("CREATE DATABASE IF NOT EXISTS `$dbname`");
-    $conn->select_db($dbname);
+}
+
+if (!$conn || $conn->connect_error) {
+    $err_msg = ($conn && $conn->connect_error) ? $conn->connect_error : "Connection refused/failed";
+    die("Database Connection Error: " . htmlspecialchars($err_msg) . ". Please check database credentials.");
 }
 
 $gemini_api_key = getenv('GEMINI_API_KEY') ?: 'AIzaSyB2jB_N-GL6O0ad_lgtD5xxOlv6h0xcA2Q';
