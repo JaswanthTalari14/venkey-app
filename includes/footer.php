@@ -9,13 +9,24 @@ $current_page = basename($_SERVER['PHP_SELF']);
 $mobile_nav_items = [];
 
 if ($is_logged_in) {
+    // Populate profile image in session memory if not set yet
+    if (!isset($_SESSION['profile_image']) && isset($conn)) {
+        $uid = (int)$_SESSION['user_id'];
+        $u_res = @$conn->query("SELECT profile_image FROM users WHERE id = $uid");
+        if ($u_res && $u_row = $u_res->fetch_assoc()) {
+            $_SESSION['profile_image'] = $u_row['profile_image'] ?? '';
+        } else {
+            $_SESSION['profile_image'] = '';
+        }
+    }
+
     if ($mobile_user_role === 'patient') {
         $mobile_nav_items = [
             ['label' => 'Home', 'icon' => 'fas fa-home', 'url' => 'patient_dashboard.php', 'active_pages' => ['patient_dashboard.php', 'index.php']],
             ['label' => 'Medicines', 'icon' => 'fas fa-pills', 'url' => 'medicines.php', 'active_pages' => ['medicines.php', 'your_orders.php']],
             ['label' => 'Doctors', 'icon' => 'fas fa-user-md', 'url' => 'nearby_doctors.php', 'active_pages' => ['nearby_doctors.php', 'book_consult.php']],
             ['label' => 'Notifs', 'icon' => 'fas fa-bell', 'url' => '#', 'is_notif' => true, 'active_pages' => []],
-            ['label' => 'Profile', 'icon' => 'fas fa-user-circle', 'url' => 'profile.php', 'active_pages' => ['profile.php', 'prescription_vault.php', 'my_wallet.php']]
+            ['label' => 'Profile', 'icon' => 'fas fa-user-circle', 'url' => 'profile.php', 'is_profile' => true, 'active_pages' => ['profile.php', 'prescription_vault.php', 'my_wallet.php']]
         ];
     } elseif ($mobile_user_role === 'doctor') {
         $mobile_nav_items = [
@@ -23,7 +34,7 @@ if ($is_logged_in) {
             ['label' => 'Appointments', 'icon' => 'fas fa-calendar-alt', 'url' => 'doctor_appointments.php', 'active_pages' => ['doctor_appointments.php']],
             ['label' => 'Referrals', 'icon' => 'fas fa-exchange-alt', 'url' => 'doctor_referrals.php', 'active_pages' => ['doctor_referrals.php']],
             ['label' => 'Orders', 'icon' => 'fas fa-box', 'url' => 'doctor_orders.php', 'active_pages' => ['doctor_orders.php', 'doctor_medicines.php']],
-            ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'active_pages' => ['profile.php']]
+            ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'is_profile' => true, 'active_pages' => ['profile.php']]
         ];
     } elseif ($mobile_user_role === 'rmp') {
         $mobile_nav_items = [
@@ -31,7 +42,7 @@ if ($is_logged_in) {
             ['label' => 'Referrals', 'icon' => 'fas fa-user-md', 'url' => 'rmp_referral.php', 'active_pages' => ['rmp_referral.php']],
             ['label' => 'Upload', 'icon' => 'fas fa-file-upload', 'url' => 'rmp_upload.php', 'active_pages' => ['rmp_upload.php']],
             ['label' => 'Payments', 'icon' => 'fas fa-receipt', 'url' => 'payment_history.php', 'active_pages' => ['payment_history.php']],
-            ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'active_pages' => ['profile.php']]
+            ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'is_profile' => true, 'active_pages' => ['profile.php']]
         ];
     } elseif ($mobile_user_role === 'admin') {
         $mobile_nav_items = [
@@ -39,7 +50,7 @@ if ($is_logged_in) {
             ['label' => 'Orders', 'icon' => 'fas fa-boxes', 'url' => 'admin_orders_management.php', 'active_pages' => ['admin_orders_management.php', 'admin_orders.php']],
             ['label' => 'Users', 'icon' => 'fas fa-users-cog', 'url' => 'admin_users.php', 'active_pages' => ['admin_users.php', 'admin_verify.php']],
             ['label' => 'Refunds', 'icon' => 'fas fa-undo', 'url' => 'admin_refunds.php', 'active_pages' => ['admin_refunds.php']],
-            ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'active_pages' => ['profile.php']]
+            ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'is_profile' => true, 'active_pages' => ['profile.php']]
         ];
     }
 }
@@ -50,6 +61,10 @@ if (isset($header_unread)) {
 } elseif ($is_logged_in && function_exists('get_unread_notification_count')) {
     $mobile_unread_cnt = get_unread_notification_count($_SESSION['user_id']);
 }
+
+// Check Profile Photo Availability
+$user_profile_img = $_SESSION['profile_image'] ?? '';
+$has_profile_img = !empty($user_profile_img) && file_exists($user_profile_img);
 ?>
 
 <?php if ($is_logged_in && !empty($mobile_nav_items)): ?>
@@ -65,11 +80,22 @@ if (isset($header_unread)) {
     <?php foreach ($mobile_nav_items as $item): 
         $is_active = in_array($current_page, $item['active_pages']);
         $is_notif = !empty($item['is_notif']);
+        $is_profile = !empty($item['is_profile']);
     ?>
         <a href="<?php echo htmlspecialchars($item['url']); ?>" 
            class="mobile-nav-item <?php echo $is_active ? 'active' : ''; ?>"
            <?php if ($is_notif): ?>onclick="handleMobileNotifToggle(event);"<?php endif; ?>>
-            <i class="<?php echo $item['icon']; ?>"></i>
+            
+            <?php if ($is_profile && $has_profile_img): ?>
+                <img src="<?php echo htmlspecialchars($user_profile_img); ?>" 
+                     alt="Profile" 
+                     class="mobile-nav-profile-img" 
+                     onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';" />
+                <i class="<?php echo $item['icon']; ?>" style="display: none;"></i>
+            <?php else: ?>
+                <i class="<?php echo $item['icon']; ?>"></i>
+            <?php endif; ?>
+
             <span><?php echo htmlspecialchars($item['label']); ?></span>
             <?php if ($is_notif): ?>
                 <span id="mobileNotifBadge" class="mobile-nav-badge" style="display: <?php echo $mobile_unread_cnt > 0 ? 'inline-flex' : 'none'; ?>;">

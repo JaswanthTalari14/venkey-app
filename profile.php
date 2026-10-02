@@ -74,6 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
                         }
                     }
                     $query .= ", profile_image='$target_file'";
+                    $_SESSION['profile_image'] = $target_file;
                 } else {
                     $error = "Failed to save profile photo upload.";
                 }
