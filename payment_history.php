@@ -168,7 +168,6 @@ include 'includes/header.php';
                 <li><a href="admin_verify.php"><i class="fas fa-user-md"></i> Verify Doctors & RMPs</a></li>
                 <li><a href="admin_bookings.php"><i class="fas fa-calendar-check"></i> All Bookings</a></li>
                 <li><a href="admin_orders_management.php"><i class="fas fa-boxes"></i> Order Management</a></li>
-                <li><a href="admin_orders.php"><i class="fas fa-box"></i> Medicine Orders</a></li>
                 <li><a href="admin_medicines.php"><i class="fas fa-pills"></i> Manage Medicines</a></li>
                 <li><a href="payment_history.php" class="active"><i class="fas fa-receipt"></i> Payment History</a></li>
                 <li><a href="admin_feedback.php"><i class="fas fa-comments"></i> Feedback & Complaints</a></li>
