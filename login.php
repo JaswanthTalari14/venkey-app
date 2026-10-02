@@ -63,11 +63,11 @@ include 'includes/header.php';
             <input type="email" name="email" class="form-control" placeholder="Enter your email" required>
         </div>
         <div class="form-group">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                <label style="margin-bottom: 0;">Password</label>
+            <label>Password</label>
+            <input type="password" name="password" class="form-control" placeholder="Enter your password" required>
+            <div style="text-align: right; margin-top: 0.5rem;">
                 <a href="forgot_password.php" style="color: var(--primary-color); font-size: 0.85rem; text-decoration: none;">Forgot Password?</a>
             </div>
-            <input type="password" name="password" class="form-control" placeholder="Enter your password" required>
         </div>
         <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">Login <i class="fas fa-sign-in-alt"></i></button>
     </form>
