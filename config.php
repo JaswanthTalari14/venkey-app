@@ -137,6 +137,164 @@ function ensure_database_indexes($conn) {
         }
     }
 
+    // Auto-Migrate Tables for 39 Features
+    $conn->query("CREATE TABLE IF NOT EXISTS refill_reminders (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        medicine_name VARCHAR(255) NOT NULL,
+        dosage VARCHAR(100) NOT NULL,
+        frequency VARCHAR(100) NOT NULL,
+        reminder_time TIME NOT NULL,
+        start_date DATE NOT NULL,
+        end_date DATE DEFAULT NULL,
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (patient_id, status)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS prescriptions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        doctor_id INT NOT NULL,
+        appointment_id INT DEFAULT NULL,
+        consultation_date DATE NOT NULL,
+        notes TEXT DEFAULT NULL,
+        file_path VARCHAR(255) DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (patient_id),
+        INDEX (doctor_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS prescription_items (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        prescription_id INT NOT NULL,
+        medicine_name VARCHAR(255) NOT NULL,
+        dosage VARCHAR(100) NOT NULL,
+        frequency VARCHAR(100) NOT NULL,
+        duration VARCHAR(100) NOT NULL,
+        instructions TEXT DEFAULT NULL,
+        INDEX (prescription_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS favorite_doctors (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        doctor_id INT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_fav (patient_id, doctor_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS consultation_notes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        doctor_id INT NOT NULL,
+        patient_id INT NOT NULL,
+        appointment_id INT DEFAULT NULL,
+        notes TEXT NOT NULL,
+        is_shared_with_patient TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (doctor_id),
+        INDEX (patient_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS doctor_availability (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        doctor_id INT NOT NULL,
+        day_of_week VARCHAR(20) NOT NULL,
+        start_time TIME NOT NULL,
+        end_time TIME NOT NULL,
+        is_available TINYINT(1) DEFAULT 1,
+        INDEX (doctor_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS rmp_followups (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        rmp_id INT NOT NULL,
+        patient_name VARCHAR(150) NOT NULL,
+        phone VARCHAR(20) NOT NULL,
+        followup_date DATE NOT NULL,
+        reason TEXT DEFAULT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (rmp_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS verification_history (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        admin_id INT NOT NULL,
+        previous_status TINYINT(1) DEFAULT 0,
+        new_status TINYINT(1) DEFAULT 1,
+        reason TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (user_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS refund_requests (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        order_id INT DEFAULT NULL,
+        transaction_id VARCHAR(100) DEFAULT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        reason TEXT NOT NULL,
+        status VARCHAR(30) DEFAULT 'Requested',
+        admin_note TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX (patient_id),
+        INDEX (status)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS admin_activity_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        admin_id INT NOT NULL,
+        action VARCHAR(100) NOT NULL,
+        entity_type VARCHAR(50) DEFAULT NULL,
+        entity_id INT DEFAULT NULL,
+        details TEXT DEFAULT NULL,
+        ip_address VARCHAR(45) DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (admin_id),
+        INDEX (action)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS notification_preferences (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL UNIQUE,
+        order_notif TINYINT(1) DEFAULT 1,
+        appointment_notif TINYINT(1) DEFAULT 1,
+        referral_notif TINYINT(1) DEFAULT 1,
+        payment_notif TINYINT(1) DEFAULT 1,
+        system_notif TINYINT(1) DEFAULT 1
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS user_sessions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        session_token VARCHAR(128) NOT NULL UNIQUE,
+        user_agent TEXT DEFAULT NULL,
+        ip_address VARCHAR(45) DEFAULT NULL,
+        last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX (user_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS otp_rate_limits (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        phone_or_email VARCHAR(150) NOT NULL UNIQUE,
+        attempts INT DEFAULT 1,
+        last_attempt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        locked_until TIMESTAMP NULL DEFAULT NULL
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS login_attempts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        ip_address VARCHAR(45) NOT NULL,
+        email_or_phone VARCHAR(150) NOT NULL,
+        attempts INT DEFAULT 1,
+        last_attempt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        locked_until TIMESTAMP NULL DEFAULT NULL,
+        INDEX (ip_address, email_or_phone)
+    )");
+
     // Auto-migrate columns for users table
     $ucol_res = @$conn->query("SHOW COLUMNS FROM users");
     if ($ucol_res) {
@@ -158,6 +316,39 @@ function ensure_database_indexes($conn) {
         }
         if (!in_array('experience', $u_cols)) {
             @$conn->query("ALTER TABLE users ADD COLUMN experience VARCHAR(50) DEFAULT NULL");
+        }
+        if (!in_array('is_online_available', $u_cols)) {
+            @$conn->query("ALTER TABLE users ADD COLUMN is_online_available TINYINT(1) DEFAULT 1");
+        }
+    }
+
+    // Auto-migrate columns for user_notifications table
+    $un_col_res = @$conn->query("SHOW COLUMNS FROM user_notifications");
+    if ($un_col_res) {
+        $un_cols = [];
+        while ($un_col_row = $un_col_res->fetch_assoc()) {
+            $un_cols[] = strtolower($un_col_row['Field']);
+        }
+        if (!in_array('is_pinned', $un_cols)) {
+            @$conn->query("ALTER TABLE user_notifications ADD COLUMN is_pinned TINYINT(1) DEFAULT 0");
+        }
+    }
+
+    // Auto-migrate columns for medicines table
+    $m_col_res = @$conn->query("SHOW COLUMNS FROM medicines");
+    if ($m_col_res) {
+        $m_cols = [];
+        while ($m_col_row = $m_col_res->fetch_assoc()) {
+            $m_cols[] = strtolower($m_col_row['Field']);
+        }
+        if (!in_array('generic_name', $m_cols)) {
+            @$conn->query("ALTER TABLE medicines ADD COLUMN generic_name VARCHAR(255) DEFAULT NULL");
+        }
+        if (!in_array('brand', $m_cols)) {
+            @$conn->query("ALTER TABLE medicines ADD COLUMN brand VARCHAR(255) DEFAULT NULL");
+        }
+        if (!in_array('category', $m_cols)) {
+            @$conn->query("ALTER TABLE medicines ADD COLUMN category VARCHAR(100) DEFAULT 'General'");
         }
     }
 }

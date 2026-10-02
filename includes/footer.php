@@ -149,6 +149,32 @@
             });
         });
 
+        // Feature 24: Network Status Indicator (Online/Offline Toast)
+        (function() {
+            function showNetworkToast(isOnline) {
+                let toast = document.getElementById('networkToast');
+                if (!toast) {
+                    toast = document.createElement('div');
+                    toast.id = 'networkToast';
+                    toast.style.cssText = 'position: fixed; bottom: 20px; left: 20px; z-index: 999999; padding: 0.75rem 1.25rem; border-radius: 12px; font-weight: 600; font-size: 0.88rem; backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 0.5rem; transition: all 0.3s ease;';
+                    document.body.appendChild(toast);
+                }
+                if (isOnline) {
+                    toast.style.background = 'rgba(46, 213, 115, 0.95)';
+                    toast.style.color = '#ffffff';
+                    toast.innerHTML = '<i class="fas fa-wifi"></i> Online — Connection Restored';
+                    setTimeout(function() { if (toast) toast.style.opacity = '0'; }, 3000);
+                } else {
+                    toast.style.opacity = '1';
+                    toast.style.background = 'rgba(255, 71, 87, 0.95)';
+                    toast.style.color = '#ffffff';
+                    toast.innerHTML = '<i class="fas fa-exclamation-triangle"></i> You are Offline — Cached mode active';
+                }
+            }
+            window.addEventListener('online', function() { showNetworkToast(true); });
+            window.addEventListener('offline', function() { showNetworkToast(false); });
+        })();
+
         // Instant Link Hover & Touch Prefetching for Sub-50ms Navigation
         (function() {
             const prefetched = new Set();

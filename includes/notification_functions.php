@@ -98,7 +98,7 @@ function get_user_notifications($user_id, $limit = 20, $filter = 'all') {
     } elseif ($filter === 'read') {
         $query .= " AND is_read = 1";
     }
-    $query .= " ORDER BY created_at DESC LIMIT " . max(1, min(100, $limit));
+    $query .= " ORDER BY is_pinned DESC, created_at DESC LIMIT " . max(1, min(100, $limit));
 
     $stmt = $conn->prepare($query);
     $stmt->bind_param("i", $user_id);
@@ -112,6 +112,17 @@ function get_user_notifications($user_id, $limit = 20, $filter = 'all') {
         }
     }
     return $list;
+}
+
+// Toggle Notification Pin Status (Feature 30)
+function toggle_pin_notification($user_id, $notification_id) {
+    global $conn;
+    $user_id = (int)$user_id;
+    $notif_id = (int)$notification_id;
+
+    $stmt = $conn->prepare("UPDATE user_notifications SET is_pinned = IF(is_pinned = 1, 0, 1) WHERE id = ? AND user_id = ?");
+    $stmt->bind_param("ii", $notif_id, $user_id);
+    return $stmt->execute();
 }
 
 // Get Unread Notification Count
@@ -156,9 +167,10 @@ function clear_user_notifications($user_id) {
     $user_id = (int)$user_id;
     if ($user_id <= 0) return false;
 
-    $stmt = $conn->prepare("DELETE FROM user_notifications WHERE user_id = ?");
+    $stmt = $conn->prepare("DELETE FROM user_notifications WHERE user_id = ? AND is_pinned = 0");
     if (!$stmt) return false;
     $stmt->bind_param("i", $user_id);
     return $stmt->execute();
 }
+
 

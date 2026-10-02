@@ -106,6 +106,31 @@ if ($action === 'mark_all_read') {
     exit;
 }
 
+if ($action === 'toggle_pin') {
+    $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+    $notif_id = isset($input['id']) ? (int)$input['id'] : 0;
+    $success = false;
+    if ($notif_id > 0) {
+        $success = toggle_pin_notification($user_id, $notif_id);
+    }
+    echo json_encode(['success' => (bool)$success]);
+    exit;
+}
+
+if ($action === 'save_preferences') {
+    $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+    $order_notif = isset($input['order_notif']) ? (int)$input['order_notif'] : 1;
+    $appointment_notif = isset($input['appointment_notif']) ? (int)$input['appointment_notif'] : 1;
+    $referral_notif = isset($input['referral_notif']) ? (int)$input['referral_notif'] : 1;
+    $payment_notif = isset($input['payment_notif']) ? (int)$input['payment_notif'] : 1;
+
+    $stmt = $conn->prepare("INSERT INTO notification_preferences (user_id, order_notif, appointment_notif, referral_notif, payment_notif) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE order_notif = VALUES(order_notif), appointment_notif = VALUES(appointment_notif), referral_notif = VALUES(referral_notif), payment_notif = VALUES(payment_notif)");
+    $stmt->bind_param("iiiii", $user_id, $order_notif, $appointment_notif, $referral_notif, $payment_notif);
+    $ok = $stmt->execute();
+    echo json_encode(['success' => (bool)$ok, 'message' => 'Preferences saved successfully']);
+    exit;
+}
+
 if ($action === 'clear_all') {
     $success = clear_user_notifications($user_id);
     $unread_count = get_unread_notification_count($user_id);
