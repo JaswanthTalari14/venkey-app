@@ -52,7 +52,7 @@ $nearby_doctors = $conn->query($query);
         <h2>Nearby Doctors (Within 10km)</h2>
         <p style="color: var(--text-secondary); margin-bottom: 2rem;">Using your current location, here are doctors available nearby for urgent visits.</p>
         
-        <div class="features-grid" style="margin-top: 1rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1px));">
+        <div class="features-grid" style="margin-top: 1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; width: 100%;">
             <?php if ($nearby_doctors && $nearby_doctors->num_rows > 0): ?>
                 <?php while($doc = $nearby_doctors->fetch_assoc()): ?>
                     <?php
