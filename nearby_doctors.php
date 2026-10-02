@@ -13,7 +13,7 @@ $patient_lat = 28.7042;
 $patient_lon = 77.1026;
 
 // Here we use a generic Haversine formula directly in SQL to find nearby doctors in 10km radius
-$query = "SELECT id, name, specialization, phone, latitude, longitude,
+$query = "SELECT *, 
           ( 6371 * acos( cos( radians($patient_lat) ) * cos( radians( latitude ) ) 
           * cos( radians( longitude ) - radians($patient_lon) ) + sin( radians($patient_lat) ) 
           * sin( radians( latitude ) ) ) ) AS distance 
@@ -55,15 +55,39 @@ $nearby_doctors = $conn->query($query);
         <div class="features-grid" style="margin-top: 1rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1px));">
             <?php if ($nearby_doctors && $nearby_doctors->num_rows > 0): ?>
                 <?php while($doc = $nearby_doctors->fetch_assoc()): ?>
+                    <?php
+                        // Check for doctor uploaded profile photo
+                        $doc_img = '';
+                        $possible_fields = ['profile_image', 'image', 'avatar', 'photo'];
+                        foreach ($possible_fields as $f) {
+                            if (!empty($doc[$f]) && file_exists($doc[$f])) {
+                                $doc_img = $doc[$f];
+                                break;
+                            }
+                        }
+                    ?>
                     <div class="feature-card glass-panel" style="padding: 1.5rem;">
-                        <h4 style="color: #fff;"><i class="fas fa-user-md" style="color: var(--primary-color);"></i> Dr. <?php echo htmlspecialchars($doc['name']); ?></h4>
-                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.5rem;"><?php echo htmlspecialchars($doc['specialization'] ?? 'General Practitioner'); ?></p>
+                        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.8rem;">
+                            <!-- Doctor Profile Image Display -->
+                            <?php if (!empty($doc_img)): ?>
+                                <img src="<?php echo htmlspecialchars($doc_img); ?>?v=<?php echo filemtime($doc_img); ?>" alt="Dr. <?php echo htmlspecialchars($doc['name']); ?>" style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary-color); flex-shrink: 0; background: rgba(0,0,0,0.15);">
+                            <?php else: ?>
+                                <div style="width: 54px; height: 54px; border-radius: 50%; background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); display: flex; align-items: center; justify-content: center; color: #ffffff; font-size: 1.3rem; border: 2px solid var(--primary-color); flex-shrink: 0; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
+                                    <i class="fas fa-user-md"></i>
+                                </div>
+                            <?php endif; ?>
+
+                            <div>
+                                <h4 style="color: var(--text-primary); font-weight: 700; font-size: 1.05rem; margin: 0;">Dr. <?php echo htmlspecialchars($doc['name']); ?></h4>
+                                <p style="color: var(--text-secondary); font-size: 0.88rem; margin-top: 0.2rem;"><?php echo htmlspecialchars($doc['specialization'] ?? 'General Practitioner'); ?></p>
+                            </div>
+                        </div>
                         
                         <div style="margin: 1rem 0; border-top: 1px solid var(--glass-border); padding-top: 1rem;">
                             <p style="font-weight: bold; color: var(--secondary-color); margin-bottom: 0.5rem;">
                                 <i class="fas fa-location-arrow"></i> <?php echo round($doc['distance'], 2); ?> km away
                             </p>
-                            <p><i class="fas fa-phone"></i> <?php echo htmlspecialchars($doc['phone']); ?></p>
+                            <p style="color: var(--text-primary); margin: 0;"><i class="fas fa-phone"></i> <?php echo htmlspecialchars($doc['phone']); ?></p>
                         </div>
                         
                         <a href="book_consult.php?doctor_id=<?php echo $doc['id']; ?>" class="btn btn-outline" style="width: 100%;">Book Directly</a>
