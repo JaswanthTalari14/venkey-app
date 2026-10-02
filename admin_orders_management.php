@@ -395,6 +395,9 @@ function build_order_page_link($p, $search, $status) {
                     <i class="fas fa-box-open" style="font-size: 3rem; color: var(--text-secondary); opacity: 0.4; margin-bottom: 1rem;"></i>
                     <h3 style="color: var(--text-primary);">No medicine orders found.</h3>
                     <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.4rem;">Orders placed by patients will appear here for complete management.</p>
+                </div>
+            <?php endif; ?>
+
         <!-- Server-Side Pagination Controls -->
         <?php if ($total_pages > 1): ?>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2rem; pt: 1rem; border-top: 1px solid var(--glass-border); flex-wrap: wrap; gap: 1rem;">
