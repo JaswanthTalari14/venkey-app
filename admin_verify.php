@@ -1,14 +1,27 @@
 <?php
 require_once 'config.php';
-include 'includes/header.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header("Location: login.php");
     exit;
 }
 
-// In a real system, there'd be an 'is_verified' column in users table.
-// Using a simple mockup where we just list unverified (or all) doctors for review.
+// Handle Verification Action
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'toggle_verify') {
+    $target_user_id = (int)$_POST['user_id'];
+    $new_status = (int)$_POST['status'];
+    $stmt = $conn->prepare("UPDATE users SET is_verified = ? WHERE id = ? AND role IN ('doctor', 'rmp')");
+    if ($stmt) {
+        $stmt->bind_param("ii", $new_status, $target_user_id);
+        $stmt->execute();
+    }
+    header("Location: admin_verify.php");
+    exit;
+}
+
+include 'includes/header.php';
+
+// Retrieve all doctors and RMPs with their stored details and profile images
 $professionals = $conn->query("SELECT * FROM users WHERE role IN ('doctor', 'rmp') ORDER BY created_at DESC");
 ?>
 
@@ -41,13 +54,65 @@ $professionals = $conn->query("SELECT * FROM users WHERE role IN ('doctor', 'rmp
         <div class="glass-panel" style="padding: 1.5rem;">
             <?php if ($professionals && $professionals->num_rows > 0): ?>
                 <?php while($p = $professionals->fetch_assoc()): ?>
-                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--glass-border); padding: 1rem 0;">
-                        <div>
-                            <h4 style="color: #fff;"><?php echo htmlspecialchars($p['name']); ?> <span style="font-size: 0.8rem; background: var(--primary-color); padding: 0.1rem 0.5rem; border-radius: 8px; margin-left: 0.5rem; text-transform: uppercase;"><?php echo $p['role']; ?></span></h4>
-                            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.3rem;">Specialization: <?php echo htmlspecialchars($p['specialization'] ?? 'General / RMP'); ?> | Phone: <?php echo htmlspecialchars($p['phone']); ?></p>
+                    <?php
+                        // Check for uploaded profile image across common column names or fallback
+                        $img_src = '';
+                        $possible_img_fields = ['profile_image', 'image', 'avatar', 'photo'];
+                        foreach ($possible_img_fields as $field) {
+                            if (!empty($p[$field]) && file_exists($p[$field])) {
+                                $img_src = $p[$field];
+                                break;
+                            }
+                        }
+                    ?>
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--glass-border); padding: 1.1rem 0; gap: 1rem; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 1rem; flex: 1; min-width: 260px;">
+                            <!-- Doctor Profile Image / Avatar Display -->
+                            <?php if (!empty($img_src)): ?>
+                                <img src="<?php echo htmlspecialchars($img_src); ?>" alt="<?php echo htmlspecialchars($p['name']); ?>" style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary-color); flex-shrink: 0; background: rgba(0,0,0,0.15);">
+                            <?php else: ?>
+                                <div style="width: 54px; height: 54px; border-radius: 50%; background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); display: flex; align-items: center; justify-content: center; color: #ffffff; font-size: 1.4rem; border: 2px solid var(--primary-color); flex-shrink: 0; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
+                                    <i class="fas <?php echo ($p['role'] === 'rmp') ? 'fa-user-nurse' : 'fa-user-md'; ?>"></i>
+                                </div>
+                            <?php endif; ?>
+
+                            <div>
+                                <h4 style="color: var(--text-primary); font-weight: 700; font-size: 1.05rem; margin: 0 0 0.3rem 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem;">
+                                    <span><?php echo htmlspecialchars($p['name']); ?></span>
+                                    <span style="font-size: 0.75rem; background: var(--primary-color); color: #ffffff; padding: 0.15rem 0.55rem; border-radius: 12px; text-transform: uppercase; font-weight: 700;"><?php echo htmlspecialchars($p['role']); ?></span>
+                                    <?php if (!empty($p['is_verified'])): ?>
+                                        <span style="font-size: 0.72rem; background: rgba(46, 213, 115, 0.15); color: #2ed573; border: 1px solid #2ed573; padding: 0.1rem 0.5rem; border-radius: 12px; font-weight: 600;">
+                                            <i class="fas fa-check-circle"></i> Verified
+                                        </span>
+                                    <?php endif; ?>
+                                </h4>
+                                <p style="color: var(--text-secondary); font-size: 0.88rem; margin: 0; line-height: 1.45;">
+                                    Specialization: <strong style="color: var(--text-primary);"><?php echo htmlspecialchars($p['specialization'] ?? 'General / RMP'); ?></strong> 
+                                    <span style="opacity: 0.6; margin: 0 0.3rem;">|</span> 
+                                    Phone: <strong style="color: var(--text-primary);"><?php echo htmlspecialchars($p['phone']); ?></strong>
+                                    <?php if (!empty($p['email'])): ?>
+                                        <span style="opacity: 0.6; margin: 0 0.3rem;">|</span> Email: <span style="color: var(--text-secondary);"><?php echo htmlspecialchars($p['email']); ?></span>
+                                    <?php endif; ?>
+                                </p>
+                            </div>
                         </div>
+
                         <div>
-                            <button class="btn btn-outline" style="border-color: #2ed573; color: #2ed573; font-size: 0.9rem;" onclick="alert('Verification logic mockup done!');">Mark Verified</button>
+                            <form method="POST" action="" style="margin: 0;">
+                                <input type="hidden" name="action" value="toggle_verify">
+                                <input type="hidden" name="user_id" value="<?php echo $p['id']; ?>">
+                                <?php if (!empty($p['is_verified'])): ?>
+                                    <input type="hidden" name="status" value="0">
+                                    <button type="submit" class="btn btn-outline" style="border-color: #ffa502; color: #ffa502; font-size: 0.85rem; padding: 0.45rem 0.9rem;">
+                                        <i class="fas fa-undo"></i> Mark Unverified
+                                    </button>
+                                <?php else: ?>
+                                    <input type="hidden" name="status" value="1">
+                                    <button type="submit" class="btn btn-outline" style="border-color: #2ed573; color: #2ed573; font-size: 0.85rem; padding: 0.45rem 0.9rem;">
+                                        <i class="fas fa-check"></i> Mark Verified
+                                    </button>
+                                <?php endif; ?>
+                            </form>
                         </div>
                     </div>
                 <?php endwhile; ?>

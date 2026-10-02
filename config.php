@@ -121,6 +121,21 @@ function ensure_database_indexes($conn) {
             }
         }
     }
+
+    // Auto-migrate columns for users table
+    $ucol_res = @$conn->query("SHOW COLUMNS FROM users");
+    if ($ucol_res) {
+        $u_cols = [];
+        while ($ucol_row = $ucol_res->fetch_assoc()) {
+            $u_cols[] = strtolower($ucol_row['Field']);
+        }
+        if (!in_array('profile_image', $u_cols) && !in_array('image', $u_cols) && !in_array('avatar', $u_cols)) {
+            @$conn->query("ALTER TABLE users ADD COLUMN profile_image VARCHAR(255) DEFAULT NULL");
+        }
+        if (!in_array('is_verified', $u_cols)) {
+            @$conn->query("ALTER TABLE users ADD COLUMN is_verified TINYINT(1) DEFAULT 0");
+        }
+    }
 }
 
 ensure_database_indexes($conn);
