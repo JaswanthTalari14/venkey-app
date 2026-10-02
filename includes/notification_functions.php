@@ -149,3 +149,16 @@ function mark_all_notifications_read($user_id) {
     $stmt->bind_param("i", $user_id);
     return $stmt->execute();
 }
+
+// Clear All Notifications for Current User
+function clear_user_notifications($user_id) {
+    global $conn;
+    $user_id = (int)$user_id;
+    if ($user_id <= 0) return false;
+
+    $stmt = $conn->prepare("DELETE FROM user_notifications WHERE user_id = ?");
+    if (!$stmt) return false;
+    $stmt->bind_param("i", $user_id);
+    return $stmt->execute();
+}
+

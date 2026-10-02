@@ -106,6 +106,19 @@ if ($action === 'mark_all_read') {
     exit;
 }
 
+if ($action === 'clear_all') {
+    $success = clear_user_notifications($user_id);
+    $unread_count = get_unread_notification_count($user_id);
+
+    echo json_encode([
+        'success' => (bool)$success,
+        'unread_count' => $unread_count,
+        'message' => $success ? 'Notifications cleared' : 'Failed to clear notifications'
+    ]);
+    exit;
+}
+
 http_response_code(400);
 echo json_encode(['success' => false, 'message' => 'Invalid action']);
 ?>
+

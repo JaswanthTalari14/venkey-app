@@ -147,10 +147,15 @@ if (isset($_SESSION['user_id'])) {
                     </button>
 
                     <!-- Dropdown Panel -->
-                    <div id="notifPanel" class="glass-panel" style="display: none; position: absolute; right: 0; top: 45px; width: 330px; max-height: 420px; z-index: 10000; padding: 1rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid var(--glass-border); overflow-y: auto;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.5rem; margin-bottom: 0.8rem;">
-                            <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700;"><i class="fas fa-bell" style="color: var(--primary-color);"></i> Notifications</h4>
-                            <button id="markAllReadBtn" style="background: none; border: none; color: var(--primary-color); font-size: 0.75rem; cursor: pointer; font-weight: 600;">Mark all as read</button>
+                    <div id="notifPanel" class="notif-panel">
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.6rem; margin-bottom: 0.8rem; gap: 0.5rem; flex-wrap: wrap;">
+                            <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700; display: flex; align-items: center; gap: 0.4rem; color: var(--text-primary);"><i class="fas fa-bell" style="color: var(--primary-color);"></i> Notifications</h4>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <button id="markAllReadBtn" style="background: none; border: none; color: var(--primary-color); font-size: 0.75rem; cursor: pointer; font-weight: 600; padding: 0.2rem 0.4rem; border-radius: 4px;" title="Mark all as read">Mark all as read</button>
+                                <button id="clearNotifsBtn" style="background: rgba(255, 71, 87, 0.12); border: 1px solid rgba(255, 71, 87, 0.3); color: #ff4757; font-size: 0.75rem; cursor: pointer; font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 6px; display: inline-flex; align-items: center; gap: 0.25rem; transition: all 0.2s;" title="Clear all notifications">
+                                    <i class="fas fa-trash-alt" style="font-size: 0.7rem;"></i> Clear
+                                </button>
+                            </div>
                         </div>
                         <div id="notifList" style="display: flex; flex-direction: column; gap: 0.5rem;">
                             <div style="text-align: center; color: var(--text-secondary); padding: 1rem; font-size: 0.85rem;">Loading...</div>
@@ -194,6 +199,21 @@ if (isset($_SESSION['user_id'])) {
     <!-- Notification Toast Container -->
     <div id="notifToastContainer" style="position: fixed; bottom: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 10px; max-width: 350px;"></div>
 
+    <!-- Clear Notifications Confirmation Modal -->
+    <div id="clearNotifModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 1000000; align-items: center; justify-content: center; padding: 1rem;">
+        <div style="background: var(--darker-bg, #121826); border: 1px solid var(--glass-border, rgba(255,255,255,0.15)); border-radius: 16px; padding: 1.5rem; max-width: 360px; width: 100%; box-shadow: 0 20px 40px rgba(0,0,0,0.6); color: var(--text-primary); text-align: center;">
+            <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(255, 71, 87, 0.15); color: #ff4757; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 1.25rem;">
+                <i class="fas fa-trash-alt"></i>
+            </div>
+            <h3 style="margin: 0 0 0.5rem; font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Clear all notifications?</h3>
+            <p style="margin: 0 0 1.25rem; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">This will permanently remove all notifications from your notification list.</p>
+            <div style="display: flex; gap: 0.75rem; justify-content: center;">
+                <button id="cancelClearNotifBtn" type="button" style="flex: 1; padding: 0.6rem 1rem; border-radius: 10px; border: 1px solid var(--glass-border, rgba(255,255,255,0.15)); background: rgba(255, 255, 255, 0.08); color: var(--text-primary); font-size: 0.85rem; font-weight: 600; cursor: pointer;">Cancel</button>
+                <button id="confirmClearNotifBtn" type="button" style="flex: 1; padding: 0.6rem 1rem; border-radius: 10px; border: none; background: #ff4757; color: white; font-size: 0.85rem; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(255, 71, 87, 0.3);">Clear</button>
+            </div>
+        </div>
+    </div>
+
     <?php if (isset($_SESSION['user_id'])): ?>
     <script>
     (function() {
@@ -202,6 +222,11 @@ if (isset($_SESSION['user_id'])) {
         const list = document.getElementById('notifList');
         const badge = document.getElementById('notifBadge');
         const markAllBtn = document.getElementById('markAllReadBtn');
+        const clearBtn = document.getElementById('clearNotifsBtn');
+        const clearModal = document.getElementById('clearNotifModal');
+        const cancelClearBtn = document.getElementById('cancelClearNotifBtn');
+        const confirmClearBtn = document.getElementById('confirmClearNotifBtn');
+
         let currentUnread = <?php echo $header_unread; ?>;
         let knownNotifIds = new Set();
 
@@ -215,14 +240,15 @@ if (isset($_SESSION['user_id'])) {
             });
 
             document.addEventListener('click', function(e) {
-                if (panel && !panel.contains(e.target) && !bellBtn.contains(e.target)) {
+                if (panel && !panel.contains(e.target) && !bellBtn.contains(e.target) && (!clearModal || !clearModal.contains(e.target))) {
                     panel.style.display = 'none';
                 }
             });
         }
 
         if (markAllBtn) {
-            markAllBtn.addEventListener('click', function() {
+            markAllBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
                 fetch('api_notifications.php?action=mark_all_read')
                     .then(res => res.json())
                     .then(data => {
@@ -231,6 +257,61 @@ if (isset($_SESSION['user_id'])) {
                             fetchNotifications();
                         }
                     });
+            });
+        }
+
+        // Clear Notifications Handlers
+        if (clearBtn && clearModal) {
+            clearBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                clearModal.style.display = 'flex';
+            });
+        }
+
+        if (cancelClearBtn && clearModal) {
+            cancelClearBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                clearModal.style.display = 'none';
+            });
+        }
+
+        if (clearModal) {
+            clearModal.addEventListener('click', function(e) {
+                if (e.target === clearModal) {
+                    clearModal.style.display = 'none';
+                }
+            });
+        }
+
+        if (confirmClearBtn && clearModal) {
+            confirmClearBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                confirmClearBtn.disabled = true;
+                confirmClearBtn.innerText = 'Clearing...';
+
+                fetch('api_notifications.php?action=clear_all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(res => res.json())
+                .then(data => {
+                    confirmClearBtn.disabled = false;
+                    confirmClearBtn.innerText = 'Clear';
+                    clearModal.style.display = 'none';
+
+                    if (data.success) {
+                        updateBadge(0);
+                        renderList([]);
+                    } else {
+                        showToast('Error', data.message || 'Failed to clear notifications.');
+                    }
+                })
+                .catch(err => {
+                    confirmClearBtn.disabled = false;
+                    confirmClearBtn.innerText = 'Clear';
+                    clearModal.style.display = 'none';
+                    showToast('Error', 'Failed to clear notifications. Please try again.');
+                });
             });
         }
 
@@ -256,7 +337,7 @@ if (isset($_SESSION['user_id'])) {
         function renderList(items) {
             if (!list) return;
             if (!items || items.length === 0) {
-                list.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1rem; font-size: 0.85rem;">No notifications found.</div>';
+                list.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1.5rem 1rem; font-size: 0.85rem;"><i class="fas fa-bell-slash" style="font-size: 1.5rem; margin-bottom: 0.5rem; opacity: 0.5; display: block;"></i>No notifications found.</div>';
                 return;
             }
             let html = '';
@@ -266,16 +347,19 @@ if (isset($_SESSION['user_id'])) {
                 else if (item.type === 'order') iconClass = 'fa-box';
                 else if (item.type === 'referral') iconClass = 'fa-gift';
 
-                let bgStyle = item.is_read == 0 ? 'background: rgba(255,255,255,0.08); border-left: 3px solid var(--primary-color);' : 'background: rgba(0,0,0,0.2);';
-                
+                let isUnread = item.is_read == 0;
+                let itemClass = isUnread ? 'notif-item unread' : 'notif-item read';
+
                 html += `
-                    <div style="padding: 0.75rem; border-radius: 8px; ${bgStyle} cursor: pointer;" onclick="markSingleRead(${item.id}, '${item.related_entity_type || ''}')">
-                        <div style="display: flex; gap: 0.6rem; align-items: flex-start;">
-                            <i class="fas ${iconClass}" style="color: var(--primary-color); margin-top: 3px;"></i>
-                            <div style="flex: 1;">
-                                <div style="font-size: 0.85rem; font-weight: bold; color: var(--text-primary);">${escapeHtml(item.title)}</div>
-                                <div style="font-size: 0.78rem; color: var(--text-secondary); margin: 0.2rem 0;">${escapeHtml(item.message)}</div>
-                                <div style="font-size: 0.7rem; color: var(--text-secondary);">${formatTime(item.created_at)}</div>
+                    <div class="${itemClass}" onclick="markSingleRead(${item.id}, '${item.related_entity_type || ''}')">
+                        <div style="display: flex; gap: 0.65rem; align-items: flex-start;">
+                            <div style="flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: ${isUnread ? 'rgba(74, 144, 226, 0.2)' : 'rgba(255, 255, 255, 0.08)'}; display: flex; align-items: center; justify-content: center; margin-top: 2px;">
+                                <i class="fas ${iconClass}" style="color: var(--primary-color); font-size: 0.8rem;"></i>
+                            </div>
+                            <div style="flex: 1; min-width: 0;">
+                                <div class="notif-title">${escapeHtml(item.title)}</div>
+                                <div class="notif-message">${escapeHtml(item.message)}</div>
+                                <div class="notif-time">${formatTime(item.created_at)}</div>
                             </div>
                         </div>
                     </div>
@@ -312,7 +396,7 @@ if (isset($_SESSION['user_id'])) {
             const container = document.getElementById('notifToastContainer');
             if (!container) return;
             const toast = document.createElement('div');
-            toast.style.cssText = 'background: rgba(20, 25, 40, 0.95); border: 1px solid var(--primary-color); border-radius: 12px; padding: 1rem; color: #fff; box-shadow: 0 10px 25px rgba(0,0,0,0.5); backdrop-filter: blur(10px); animation: fadeIn 0.3s;';
+            toast.style.cssText = 'background: rgba(20, 25, 40, 0.95); border: 1px solid var(--primary-color); border-radius: 12px; padding: 1rem; color: #fff; box-shadow: 0 10px 25px rgba(0,0,0,0.5); backdrop-filter: blur(10px); animation: fadeIn 0.3s; overflow-wrap: anywhere; word-break: break-word;';
             toast.innerHTML = `<div style="font-weight: bold; font-size: 0.9rem; color: var(--primary-color);"><i class="fas fa-bell"></i> ${escapeHtml(title)}</div><div style="font-size: 0.8rem; margin-top: 0.3rem;">${escapeHtml(msg)}</div>`;
             container.appendChild(toast);
             setTimeout(function() {
@@ -346,3 +430,4 @@ if (isset($_SESSION['user_id'])) {
     </script>
     <?php endif; ?>
     <main>
+
