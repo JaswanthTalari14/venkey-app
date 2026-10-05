@@ -111,7 +111,20 @@ function init_wallet_tables() {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )");
 
-    // 6. Ensure users table column compatibility (phone and mobile)
+    // 6. Wallet Audit Logs Table
+    $conn->query("CREATE TABLE IF NOT EXISTS wallet_audit_logs (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        topup_id VARCHAR(100) NOT NULL,
+        admin_id INT NOT NULL,
+        action VARCHAR(50) NOT NULL,
+        prev_status VARCHAR(50) DEFAULT NULL,
+        new_status VARCHAR(50) NOT NULL,
+        reason TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE
+    )");
+
+    // 7. Ensure users table column compatibility (phone and mobile)
     @$conn->query("ALTER TABLE users ADD COLUMN phone VARCHAR(50) DEFAULT NULL");
     @$conn->query("ALTER TABLE users ADD COLUMN mobile VARCHAR(50) DEFAULT NULL");
 }
@@ -484,6 +497,8 @@ function verify_and_complete_topup($topup_id, $admin_id, $gateway_reference = 'A
             "₹{$amt_fmt} has been added to your Medicineak wallet."
         );
 
+        log_wallet_audit($topup_id, $admin_id_int, 'approve', $topup['status'], 'approved', 'Wallet top-up approved by admin');
+
         $conn->commit();
         return [
             'success' => true,
@@ -526,6 +541,7 @@ function reject_topup_with_reason($topup_id, $admin_id, $reason = 'Payment not r
             return ['success' => false, 'message' => 'Top-up request is already rejected.'];
         }
 
+        $prev_status = $topup['status'];
         $upd = $conn->prepare("UPDATE wallet_topups SET status = 'rejected', rejection_reason = ?, approved_by = ?, approved_at = NOW() WHERE topup_id = ?");
         $upd->bind_param("sis", $reason, $admin_id_int, $topup_id);
         
@@ -540,6 +556,8 @@ function reject_topup_with_reason($topup_id, $admin_id, $reason = 'Payment not r
                 "Your ₹{$amt_fmt} wallet top-up request was rejected. Reason: {$reason}"
             );
 
+            log_wallet_audit($topup_id, $admin_id_int, 'reject', $prev_status, 'rejected', $reason);
+
             $conn->commit();
             return ['success' => true, 'message' => 'Top-up request rejected successfully.'];
         }
@@ -549,6 +567,87 @@ function reject_topup_with_reason($topup_id, $admin_id, $reason = 'Payment not r
     } catch (Exception $e) {
         $conn->rollback();
         return ['success' => false, 'message' => $e->getMessage()];
+    }
+}
+
+// ADMIN REVERSAL: Reverse an Approved Top-Up Request
+function reverse_approved_topup($topup_id, $admin_id, $reason = 'Admin Reversal') {
+    global $conn;
+    $admin_id_int = (int)$admin_id;
+    $conn->begin_transaction();
+
+    try {
+        $stmt = $conn->prepare("SELECT * FROM wallet_topups WHERE topup_id = ? FOR UPDATE");
+        $stmt->bind_param("s", $topup_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+
+        if (!$res || $res->num_rows === 0) {
+            $conn->rollback();
+            return ['success' => false, 'message' => 'Top-up request not found.'];
+        }
+
+        $topup = $res->fetch_assoc();
+        if ($topup['status'] !== 'approved') {
+            $conn->rollback();
+            return ['success' => false, 'message' => 'Only approved top-up requests can be reversed.'];
+        }
+
+        $customer_id = (int)$topup['customer_id'];
+        $deduct_amount = floatval($topup['paid_amount'] > 0 ? $topup['paid_amount'] : $topup['amount']);
+
+        // Lock & Check available balance
+        $wallet = get_or_create_wallet($customer_id);
+        $available = floatval($wallet['available_balance']);
+        if ($available < $deduct_amount) {
+            $conn->rollback();
+            return ['success' => false, 'message' => "Customer wallet available balance (₹" . number_format($available, 2) . ") is lower than the reversal amount (₹" . number_format($deduct_amount, 2) . "). Reversal blocked to prevent negative balance."];
+        }
+
+        // Deduct balance atomically via ledger adjustment
+        $res_tx = add_wallet_transaction(
+            $customer_id,
+            'correction',
+            'debit',
+            $deduct_amount,
+            "Reversal of Approved Top-Up {$topup_id}. Reason: {$reason}",
+            null,
+            $topup_id
+        );
+
+        if (!$res_tx['success']) {
+            $conn->rollback();
+            return $res_tx;
+        }
+
+        // Update status in wallet_topups to reversed
+        $upd = $conn->prepare("UPDATE wallet_topups SET status = 'reversed', rejection_reason = ? WHERE topup_id = ?");
+        $upd->bind_param("ss", $reason, $topup_id);
+        $upd->execute();
+
+        log_wallet_audit($topup_id, $admin_id_int, 'reverse', 'approved', 'reversed', $reason);
+        $conn->commit();
+
+        return ['success' => true, 'message' => "Top-up {$topup_id} credit reversed successfully."];
+    } catch (Exception $e) {
+        $conn->rollback();
+        return ['success' => false, 'message' => $e->getMessage()];
+    }
+}
+
+// Log Wallet Audit Helper
+function log_wallet_audit($topup_id, $admin_id, $action, $prev_status, $new_status, $reason = '') {
+    global $conn;
+    $admin_id_int = (int)$admin_id;
+    $prev_status_str = (string)$prev_status;
+    $new_status_str = (string)$new_status;
+    $reason_str = (string)$reason;
+    $action_str = (string)$action;
+
+    $stmt = $conn->prepare("INSERT INTO wallet_audit_logs (topup_id, admin_id, action, prev_status, new_status, reason) VALUES (?, ?, ?, ?, ?, ?)");
+    if ($stmt) {
+        $stmt->bind_param("sissss", $topup_id, $admin_id_int, $action_str, $prev_status_str, $new_status_str, $reason_str);
+        $stmt->execute();
     }
 }
 

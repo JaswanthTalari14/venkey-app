@@ -84,18 +84,10 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_customer_details') {
 
     echo json_encode([
         'success' => true,
-        'customer' => [
-            'id' => $customer['id'],
-            'name' => $customer['name'],
-            'email' => $customer['email'],
-            'mobile' => $customer['mobile'],
-            'joined_date' => date('M d, Y', strtotime($customer['created_at']))
-        ],
+        'customer' => $customer,
         'wallet' => [
             'available_balance' => floatval($wallet['available_balance']),
-            'pending_balance' => floatval($wallet['pending_balance']),
-            'status' => $wallet['status'],
-            'updated_at' => date('M d, Y h:i A', strtotime($wallet['updated_at']))
+            'pending_balance' => floatval($wallet['pending_balance'])
         ],
         'stats' => [
             'approved_topups_cnt' => intval($app_top['cnt'] ?? 0),
@@ -104,11 +96,273 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_customer_details') {
             'rejected_topups_amt' => floatval($rej_top['amt'] ?? 0),
             'spent_orders_amt' => floatval($spent_ord['amt'] ?? 0),
             'refunds_amt' => floatval($ref_ord['amt'] ?? 0),
-            'admin_adj_amt' => floatval($adm_adj['amt'] ?? 0)
         ],
         'transactions' => $transactions,
         'topups' => $topups
     ]);
+    exit;
+}
+
+// AJAX Endpoint: Fetch Specific Top-Up Details & Audit Trail
+if (isset($_GET['action']) && $_GET['action'] === 'get_topup_details') {
+    header('Content-Type: application/json');
+    $topup_id = isset($_GET['topup_id']) ? trim($_GET['topup_id']) : '';
+
+    if (empty($topup_id)) {
+        echo json_encode(['success' => false, 'message' => 'Top-up ID required.']);
+        exit;
+    }
+
+    $stmt = $conn->prepare("
+        SELECT t.*, u.name as customer_name, COALESCE(u.phone, u.mobile, 'N/A') as customer_mobile, u.email as customer_email,
+               COALESCE(w.available_balance, 0.00) as available_balance
+        FROM wallet_topups t
+        LEFT JOIN users u ON t.customer_id = u.id
+        LEFT JOIN wallets w ON t.customer_id = w.customer_id
+        WHERE t.topup_id = ?
+    ");
+    $stmt->bind_param("s", $topup_id);
+    $stmt->execute();
+    $topup_res = $stmt->get_result();
+
+    if (!$topup_res || $topup_res->num_rows === 0) {
+        echo json_encode(['success' => false, 'message' => 'Top-up request not found.']);
+        exit;
+    }
+
+    $topup = $topup_res->fetch_assoc();
+
+    // Duplicate UTR / Payment ID check
+    $dup_check = false;
+    $dup_records = [];
+    $gw_ref = $topup['gateway_reference'];
+    $pay_id = $topup['payment_id'];
+    if (!empty($gw_ref) || !empty($pay_id)) {
+        $chk = $conn->prepare("SELECT topup_id, amount, status, created_at FROM wallet_topups WHERE topup_id != ? AND ((gateway_reference = ? AND gateway_reference != '') OR (payment_id = ? AND payment_id != ''))");
+        $chk->bind_param("sss", $topup_id, $gw_ref, $pay_id);
+        $chk->execute();
+        $c_res = $chk->get_result();
+        if ($c_res && $c_res->num_rows > 0) {
+            $dup_check = true;
+            while ($dr = $c_res->fetch_assoc()) {
+                $dup_records[] = $dr;
+            }
+        }
+    }
+
+    // Amount Mismatch check
+    $req_amt = floatval($topup['amount']);
+    $paid_amt = floatval($topup['paid_amount'] ?? 0);
+    $is_mismatch = ($paid_amt > 0 && abs($req_amt - $paid_amt) > 0.01);
+
+    // Audit logs
+    $aud_stmt = $conn->prepare("
+        SELECT l.*, COALESCE(u.name, CONCAT('Admin #', l.admin_id)) as admin_name 
+        FROM wallet_audit_logs l 
+        LEFT JOIN users u ON l.admin_id = u.id 
+        WHERE l.topup_id = ? 
+        ORDER BY l.created_at ASC
+    ");
+    $aud_stmt->bind_param("s", $topup_id);
+    $aud_stmt->execute();
+    $aud_res = $aud_stmt->get_result();
+    $audit_logs = [];
+    if ($aud_res) {
+        while ($al = $aud_res->fetch_assoc()) {
+            $audit_logs[] = [
+                'action' => ucfirst($al['action']),
+                'prev_status' => $al['prev_status'],
+                'new_status' => $al['new_status'],
+                'admin_name' => $al['admin_name'],
+                'reason' => $al['reason'],
+                'timestamp' => date('M d, Y h:i A', strtotime($al['created_at']))
+            ];
+        }
+    }
+
+    // Timeline events
+    $timeline = [
+        [
+            'title' => 'Request Created',
+            'desc' => "Customer requested ₹" . number_format($req_amt, 2) . " via " . ($topup['payment_method'] ?: 'online'),
+            'timestamp' => date('M d, Y h:i A', strtotime($topup['created_at'])),
+            'completed' => true
+        ]
+    ];
+
+    $st = strtolower($topup['status']);
+    if ($st === 'pending' || $st === 'pending_approval' || $st === 'amount_mismatch') {
+        $timeline[] = [
+            'title' => 'Pending Admin Verification',
+            'desc' => 'Awaiting payment verification by Admin',
+            'timestamp' => date('M d, Y h:i A', strtotime($topup['updated_at'])),
+            'completed' => false
+        ];
+    } else if ($st === 'approved') {
+        $timeline[] = [
+            'title' => 'Approved & Credited',
+            'desc' => "₹" . number_format($paid_amt > 0 ? $paid_amt : $req_amt, 2) . " added to available balance",
+            'timestamp' => date('M d, Y h:i A', strtotime($topup['approved_at'] ?? $topup['updated_at'])),
+            'completed' => true
+        ];
+    } else if ($st === 'rejected' || $st === 'payment_failed') {
+        $timeline[] = [
+            'title' => 'Request Rejected',
+            'desc' => "Reason: " . ($topup['rejection_reason'] ?: 'Verification Failed'),
+            'timestamp' => date('M d, Y h:i A', strtotime($topup['approved_at'] ?? $topup['updated_at'])),
+            'completed' => true
+        ];
+    } else if ($st === 'reversed') {
+        $timeline[] = [
+            'title' => 'Credit Reversed',
+            'desc' => "Reason: " . ($topup['rejection_reason'] ?: 'Admin Reversal'),
+            'timestamp' => date('M d, Y h:i A', strtotime($topup['updated_at'])),
+            'completed' => true
+        ];
+    }
+
+    echo json_encode([
+        'success' => true,
+        'topup' => [
+            'topup_id' => $topup['topup_id'],
+            'customer_id' => $topup['customer_id'],
+            'customer_name' => $topup['customer_name'],
+            'customer_mobile' => $topup['customer_mobile'],
+            'customer_email' => $topup['customer_email'],
+            'available_balance' => floatval($topup['available_balance']),
+            'amount' => $req_amt,
+            'paid_amount' => $paid_amt,
+            'payment_method' => $topup['payment_method'],
+            'gateway_reference' => $topup['gateway_reference'],
+            'payment_id' => $topup['payment_id'],
+            'status' => $topup['status'],
+            'rejection_reason' => $topup['rejection_reason'],
+            'created_at' => date('M d, Y h:i A', strtotime($topup['created_at'])),
+            'updated_at' => date('M d, Y h:i A', strtotime($topup['updated_at'])),
+            'approved_at' => $topup['approved_at'] ? date('M d, Y h:i A', strtotime($topup['approved_at'])) : null
+        ],
+        'duplicate_check' => [
+            'has_duplicate' => $dup_check,
+            'records' => $dup_records
+        ],
+        'amount_mismatch' => [
+            'has_mismatch' => $is_mismatch,
+            'requested' => $req_amt,
+            'paid' => $paid_amt
+        ],
+        'audit_logs' => $audit_logs,
+        'timeline' => $timeline
+    ]);
+    exit;
+}
+
+// AJAX Endpoint: Unread/New Pending Topups Count
+if (isset($_GET['action']) && $_GET['action'] === 'get_unread_topups_count') {
+    header('Content-Type: application/json');
+    $res = $conn->query("SELECT COUNT(*) as cnt FROM wallet_topups WHERE (LOWER(status) IN ('pending_approval', 'amount_mismatch', 'pending') OR status IS NULL OR status = '' OR LOWER(status) NOT IN ('approved', 'rejected', 'payment_failed')) AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)");
+    $cnt = intval($res ? $res->fetch_assoc()['cnt'] : 0);
+    echo json_encode(['success' => true, 'pending_count' => $cnt]);
+    exit;
+}
+
+// AJAX Endpoint: Financial Reconciliation Report
+if (isset($_GET['action']) && $_GET['action'] === 'get_reconciliation_report') {
+    header('Content-Type: application/json');
+    $tot_req = $conn->query("SELECT COUNT(*) as cnt, SUM(amount) as amt FROM wallet_topups")->fetch_assoc();
+    $tot_app = $conn->query("SELECT COUNT(*) as cnt, SUM(COALESCE(paid_amount, amount)) as amt FROM wallet_topups WHERE LOWER(status) = 'approved'")->fetch_assoc();
+    $tot_tx = $conn->query("SELECT COUNT(*) as cnt, SUM(amount) as amt FROM wallet_transactions WHERE transaction_type = 'topup_approved' AND status = 'completed'")->fetch_assoc();
+    $tot_rej = $conn->query("SELECT COUNT(*) as cnt, SUM(amount) as amt FROM wallet_topups WHERE LOWER(status) IN ('rejected', 'payment_failed')")->fetch_assoc();
+
+    $app_amt = floatval($tot_app['amt'] ?? 0);
+    $tx_amt = floatval($tot_tx['amt'] ?? 0);
+    $discrepancy = abs($app_amt - $tx_amt) > 0.01;
+
+    echo json_encode([
+        'success' => true,
+        'total_requests' => intval($tot_req['cnt'] ?? 0),
+        'total_requested_amount' => floatval($tot_req['amt'] ?? 0),
+        'approved_requests' => intval($tot_app['cnt'] ?? 0),
+        'approved_amount' => $app_amt,
+        'ledger_credited_amount' => $tx_amt,
+        'rejected_requests' => intval($tot_rej['cnt'] ?? 0),
+        'rejected_amount' => floatval($tot_rej['amt'] ?? 0),
+        'has_discrepancy' => $discrepancy
+    ]);
+    exit;
+}
+
+// CSV Export Action
+if (isset($_GET['export']) && $_GET['export'] === 'topups_csv') {
+    $t_status = isset($_GET['topup_status']) ? strtolower(trim($_GET['topup_status'])) : 'all';
+    $t_search = isset($_GET['topup_search']) ? trim($_GET['topup_search']) : '';
+    $date_range = isset($_GET['date_range']) ? trim($_GET['date_range']) : 'all';
+
+    $where = [];
+    if ($t_status === 'pending') {
+        $where[] = "(LOWER(t.status) IN ('pending_approval', 'amount_mismatch', 'pending') OR t.status IS NULL OR t.status = '' OR LOWER(t.status) NOT IN ('approved', 'rejected', 'payment_failed'))";
+    } else if ($t_status === 'approved') {
+        $where[] = "LOWER(t.status) = 'approved'";
+    } else if ($t_status === 'rejected') {
+        $where[] = "LOWER(t.status) IN ('rejected', 'payment_failed')";
+    }
+
+    if (!empty($t_search)) {
+        $ts = $conn->real_escape_string($t_search);
+        $where[] = "(t.topup_id LIKE '%$ts%' OR u.name LIKE '%$ts%' OR u.phone LIKE '%$ts%' OR u.mobile LIKE '%$ts%' OR u.email LIKE '%$ts%' OR t.gateway_reference LIKE '%$ts%' OR t.payment_id LIKE '%$ts%')";
+    }
+
+    if ($date_range === 'today') {
+        $where[] = "DATE(t.created_at) = CURDATE()";
+    } else if ($date_range === 'this_week') {
+        $where[] = "YEARWEEK(t.created_at, 1) = YEARWEEK(CURDATE(), 1)";
+    } else if ($date_range === 'this_month') {
+        $where[] = "YEAR(t.created_at) = YEAR(CURDATE()) AND MONTH(t.created_at) = MONTH(CURDATE())";
+    } else if ($date_range === 'custom' && !empty($_GET['start_date']) && !empty($_GET['end_date'])) {
+        $sd = $conn->real_escape_string($_GET['start_date']);
+        $ed = $conn->real_escape_string($_GET['end_date']);
+        $where[] = "DATE(t.created_at) BETWEEN '$sd' AND '$ed'";
+    }
+
+    $where_sql = !empty($where) ? "WHERE " . implode(" AND ", $where) : "";
+
+    $query = "
+        SELECT t.topup_id, COALESCE(u.name, CONCAT('Customer #', t.customer_id)) as customer_name,
+               COALESCE(u.phone, u.mobile, 'N/A') as phone, t.amount, t.paid_amount,
+               t.payment_method, t.gateway_reference, t.payment_id, t.status,
+               t.rejection_reason, t.created_at, t.approved_at
+        FROM wallet_topups t
+        LEFT JOIN users u ON t.customer_id = u.id
+        $where_sql
+        ORDER BY t.created_at DESC
+    ";
+
+    $res = $conn->query($query);
+
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="wallet_topups_export_' . date('Y-m-d') . '.csv"');
+
+    $output = fopen('php://output', 'w');
+    fputcsv($output, ['Topup ID', 'Customer Name', 'Phone', 'Requested Amount (INR)', 'Paid Amount (INR)', 'Payment Method', 'Gateway Order ID', 'Payment ID', 'Status', 'Rejection Reason', 'Created At', 'Approved At']);
+
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            fputcsv($output, [
+                $row['topup_id'],
+                $row['customer_name'],
+                $row['phone'],
+                number_format($row['amount'], 2, '.', ''),
+                number_format($row['paid_amount'] ?? 0, 2, '.', ''),
+                $row['payment_method'],
+                $row['gateway_reference'],
+                $row['payment_id'],
+                strtoupper($row['status']),
+                $row['rejection_reason'],
+                $row['created_at'],
+                $row['approved_at']
+            ]);
+        }
+    }
+    fclose($output);
     exit;
 }
 
@@ -172,6 +426,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $message = $res['message'];
             $msg_type = 'danger';
         }
+    } else if ($action === 'reverse_topup') {
+        $topup_id = trim($_POST['topup_id']);
+        $reason = trim($_POST['reason']);
+        if (empty($reason)) {
+            $reason = 'Admin Credit Reversal';
+        }
+        $res = reverse_approved_topup($topup_id, $admin_id, $reason);
+        if ($res['success']) {
+            $message = "Top-up request " . htmlspecialchars($topup_id) . " credit reversed successfully.";
+            $msg_type = 'info';
+        } else {
+            $message = $res['message'];
+            $msg_type = 'danger';
+        }
     } else if ($action === 'update_settings') {
         $min_topup = floatval($_POST['min_topup']);
         $max_topup = floatval($_POST['max_topup']);
@@ -224,21 +492,41 @@ $customer_wallets = $conn->query("
     ORDER BY w.available_balance DESC
 ");
 
-// Top-ups Verification Queue with Status Filtering
+// Top-ups Verification Queue with Search, Status, and Date Filtering
 $topup_status = isset($_GET['topup_status']) ? strtolower(trim($_GET['topup_status'])) : 'pending';
-$topup_where = "";
+$topup_search = isset($_GET['topup_search']) ? trim($_GET['topup_search']) : '';
+$date_range = isset($_GET['date_range']) ? trim($_GET['date_range']) : 'all';
+$start_date = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
+$end_date = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
+
+$t_where = [];
+
 if ($topup_status === 'pending') {
-    $topup_where = "WHERE (LOWER(t.status) IN ('pending_approval', 'amount_mismatch', 'pending') OR t.status IS NULL OR t.status = '' OR LOWER(t.status) NOT IN ('approved', 'rejected', 'payment_failed'))";
+    $t_where[] = "(LOWER(t.status) IN ('pending_approval', 'amount_mismatch', 'pending') OR t.status IS NULL OR t.status = '' OR LOWER(t.status) NOT IN ('approved', 'rejected', 'payment_failed'))";
 } else if ($topup_status === 'approved') {
-    $topup_where = "WHERE LOWER(t.status) = 'approved'";
+    $t_where[] = "LOWER(t.status) = 'approved'";
 } else if ($topup_status === 'rejected') {
-    $topup_where = "WHERE LOWER(t.status) IN ('rejected', 'payment_failed')";
-} else if ($topup_status === 'all') {
-    $topup_where = "";
-} else {
-    $topup_status = 'pending';
-    $topup_where = "WHERE (LOWER(t.status) IN ('pending_approval', 'amount_mismatch', 'pending') OR t.status IS NULL OR t.status = '' OR LOWER(t.status) NOT IN ('approved', 'rejected', 'payment_failed'))";
+    $t_where[] = "LOWER(t.status) IN ('rejected', 'payment_failed')";
 }
+
+if (!empty($topup_search)) {
+    $ts_safe = $conn->real_escape_string($topup_search);
+    $t_where[] = "(t.topup_id LIKE '%$ts_safe%' OR u.name LIKE '%$ts_safe%' OR u.phone LIKE '%$ts_safe%' OR u.mobile LIKE '%$ts_safe%' OR u.email LIKE '%$ts_safe%' OR t.gateway_reference LIKE '%$ts_safe%' OR t.payment_id LIKE '%$ts_safe%')";
+}
+
+if ($date_range === 'today') {
+    $t_where[] = "DATE(t.created_at) = CURDATE()";
+} else if ($date_range === 'this_week') {
+    $t_where[] = "YEARWEEK(t.created_at, 1) = YEARWEEK(CURDATE(), 1)";
+} else if ($date_range === 'this_month') {
+    $t_where[] = "YEAR(t.created_at) = YEAR(CURDATE()) AND MONTH(t.created_at) = MONTH(CURDATE())";
+} else if ($date_range === 'custom' && !empty($start_date) && !empty($end_date)) {
+    $sd_safe = $conn->real_escape_string($start_date);
+    $ed_safe = $conn->real_escape_string($end_date);
+    $t_where[] = "DATE(t.created_at) BETWEEN '$sd_safe' AND '$ed_safe'";
+}
+
+$topup_where_sql = !empty($t_where) ? "WHERE " . implode(" AND ", $t_where) : "";
 
 $pending_topups_list = $conn->query("
     SELECT t.*, 
@@ -249,7 +537,7 @@ $pending_topups_list = $conn->query("
     FROM wallet_topups t
     LEFT JOIN users u ON t.customer_id = u.id
     LEFT JOIN wallets w ON t.customer_id = w.customer_id
-    $topup_where
+    $topup_where_sql
     ORDER BY t.created_at DESC
 ");
 
@@ -355,29 +643,79 @@ include 'includes/header.php';
 
         <!-- SECTION 2: Customer Wallet Top-Up Verification Requests -->
         <div style="margin-bottom: 2.5rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; gap: 0.5rem;">
-                <h3 style="margin: 0; color: #f39c12; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
-                    <i class="fas fa-clock"></i> Customer Wallet Top-Up Verification Requests
-                    <span style="background: #f39c12; color: #121212; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.8rem; font-weight: bold;"><?php echo $pending_topups_count; ?> Pending</span>
-                </h3>
-                <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
-                    <a href="admin_wallets.php?topup_status=pending" class="btn <?php echo $topup_status === 'pending' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
-                        Pending (<?php echo $pending_topups_count; ?>)
-                    </a>
-                    <a href="admin_wallets.php?topup_status=approved" class="btn <?php echo $topup_status === 'approved' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
-                        Approved
-                    </a>
-                    <a href="admin_wallets.php?topup_status=rejected" class="btn <?php echo $topup_status === 'rejected' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
-                        Rejected
-                    </a>
-                    <a href="admin_wallets.php?topup_status=all" class="btn <?php echo $topup_status === 'all' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
-                        All Requests
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; gap: 0.8rem;">
+                <div>
+                    <h3 style="margin: 0; color: #f39c12; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fas fa-clock"></i> Customer Wallet Top-Up Verification Requests
+                        <span id="unread-topup-badge" style="background: #f39c12; color: #121212; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.8rem; font-weight: bold;"><?php echo $pending_topups_count; ?> Pending</span>
+                    </h3>
+                </div>
+
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                    <button type="button" onclick="openReconciliationModal()" class="btn btn-outline" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; color: #4a90e2; border-color: #4a90e2;">
+                        <i class="fas fa-balance-scale"></i> Reconciliation Report
+                    </button>
+
+                    <a href="admin_wallets.php?export=topups_csv&topup_status=<?php echo urlencode($topup_status); ?>&topup_search=<?php echo urlencode($topup_search); ?>&date_range=<?php echo urlencode($date_range); ?>&start_date=<?php echo urlencode($start_date); ?>&end_date=<?php echo urlencode($end_date); ?>" class="btn btn-outline" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; color: #2ed573; border-color: #2ed573;">
+                        <i class="fas fa-file-csv"></i> Export CSV
                     </a>
                 </div>
             </div>
 
+            <!-- Filter Controls Bar -->
+            <form method="GET" action="admin_wallets.php" style="background: rgba(255, 255, 255, 0.02); padding: 1rem; border-radius: 14px; border: 1px solid var(--glass-border); margin-bottom: 1rem; display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;">
+                <input type="hidden" name="topup_status" value="<?php echo htmlspecialchars($topup_status); ?>">
+
+                <!-- Status Filter Tabs -->
+                <div style="display: flex; gap: 0.3rem; flex-wrap: wrap;">
+                    <a href="admin_wallets.php?topup_status=pending&topup_search=<?php echo urlencode($topup_search); ?>&date_range=<?php echo urlencode($date_range); ?>" class="btn <?php echo $topup_status === 'pending' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                        Pending (<?php echo $pending_topups_count; ?>)
+                    </a>
+                    <a href="admin_wallets.php?topup_status=approved&topup_search=<?php echo urlencode($topup_search); ?>&date_range=<?php echo urlencode($date_range); ?>" class="btn <?php echo $topup_status === 'approved' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                        Approved
+                    </a>
+                    <a href="admin_wallets.php?topup_status=rejected&topup_search=<?php echo urlencode($topup_search); ?>&date_range=<?php echo urlencode($date_range); ?>" class="btn <?php echo $topup_status === 'rejected' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                        Rejected
+                    </a>
+                    <a href="admin_wallets.php?topup_status=all&topup_search=<?php echo urlencode($topup_search); ?>&date_range=<?php echo urlencode($date_range); ?>" class="btn <?php echo $topup_status === 'all' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                        All Requests
+                    </a>
+                </div>
+
+                <!-- Search Input -->
+                <div style="flex: 1; min-width: 220px;">
+                    <input type="text" name="topup_search" value="<?php echo htmlspecialchars($topup_search); ?>" placeholder="Search ID, Customer, Phone, Gateway Ref / UTR..." class="glass-panel" style="width: 100%; padding: 0.45rem 0.85rem; border-radius: 8px; font-size: 0.85rem; color: var(--text-primary); border: 1px solid var(--glass-border);">
+                </div>
+
+                <!-- Date Range Selector -->
+                <div>
+                    <select name="date_range" onchange="document.getElementById('custom-date-box').style.display = this.value === 'custom' ? 'flex' : 'none';" class="glass-panel" style="padding: 0.45rem 0.85rem; border-radius: 8px; font-size: 0.85rem; color: var(--text-primary); border: 1px solid var(--glass-border);">
+                        <option value="all" <?php echo $date_range === 'all' ? 'selected' : ''; ?>>All Dates</option>
+                        <option value="today" <?php echo $date_range === 'today' ? 'selected' : ''; ?>>Today</option>
+                        <option value="this_week" <?php echo $date_range === 'this_week' ? 'selected' : ''; ?>>This Week</option>
+                        <option value="this_month" <?php echo $date_range === 'this_month' ? 'selected' : ''; ?>>This Month</option>
+                        <option value="custom" <?php echo $date_range === 'custom' ? 'selected' : ''; ?>>Custom Range...</option>
+                    </select>
+                </div>
+
+                <div id="custom-date-box" style="display: <?php echo $date_range === 'custom' ? 'flex' : 'none'; ?>; gap: 0.4rem; align-items: center;">
+                    <input type="date" name="start_date" value="<?php echo htmlspecialchars($start_date); ?>" class="glass-panel" style="padding: 0.4rem; border-radius: 8px; font-size: 0.8rem; color: var(--text-primary); border: 1px solid var(--glass-border);">
+                    <span style="color: var(--text-secondary); font-size: 0.8rem;">to</span>
+                    <input type="date" name="end_date" value="<?php echo htmlspecialchars($end_date); ?>" class="glass-panel" style="padding: 0.4rem; border-radius: 8px; font-size: 0.8rem; color: var(--text-primary); border: 1px solid var(--glass-border);">
+                </div>
+
+                <button type="submit" class="btn btn-primary" style="font-size: 0.8rem; padding: 0.45rem 0.85rem;">
+                    <i class="fas fa-filter"></i> Apply Filters
+                </button>
+                <?php if (!empty($topup_search) || $date_range !== 'all'): ?>
+                    <a href="admin_wallets.php?topup_status=<?php echo urlencode($topup_status); ?>" class="btn btn-outline" style="font-size: 0.8rem; padding: 0.45rem 0.65rem; color: var(--text-secondary);">
+                        <i class="fas fa-times"></i> Clear
+                    </a>
+                <?php endif; ?>
+            </form>
+
             <div class="glass-panel" style="overflow-x: auto; padding: 1rem; border-radius: 16px; border-left: 4px solid #f39c12;">
-                <table style="width: 100%; min-width: 900px; text-align: left; border-collapse: collapse;">
+                <table style="width: 100%; min-width: 950px; text-align: left; border-collapse: collapse;">
                     <thead>
                         <tr style="border-bottom: 1px solid var(--glass-border); color: var(--text-secondary); font-size: 0.85rem;">
                             <th style="padding: 0.8rem 1rem;">Top-Up ID</th>
@@ -438,6 +776,10 @@ include 'includes/header.php';
                                                     <i class="fas fa-info-circle"></i> <?php echo htmlspecialchars($top['rejection_reason']); ?>
                                                 </small>
                                             <?php endif; ?>
+                                        <?php elseif ($t_status === 'reversed'): ?>
+                                            <span style="background: rgba(149, 165, 166, 0.15); color: #95a5a6; padding: 0.35rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(149, 165, 166, 0.3);">
+                                                <i class="fas fa-undo"></i> Credit Reversed
+                                            </span>
                                         <?php elseif ($t_status === 'amount_mismatch'): ?>
                                             <span style="background: rgba(155, 89, 182, 0.15); color: #9b59b6; padding: 0.35rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(155, 89, 182, 0.3);">
                                                 <i class="fas fa-exclamation-triangle"></i> Mismatch Review
@@ -456,8 +798,15 @@ include 'includes/header.php';
                                         <?php echo date('M d, Y h:i A', strtotime($top['created_at'])); ?>
                                     </td>
                                     <td style="padding: 1rem; text-align: right; white-space: nowrap;">
+                                        <!-- Inspect Request Modal Button -->
+                                        <button type="button" onclick="openTopupDetailsModal('<?php echo htmlspecialchars(addslashes($top['topup_id'])); ?>')" class="btn btn-outline" style="font-size: 0.8rem; padding: 0.45rem 0.65rem; margin-right: 0.3rem;" title="Inspect request details, timeline, and audit log">
+                                            <i class="fas fa-eye"></i> Details
+                                        </button>
+
                                         <?php if ($t_status === 'approved'): ?>
-                                            <span style="color: #2ed573; font-size: 0.85rem; font-weight: 600;"><i class="fas fa-check-circle"></i> Credited</span>
+                                            <button type="button" onclick="promptReverseTopup('<?php echo htmlspecialchars(addslashes($top['topup_id'])); ?>', '<?php echo htmlspecialchars(addslashes($top['customer_name'])); ?>', <?php echo $top['amount']; ?>)" class="btn btn-outline" style="font-size: 0.8rem; padding: 0.45rem 0.75rem; color: #e67e22; border-color: #e67e22;" title="Safely reverse credited balance from customer wallet">
+                                                <i class="fas fa-undo"></i> Reverse Credit
+                                            </button>
                                         <?php elseif ($t_status === 'rejected' || $t_status === 'payment_failed'): ?>
                                             <form method="POST" action="admin_wallets.php" onsubmit="return handleFormSubmit(this, 'Re-approving and crediting customer wallet...');" style="display: inline-block;">
                                                 <input type="hidden" name="action" value="approve_topup">
@@ -834,6 +1183,151 @@ include 'includes/header.php';
     </div>
 </div>
 
+<!-- Hidden Form for Credit Reversal -->
+<form id="reverse-topup-form" method="POST" action="admin_wallets.php" style="display: none;">
+    <input type="hidden" name="action" value="reverse_topup">
+    <input type="hidden" id="reverse_topup_id" name="topup_id" value="">
+    <input type="hidden" id="reverse_topup_reason" name="reason" value="">
+</form>
+
+<!-- Non-Intrusive Auto-Refresh Toast -->
+<div id="auto-refresh-toast" style="display: none; position: fixed; top: 20px; right: 20px; z-index: 10000; background: #f39c12; color: #121212; padding: 0.9rem 1.4rem; border-radius: 14px; font-weight: bold; box-shadow: 0 10px 30px rgba(0,0,0,0.5); align-items: center; gap: 0.8rem;">
+    <i class="fas fa-bell fa-bounce" style="font-size: 1.2rem;"></i>
+    <div>
+        <div id="toast-title" style="font-size: 0.95rem;">New Top-Up Request Arrived!</div>
+        <small style="opacity: 0.9;"><a href="admin_wallets.php" style="color: #121212; text-decoration: underline; font-weight: bold;">Click to Reload Page</a></small>
+    </div>
+    <button onclick="document.getElementById('auto-refresh-toast').style.display='none'" style="background: none; border: none; color: #121212; font-size: 1.2rem; cursor: pointer; margin-left: 0.5rem;">&times;</button>
+</div>
+
+<!-- Modal 5: Top-Up Request Forensic Details Modal -->
+<div id="topup-details-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); z-index: 9999; justify-content: center; align-items: center; padding: 1rem; backdrop-filter: blur(4px);">
+    <div class="glass-panel" style="background: var(--bg-card); border: 1px solid var(--glass-border); width: 100%; max-width: 750px; max-height: 90vh; overflow-y: auto; padding: 2rem; border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 1rem;">
+            <h3 style="margin: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 0.6rem;">
+                <i class="fas fa-file-invoice-dollar" style="color: var(--primary-color);"></i> Top-Up Request Forensic Details
+            </h3>
+            <button onclick="document.getElementById('topup-details-modal').style.display='none'" style="background: none; border: none; color: var(--text-primary); font-size: 1.6rem; cursor: pointer;">&times;</button>
+        </div>
+
+        <div id="topup-modal-loading" style="text-align: center; padding: 3rem; color: var(--text-secondary);">
+            <i class="fas fa-spinner fa-spin fa-2x" style="color: var(--primary-color); margin-bottom: 1rem;"></i>
+            <p>Fetching top-up details and audit trail...</p>
+        </div>
+
+        <div id="topup-modal-body" style="display: none;">
+            <!-- Mismatch & Duplicate Warnings Container -->
+            <div id="topup-warning-container"></div>
+
+            <!-- Topup Info Cards -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                <div style="background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 12px; border: 1px solid var(--glass-border);">
+                    <small style="color: var(--text-secondary); text-transform: uppercase;">Top-Up ID</small>
+                    <h4 id="td_modal_topup_id" style="margin: 0.2rem 0 0 0; color: var(--primary-color); font-family: monospace;"></h4>
+                    <div id="td_modal_status_badge" style="margin-top: 0.4rem;"></div>
+                </div>
+
+                <div style="background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 12px; border: 1px solid var(--glass-border);">
+                    <small style="color: var(--text-secondary); text-transform: uppercase;">Customer Profile</small>
+                    <h4 id="td_modal_customer" style="margin: 0.2rem 0 0 0; color: var(--text-primary);"></h4>
+                    <p id="td_modal_contact" style="margin: 0.2rem 0 0 0; font-size: 0.85rem; color: var(--text-secondary);"></p>
+                </div>
+
+                <div style="background: rgba(46, 213, 115, 0.08); padding: 1rem; border-radius: 12px; border: 1px solid rgba(46, 213, 115, 0.3);">
+                    <small style="color: #2ed573; text-transform: uppercase; font-weight: bold;">Requested Amount</small>
+                    <div id="td_modal_amount" style="font-size: 1.6rem; font-weight: bold; color: #2ed573; margin-top: 0.2rem;">₹0.00</div>
+                    <small id="td_modal_paid" style="color: var(--text-secondary); display: block; font-weight: 500;"></small>
+                </div>
+            </div>
+
+            <!-- Payment Reference Breakdown -->
+            <div style="background: rgba(255,255,255,0.02); padding: 1rem; border-radius: 12px; border: 1px solid var(--glass-border); margin-bottom: 1.5rem;">
+                <h4 style="margin: 0 0 0.8rem 0; font-size: 0.95rem; color: var(--text-primary);"><i class="fas fa-credit-card"></i> Payment Reference Details</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; font-size: 0.88rem;">
+                    <div><strong>Payment Method:</strong> <span id="td_modal_method" style="color: #4a90e2;"></span></div>
+                    <div><strong>Gateway Order ID:</strong> <span id="td_modal_order_id" style="font-family: monospace;"></span></div>
+                    <div><strong>Payment ID / UTR:</strong> <span id="td_modal_pay_id" style="font-family: monospace;"></span></div>
+                    <div><strong>Submitted At:</strong> <span id="td_modal_created_at" style="color: var(--text-secondary);"></span></div>
+                </div>
+            </div>
+
+            <!-- Event Timeline -->
+            <h4 style="margin: 1.2rem 0 0.6rem 0; font-size: 0.95rem; color: var(--text-primary);"><i class="fas fa-stream"></i> Request Event Timeline</h4>
+            <div id="td_modal_timeline" style="margin-bottom: 1.5rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 12px; border: 1px solid var(--glass-border);"></div>
+
+            <!-- Admin Action Audit Logs -->
+            <h4 style="margin: 1.2rem 0 0.6rem 0; font-size: 0.95rem; color: var(--text-primary);"><i class="fas fa-user-shield"></i> Admin Audit Log History</h4>
+            <div style="overflow-x: auto; max-height: 200px; overflow-y: auto; border: 1px solid var(--glass-border); border-radius: 10px;">
+                <table style="width: 100%; text-align: left; border-collapse: collapse; font-size: 0.85rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--glass-border); background: rgba(255,255,255,0.03);">
+                            <th style="padding: 0.6rem;">Action</th>
+                            <th style="padding: 0.6rem;">Prev Status</th>
+                            <th style="padding: 0.6rem;">New Status</th>
+                            <th style="padding: 0.6rem;">Performed By</th>
+                            <th style="padding: 0.6rem;">Notes</th>
+                            <th style="padding: 0.6rem;">Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody id="td_modal_audit_body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal 6: Financial Reconciliation Report Modal -->
+<div id="reconciliation-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); z-index: 9999; justify-content: center; align-items: center; padding: 1rem; backdrop-filter: blur(4px);">
+    <div class="glass-panel" style="background: var(--bg-card); border: 1px solid var(--glass-border); width: 100%; max-width: 600px; padding: 2rem; border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 1rem;">
+            <h3 style="margin: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 0.6rem; color: #4a90e2;">
+                <i class="fas fa-balance-scale"></i> Financial Reconciliation Report
+            </h3>
+            <button onclick="document.getElementById('reconciliation-modal').style.display='none'" style="background: none; border: none; color: var(--text-primary); font-size: 1.6rem; cursor: pointer;">&times;</button>
+        </div>
+
+        <div id="recon-modal-loading" style="text-align: center; padding: 2rem; color: var(--text-secondary);">
+            <i class="fas fa-spinner fa-spin fa-2x" style="color: var(--primary-color); margin-bottom: 1rem;"></i>
+            <p>Auditing platform ledger and computing totals...</p>
+        </div>
+
+        <div id="recon-modal-body" style="display: none;">
+            <div id="recon-discrepancy-alert" style="margin-bottom: 1.2rem;"></div>
+
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+                <div style="background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 12px; border: 1px solid var(--glass-border);">
+                    <small style="color: var(--text-secondary);">Total Top-Up Requests</small>
+                    <div id="recon_tot_cnt" style="font-size: 1.5rem; font-weight: bold; color: var(--text-primary);">0</div>
+                    <small id="recon_tot_amt" style="color: var(--text-secondary); font-weight: 500;">₹0.00 Requested</small>
+                </div>
+
+                <div style="background: rgba(46, 213, 115, 0.08); padding: 1rem; border-radius: 12px; border: 1px solid rgba(46, 213, 115, 0.3);">
+                    <small style="color: #2ed573; font-weight: bold;">Total Approved & Credited</small>
+                    <div id="recon_app_cnt" style="font-size: 1.5rem; font-weight: bold; color: #2ed573;">0</div>
+                    <small id="recon_app_amt" style="color: #2ed573; font-weight: bold;">₹0.00 Total Approved</small>
+                </div>
+
+                <div style="background: rgba(52, 152, 219, 0.08); padding: 1rem; border-radius: 12px; border: 1px solid rgba(52, 152, 219, 0.3);">
+                    <small style="color: #3498db; font-weight: bold;">Ledger Credited Sum</small>
+                    <div id="recon_tx_amt" style="font-size: 1.5rem; font-weight: bold; color: #3498db;">₹0.00</div>
+                    <small style="color: var(--text-secondary);">From transactions log</small>
+                </div>
+
+                <div style="background: rgba(255, 71, 87, 0.08); padding: 1rem; border-radius: 12px; border: 1px solid rgba(255, 71, 87, 0.3);">
+                    <small style="color: #ff4757; font-weight: bold;">Total Rejected Requests</small>
+                    <div id="recon_rej_cnt" style="font-size: 1.5rem; font-weight: bold; color: #ff4757;">0</div>
+                    <small id="recon_rej_amt" style="color: #ff4757;">₹0.00 Rejected</small>
+                </div>
+            </div>
+
+            <button type="button" onclick="document.getElementById('reconciliation-modal').style.display='none'" class="btn btn-primary" style="width: 100%; padding: 0.75rem; font-weight: bold;">
+                <i class="fas fa-check"></i> Close Report
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
 // Prevent double form submission on fast double-clicks
 function handleFormSubmit(form, loadingText) {
@@ -845,6 +1339,15 @@ function handleFormSubmit(form, loadingText) {
         btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${loadingText}`;
     }
     return true;
+}
+
+function promptReverseTopup(topupId, customerName, amount) {
+    const reason = prompt(`SAFE CREDIT REVERSAL WARNING:\n\nYou are about to reverse the ₹${Number(amount).toFixed(2)} wallet credit for ${customerName} (Topup #${topupId}).\n\nPlease enter the mandatory reason for this reversal:`, "Admin reversal: incorrect verification");
+    if (reason !== null && reason.trim() !== "") {
+        document.getElementById('reverse_topup_id').value = topupId;
+        document.getElementById('reverse_topup_reason').value = reason.trim();
+        document.getElementById('reverse-topup-form').submit();
+    }
 }
 
 function openAdjustModal(cid, name) {
@@ -924,6 +1427,199 @@ function openCustomerDetailsModal(customerId) {
             modal.style.display = 'none';
         });
 }
+
+function openTopupDetailsModal(topupId) {
+    const modal = document.getElementById('topup-details-modal');
+    const loading = document.getElementById('topup-modal-loading');
+    const body = document.getElementById('topup-modal-body');
+
+    modal.style.display = 'flex';
+    loading.style.display = 'block';
+    body.style.display = 'none';
+
+    fetch(`admin_wallets.php?action=get_topup_details&topup_id=${encodeURIComponent(topupId)}`)
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || 'Error loading top-up details.');
+                modal.style.display = 'none';
+                return;
+            }
+
+            const tp = data.topup;
+
+            document.getElementById('td_modal_topup_id').innerText = tp.topup_id;
+            document.getElementById('td_modal_customer').innerText = `${tp.customer_name} (#${tp.customer_id})`;
+            document.getElementById('td_modal_contact').innerText = `Phone: ${tp.customer_mobile} | Email: ${tp.customer_email}`;
+            document.getElementById('td_modal_amount').innerText = `₹${tp.amount.toFixed(2)}`;
+            document.getElementById('td_modal_paid').innerText = tp.paid_amount > 0 ? `Paid: ₹${tp.paid_amount.toFixed(2)}` : 'Paid: Pending Gateway';
+
+            document.getElementById('td_modal_method').innerText = tp.payment_method || 'Online Razorpay';
+            document.getElementById('td_modal_order_id').innerText = tp.gateway_reference || '-';
+            document.getElementById('td_modal_pay_id').innerText = tp.payment_id || '-';
+            document.getElementById('td_modal_created_at').innerText = tp.created_at;
+
+            // Status Badge
+            const stBadge = document.getElementById('td_modal_status_badge');
+            const st = tp.status.toLowerCase();
+            if (st === 'approved') {
+                stBadge.innerHTML = '<span style="background: rgba(46, 213, 115, 0.15); color: #2ed573; padding: 0.3rem 0.75rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(46, 213, 115, 0.3);"><i class="fas fa-check-circle"></i> Approved</span>';
+            } else if (st === 'rejected' || st === 'payment_failed') {
+                stBadge.innerHTML = '<span style="background: rgba(255, 71, 87, 0.15); color: #ff4757; padding: 0.3rem 0.75rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(255, 71, 87, 0.3);"><i class="fas fa-times-circle"></i> Rejected</span>';
+            } else if (st === 'reversed') {
+                stBadge.innerHTML = '<span style="background: rgba(149, 165, 166, 0.15); color: #95a5a6; padding: 0.3rem 0.75rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(149, 165, 166, 0.3);"><i class="fas fa-undo"></i> Credit Reversed</span>';
+            } else {
+                stBadge.innerHTML = '<span style="background: rgba(243, 156, 18, 0.15); color: #f39c12; padding: 0.3rem 0.75rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(243, 156, 18, 0.3);"><i class="fas fa-clock"></i> Pending Verification</span>';
+            }
+
+            // Warnings section
+            const warnBox = document.getElementById('topup-warning-container');
+            warnBox.innerHTML = '';
+
+            if (data.amount_mismatch && data.amount_mismatch.has_mismatch) {
+                warnBox.innerHTML += `
+                    <div style="background: rgba(155, 89, 182, 0.15); border: 1px solid #9b59b6; color: #9b59b6; padding: 0.9rem; border-radius: 12px; margin-bottom: 1rem; font-size: 0.88rem;">
+                        <strong><i class="fas fa-exclamation-triangle"></i> AMOUNT MISMATCH ALERT:</strong> Customer requested ₹${data.amount_mismatch.requested.toFixed(2)}, but gateway paid amount is ₹${data.amount_mismatch.paid.toFixed(2)}. Please verify transaction details carefully.
+                    </div>
+                `;
+            }
+
+            if (data.duplicate_check && data.duplicate_check.has_duplicate) {
+                const dupCount = data.duplicate_check.records.length;
+                let dupList = data.duplicate_check.records.map(r => `#${r.topup_id} (₹${Number(r.amount).toFixed(2)} - ${r.status})`).join(', ');
+                warnBox.innerHTML += `
+                    <div style="background: rgba(231, 76, 60, 0.15); border: 1px solid #e74c3c; color: #e74c3c; padding: 0.9rem; border-radius: 12px; margin-bottom: 1rem; font-size: 0.88rem;">
+                        <strong><i class="fas fa-copy"></i> DUPLICATE UTR / PAYMENT REFERENCE DETECTED:</strong> Found ${dupCount} other request(s) matching this Gateway Reference / Payment ID: ${dupList}.
+                    </div>
+                `;
+            }
+
+            // Timeline rendering
+            const tlContainer = document.getElementById('td_modal_timeline');
+            tlContainer.innerHTML = '';
+            if (data.timeline && data.timeline.length > 0) {
+                data.timeline.forEach((step, idx) => {
+                    const iconColor = step.completed ? '#2ed573' : '#f39c12';
+                    const icon = step.completed ? 'fa-check-circle' : 'fa-clock';
+                    tlContainer.innerHTML += `
+                        <div style="display: flex; gap: 0.8rem; align-items: flex-start; margin-bottom: ${idx === data.timeline.length - 1 ? '0' : '0.8rem'};">
+                            <i class="fas ${icon}" style="color: ${iconColor}; font-size: 1.1rem; margin-top: 0.2rem;"></i>
+                            <div>
+                                <strong style="color: var(--text-primary); font-size: 0.9rem;">${step.title}</strong>
+                                <p style="margin: 0.1rem 0 0 0; color: var(--text-secondary); font-size: 0.82rem;">${step.desc}</p>
+                                <small style="color: var(--text-secondary); font-size: 0.75rem;">${step.timestamp}</small>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            // Audit Trail Body
+            const auditBody = document.getElementById('td_modal_audit_body');
+            auditBody.innerHTML = '';
+            if (data.audit_logs && data.audit_logs.length > 0) {
+                data.audit_logs.forEach(log => {
+                    auditBody.innerHTML += `
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <td style="padding: 0.5rem; font-weight: bold; color: var(--primary-color);">${log.action}</td>
+                            <td style="padding: 0.5rem;">${log.prev_status || '-'}</td>
+                            <td style="padding: 0.5rem; font-weight: bold;">${log.new_status}</td>
+                            <td style="padding: 0.5rem;">${log.admin_name}</td>
+                            <td style="padding: 0.5rem; color: var(--text-secondary); font-size: 0.8rem;">${log.reason || '-'}</td>
+                            <td style="padding: 0.5rem; color: var(--text-secondary); font-size: 0.8rem;">${log.timestamp}</td>
+                        </tr>
+                    `;
+                });
+            } else {
+                auditBody.innerHTML = '<tr><td colspan="6" style="padding: 1rem; text-align: center; color: var(--text-secondary);">No administrative audit actions recorded yet.</td></tr>';
+            }
+
+            loading.style.display = 'none';
+            body.style.display = 'block';
+        })
+        .catch(err => {
+            console.error(err);
+            alert('Failed to load top-up details.');
+            modal.style.display = 'none';
+        });
+}
+
+function openReconciliationModal() {
+    const modal = document.getElementById('reconciliation-modal');
+    const loading = document.getElementById('recon-modal-loading');
+    const body = document.getElementById('recon-modal-body');
+
+    modal.style.display = 'flex';
+    loading.style.display = 'block';
+    body.style.display = 'none';
+
+    fetch('admin_wallets.php?action=get_reconciliation_report')
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) {
+                alert('Error computing financial reconciliation report.');
+                modal.style.display = 'none';
+                return;
+            }
+
+            document.getElementById('recon_tot_cnt').innerText = data.total_requests;
+            document.getElementById('recon_tot_amt').innerText = `₹${data.total_requested_amount.toFixed(2)} Requested`;
+            document.getElementById('recon_app_cnt').innerText = data.approved_requests;
+            document.getElementById('recon_app_amt').innerText = `₹${data.approved_amount.toFixed(2)} Total Approved`;
+            document.getElementById('recon_tx_amt').innerText = `₹${data.ledger_credited_amount.toFixed(2)}`;
+            document.getElementById('recon_rej_cnt').innerText = data.rejected_requests;
+            document.getElementById('recon_rej_amt').innerText = `₹${data.rejected_amount.toFixed(2)} Rejected`;
+
+            const alertBox = document.getElementById('recon-discrepancy-alert');
+            if (data.has_discrepancy) {
+                alertBox.innerHTML = `
+                    <div style="background: rgba(231, 76, 60, 0.15); border: 1px solid #e74c3c; color: #e74c3c; padding: 0.9rem; border-radius: 12px; font-size: 0.88rem;">
+                        <strong><i class="fas fa-exclamation-circle"></i> LEDGER DISCREPANCY DETECTED:</strong> The sum of approved top-ups (₹${data.approved_amount.toFixed(2)}) does not match transaction ledger credits (₹${data.ledger_credited_amount.toFixed(2)}). Please perform an audit.
+                    </div>
+                `;
+            } else {
+                alertBox.innerHTML = `
+                    <div style="background: rgba(46, 213, 115, 0.15); border: 1px solid #2ed573; color: #2ed573; padding: 0.9rem; border-radius: 12px; font-size: 0.88rem;">
+                        <strong><i class="fas fa-check-circle"></i> LEDGER BALANCED:</strong> All approved top-up amounts match transaction ledger credit entries perfectly.
+                    </div>
+                `;
+            }
+
+            loading.style.display = 'none';
+            body.style.display = 'block';
+        })
+        .catch(err => {
+            console.error(err);
+            alert('Failed to compute reconciliation report.');
+            modal.style.display = 'none';
+        });
+}
+
+// 20-Second Non-Intrusive Auto-Refresh Polling Script
+let initialPendingCount = <?php echo $pending_topups_count; ?>;
+setInterval(function() {
+    fetch('admin_wallets.php?action=get_unread_topups_count')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                const newCnt = data.pending_count;
+                const badge = document.getElementById('unread-topup-badge');
+                if (badge) {
+                    badge.innerText = `${newCnt} Pending`;
+                }
+
+                if (newCnt > initialPendingCount) {
+                    const toast = document.getElementById('auto-refresh-toast');
+                    const toastTitle = document.getElementById('toast-title');
+                    if (toast && toastTitle) {
+                        toastTitle.innerText = `${newCnt - initialPendingCount} New Wallet Top-Up Request(s) Submitted!`;
+                        toast.style.display = 'flex';
+                    }
+                }
+            }
+        })
+        .catch(err => console.error('Auto-refresh poll error:', err));
+}, 20000);
 </script>
 
 <?php include 'includes/footer.php'; ?>
