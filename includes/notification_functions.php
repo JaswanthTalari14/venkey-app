@@ -4,6 +4,10 @@ require_once __DIR__ . '/../config.php';
 // Auto-initialize Notifications System Table
 function init_notification_tables() {
     global $conn;
+    if (!isset($conn) || !$conn) {
+        $conn = $GLOBALS['conn'] ?? null;
+    }
+    if (!$conn || !($conn instanceof mysqli)) return;
 
     $conn->query("CREATE TABLE IF NOT EXISTS user_notifications (
         id INT PRIMARY KEY AUTO_INCREMENT,
@@ -23,7 +27,7 @@ function init_notification_tables() {
     )");
 
     // Auto-migrate columns if table existed prior
-    $col_res = $conn->query("SHOW COLUMNS FROM user_notifications");
+    $col_res = @$conn->query("SHOW COLUMNS FROM user_notifications");
     if ($col_res) {
         $existing_cols = [];
         while ($col_row = $col_res->fetch_assoc()) {
@@ -31,19 +35,19 @@ function init_notification_tables() {
         }
         if (!empty($existing_cols)) {
             if (!in_array('type', $existing_cols)) {
-                $conn->query("ALTER TABLE user_notifications ADD COLUMN type VARCHAR(50) DEFAULT 'info' AFTER message");
+                @$conn->query("ALTER TABLE user_notifications ADD COLUMN type VARCHAR(50) DEFAULT 'info' AFTER message");
             }
             if (!in_array('related_entity_type', $existing_cols)) {
-                $conn->query("ALTER TABLE user_notifications ADD COLUMN related_entity_type VARCHAR(50) DEFAULT NULL AFTER type");
+                @$conn->query("ALTER TABLE user_notifications ADD COLUMN related_entity_type VARCHAR(50) DEFAULT NULL AFTER type");
             }
             if (!in_array('related_entity_id', $existing_cols)) {
-                $conn->query("ALTER TABLE user_notifications ADD COLUMN related_entity_id VARCHAR(100) DEFAULT NULL AFTER related_entity_type");
+                @$conn->query("ALTER TABLE user_notifications ADD COLUMN related_entity_id VARCHAR(100) DEFAULT NULL AFTER related_entity_type");
             }
             if (!in_array('role', $existing_cols)) {
-                $conn->query("ALTER TABLE user_notifications ADD COLUMN role VARCHAR(50) DEFAULT NULL AFTER user_id");
+                @$conn->query("ALTER TABLE user_notifications ADD COLUMN role VARCHAR(50) DEFAULT NULL AFTER user_id");
             }
             if (!in_array('read_at', $existing_cols)) {
-                $conn->query("ALTER TABLE user_notifications ADD COLUMN read_at TIMESTAMP NULL AFTER created_at");
+                @$conn->query("ALTER TABLE user_notifications ADD COLUMN read_at TIMESTAMP NULL AFTER created_at");
             }
         }
     }
@@ -52,15 +56,25 @@ function init_notification_tables() {
 // Run Table Initialization conditionally to optimize performance
 if (!isset($GLOBALS['notification_tables_inited'])) {
     $GLOBALS['notification_tables_inited'] = true;
-    $check_notif_tbl = @$conn->query("SELECT 1 FROM user_notifications LIMIT 1");
-    if (!$check_notif_tbl) {
-        init_notification_tables();
+    global $conn;
+    if (!isset($conn) || !$conn) {
+        $conn = $GLOBALS['conn'] ?? null;
+    }
+    if ($conn && $conn instanceof mysqli) {
+        $check_notif_tbl = @$conn->query("SELECT 1 FROM user_notifications LIMIT 1");
+        if (!$check_notif_tbl) {
+            init_notification_tables();
+        }
     }
 }
 
 // Create Notification with Duplicate Prevention
 function create_notification($user_id, $title, $message, $type = 'info', $related_entity_type = null, $related_entity_id = null, $role = null) {
     global $conn;
+    if (!isset($conn) || !$conn) {
+        $conn = $GLOBALS['conn'] ?? null;
+    }
+    if (!$conn || !($conn instanceof mysqli)) return false;
     $user_id = (int)$user_id;
     if ($user_id <= 0 || empty($title) || empty($message)) return false;
 
@@ -89,6 +103,11 @@ function create_notification($user_id, $title, $message, $type = 'info', $relate
 // Get User Notifications List
 function get_user_notifications($user_id, $limit = 20, $filter = 'all') {
     global $conn;
+    if (!isset($conn) || !$conn) {
+        $conn = $GLOBALS['conn'] ?? null;
+    }
+    if (!$conn || !($conn instanceof mysqli)) return [];
+
     $user_id = (int)$user_id;
     $limit = (int)$limit;
 
@@ -101,6 +120,7 @@ function get_user_notifications($user_id, $limit = 20, $filter = 'all') {
     $query .= " ORDER BY is_pinned DESC, created_at DESC LIMIT " . max(1, min(100, $limit));
 
     $stmt = $conn->prepare($query);
+    if (!$stmt) return [];
     $stmt->bind_param("i", $user_id);
     $stmt->execute();
     $res = $stmt->get_result();
@@ -117,10 +137,16 @@ function get_user_notifications($user_id, $limit = 20, $filter = 'all') {
 // Toggle Notification Pin Status (Feature 30)
 function toggle_pin_notification($user_id, $notification_id) {
     global $conn;
+    if (!isset($conn) || !$conn) {
+        $conn = $GLOBALS['conn'] ?? null;
+    }
+    if (!$conn || !($conn instanceof mysqli)) return false;
+
     $user_id = (int)$user_id;
     $notif_id = (int)$notification_id;
 
     $stmt = $conn->prepare("UPDATE user_notifications SET is_pinned = IF(is_pinned = 1, 0, 1) WHERE id = ? AND user_id = ?");
+    if (!$stmt) return false;
     $stmt->bind_param("ii", $notif_id, $user_id);
     return $stmt->execute();
 }
@@ -128,9 +154,15 @@ function toggle_pin_notification($user_id, $notification_id) {
 // Get Unread Notification Count
 function get_unread_notification_count($user_id) {
     global $conn;
+    if (!isset($conn) || !$conn) {
+        $conn = $GLOBALS['conn'] ?? null;
+    }
+    if (!$conn || !($conn instanceof mysqli)) return 0;
+
     $user_id = (int)$user_id;
 
     $stmt = $conn->prepare("SELECT COUNT(*) as count FROM user_notifications WHERE user_id = ? AND is_read = 0");
+    if (!$stmt) return 0;
     $stmt->bind_param("i", $user_id);
     $stmt->execute();
     $res = $stmt->get_result();
@@ -143,10 +175,16 @@ function get_unread_notification_count($user_id) {
 // Mark Single Notification as Read
 function mark_notification_as_read($user_id, $notification_id) {
     global $conn;
+    if (!isset($conn) || !$conn) {
+        $conn = $GLOBALS['conn'] ?? null;
+    }
+    if (!$conn || !($conn instanceof mysqli)) return false;
+
     $user_id = (int)$user_id;
     $notif_id = (int)$notification_id;
 
     $stmt = $conn->prepare("UPDATE user_notifications SET is_read = 1, read_at = NOW() WHERE id = ? AND user_id = ?");
+    if (!$stmt) return false;
     $stmt->bind_param("ii", $notif_id, $user_id);
     return $stmt->execute();
 }
@@ -154,9 +192,15 @@ function mark_notification_as_read($user_id, $notification_id) {
 // Mark All Notifications as Read for User
 function mark_all_notifications_read($user_id) {
     global $conn;
+    if (!isset($conn) || !$conn) {
+        $conn = $GLOBALS['conn'] ?? null;
+    }
+    if (!$conn || !($conn instanceof mysqli)) return false;
+
     $user_id = (int)$user_id;
 
     $stmt = $conn->prepare("UPDATE user_notifications SET is_read = 1, read_at = NOW() WHERE user_id = ? AND is_read = 0");
+    if (!$stmt) return false;
     $stmt->bind_param("i", $user_id);
     return $stmt->execute();
 }
@@ -164,6 +208,11 @@ function mark_all_notifications_read($user_id) {
 // Clear All Notifications for Current User
 function clear_user_notifications($user_id) {
     global $conn;
+    if (!isset($conn) || !$conn) {
+        $conn = $GLOBALS['conn'] ?? null;
+    }
+    if (!$conn || !($conn instanceof mysqli)) return false;
+
     $user_id = (int)$user_id;
     if ($user_id <= 0) return false;
 

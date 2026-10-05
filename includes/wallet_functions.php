@@ -115,9 +115,15 @@ function init_wallet_tables() {
 // Run Table Initialization conditionally to optimize performance
 if (!isset($GLOBALS['wallet_tables_inited'])) {
     $GLOBALS['wallet_tables_inited'] = true;
-    $check_wallet_tbl = @$conn->query("SELECT 1 FROM wallet_settings LIMIT 1");
-    if (!$check_wallet_tbl) {
-        init_wallet_tables();
+    global $conn;
+    if (!isset($conn) || !$conn) {
+        $conn = $GLOBALS['conn'] ?? null;
+    }
+    if ($conn && $conn instanceof mysqli) {
+        $check_wallet_tbl = @$conn->query("SELECT 1 FROM wallet_settings LIMIT 1");
+        if (!$check_wallet_tbl) {
+            init_wallet_tables();
+        }
     }
 }
 
