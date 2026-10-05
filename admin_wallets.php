@@ -194,26 +194,14 @@ $settings = get_wallet_settings();
 $tot_bal_res = $conn->query("SELECT SUM(available_balance) as total FROM wallets");
 $platform_wallet_balance = floatval($tot_bal_res->fetch_assoc()['total'] ?? 0);
 
-$pend_top_res = $conn->query("SELECT COUNT(*) as cnt, SUM(COALESCE(paid_amount, amount)) as amt FROM wallet_topups WHERE (LOWER(status) IN ('pending_approval', 'amount_mismatch', 'pending') OR status IS NULL OR status = '' OR LOWER(status) NOT IN ('approved', 'rejected', 'payment_failed'))");
-$pend_top_row = $pend_top_res->fetch_assoc();
-$pending_topups_count = intval($pend_top_row['cnt']);
-$pending_topups_amt = floatval($pend_top_row['amt'] ?? 0);
+$pend_top_res = $conn->query("SELECT COUNT(*) as cnt FROM wallet_topups WHERE (LOWER(status) IN ('pending_approval', 'amount_mismatch', 'pending') OR status IS NULL OR status = '' OR LOWER(status) NOT IN ('approved', 'rejected', 'payment_failed'))");
+$pending_topups_count = intval($pend_top_res ? $pend_top_res->fetch_assoc()['cnt'] : 0);
 
-$tot_top_res = $conn->query("SELECT COUNT(*) as cnt, SUM(amount) as total FROM wallet_transactions WHERE transaction_type IN ('topup', 'topup_approved') AND status = 'completed'");
-$tot_top_row = $tot_top_res->fetch_assoc();
-$total_topups_count = intval($tot_top_row['cnt'] ?? 0);
-$total_topups_amount = floatval($tot_top_row['total'] ?? 0);
+$app_top_res = $conn->query("SELECT COUNT(*) as cnt FROM wallet_topups WHERE LOWER(status) = 'approved'");
+$approved_topups_count = intval($app_top_res ? $app_top_res->fetch_assoc()['cnt'] : 0);
 
-$rej_top_res = $conn->query("SELECT COUNT(*) as cnt, SUM(amount) as total FROM wallet_topups WHERE LOWER(status) IN ('rejected', 'payment_failed')");
-$rej_top_row = $rej_top_res->fetch_assoc();
-$rejected_topups_count = intval($rej_top_row['cnt'] ?? 0);
-$rejected_topups_amt = floatval($rej_top_row['total'] ?? 0);
-
-$active_cust_res = $conn->query("SELECT COUNT(*) as cnt FROM wallets WHERE available_balance > 0");
-$customers_with_balance_cnt = intval($active_cust_res->fetch_assoc()['cnt'] ?? 0);
-
-$tot_spent_res = $conn->query("SELECT SUM(amount) as total FROM wallet_transactions WHERE transaction_type = 'payment' AND status = 'completed'");
-$total_spent_amount = floatval($tot_spent_res->fetch_assoc()['total'] ?? 0);
+$rej_top_res = $conn->query("SELECT COUNT(*) as cnt FROM wallet_topups WHERE LOWER(status) IN ('rejected', 'payment_failed')");
+$rejected_topups_count = intval($rej_top_res ? $rej_top_res->fetch_assoc()['cnt'] : 0);
 
 // Search & Customer Wallets Directory
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
@@ -338,47 +326,29 @@ include 'includes/header.php';
             </div>
         <?php endif; ?>
 
-        <!-- SECTION 1: Management Statistics -->
+        <!-- SECTION 1: Management Statistics & System Metrics -->
         <div style="margin-bottom: 2rem;">
             <h3 style="margin-bottom: 1rem; font-size: 1.15rem; color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem;">
                 <i class="fas fa-chart-line" style="color: var(--primary-color);"></i> Management Statistics & System Metrics
             </h3>
 
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
-                <div class="glass-panel" style="padding: 1.25rem; border-radius: 14px; border-left: 4px solid var(--primary-color);">
-                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0; font-weight: 500;">Total Customer Balances</p>
-                    <p style="font-size: 1.9rem; font-weight: 800; color: var(--primary-color); margin: 0.4rem 0;">₹<?php echo number_format($platform_wallet_balance, 2); ?></p>
-                    <small style="color: var(--text-secondary); font-size: 0.75rem;">Active system financial liabilities</small>
-                </div>
-
                 <div class="glass-panel" style="padding: 1.25rem; border-radius: 14px; border-left: 4px solid #f39c12;">
-                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0; font-weight: 500;">Pending Verification Top-Ups</p>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0; font-weight: 500;">Pending Requests</p>
                     <p style="font-size: 1.9rem; font-weight: 800; color: #f39c12; margin: 0.4rem 0;"><?php echo $pending_topups_count; ?></p>
-                    <small style="color: var(--text-secondary); font-size: 0.75rem;">₹<?php echo number_format($pending_topups_amt, 2); ?> awaiting admin review</small>
+                    <small style="color: var(--text-secondary); font-size: 0.75rem;">Awaiting verification</small>
                 </div>
 
                 <div class="glass-panel" style="padding: 1.25rem; border-radius: 14px; border-left: 4px solid #2ed573;">
-                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0; font-weight: 500;">Total Top-Ups Credited</p>
-                    <p style="font-size: 1.9rem; font-weight: 800; color: #2ed573; margin: 0.4rem 0;">₹<?php echo number_format($total_topups_amount, 2); ?></p>
-                    <small style="color: var(--text-secondary); font-size: 0.75rem;"><?php echo $total_topups_count; ?> approved customer deposits</small>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0; font-weight: 500;">Approved Requests</p>
+                    <p style="font-size: 1.9rem; font-weight: 800; color: #2ed573; margin: 0.4rem 0;"><?php echo $approved_topups_count; ?></p>
+                    <small style="color: var(--text-secondary); font-size: 0.75rem;">Verification approved</small>
                 </div>
 
                 <div class="glass-panel" style="padding: 1.25rem; border-radius: 14px; border-left: 4px solid #ff4757;">
-                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0; font-weight: 500;">Total Top-Ups Rejected</p>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0; font-weight: 500;">Rejected Requests</p>
                     <p style="font-size: 1.9rem; font-weight: 800; color: #ff4757; margin: 0.4rem 0;"><?php echo $rejected_topups_count; ?></p>
-                    <small style="color: var(--text-secondary); font-size: 0.75rem;">₹<?php echo number_format($rejected_topups_amt, 2); ?> declined requests</small>
-                </div>
-
-                <div class="glass-panel" style="padding: 1.25rem; border-radius: 14px; border-left: 4px solid #9b59b6;">
-                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0; font-weight: 500;">Customers with Wallet Funds</p>
-                    <p style="font-size: 1.9rem; font-weight: 800; color: #9b59b6; margin: 0.4rem 0;"><?php echo $customers_with_balance_cnt; ?></p>
-                    <small style="color: var(--text-secondary); font-size: 0.75rem;">Accounts with positive balance</small>
-                </div>
-
-                <div class="glass-panel" style="padding: 1.25rem; border-radius: 14px; border-left: 4px solid #3498db;">
-                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0; font-weight: 500;">Total Orders Paid via Wallet</p>
-                    <p style="font-size: 1.9rem; font-weight: 800; color: #3498db; margin: 0.4rem 0;">₹<?php echo number_format($total_spent_amount, 2); ?></p>
-                    <small style="color: var(--text-secondary); font-size: 0.75rem;">Medicine checkout utilization</small>
+                    <small style="color: var(--text-secondary); font-size: 0.75rem;">Verification declined</small>
                 </div>
             </div>
         </div>
