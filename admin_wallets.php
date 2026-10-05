@@ -433,6 +433,11 @@ include 'includes/header.php';
                                             <span style="background: rgba(255, 71, 87, 0.15); color: #ff4757; padding: 0.35rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(255, 71, 87, 0.3);">
                                                 <i class="fas fa-times-circle"></i> Rejected
                                             </span>
+                                            <?php if (!empty($top['rejection_reason'])): ?>
+                                                <small style="color: #ff4757; display: block; margin-top: 0.25rem; font-size: 0.75rem;">
+                                                    <i class="fas fa-info-circle"></i> <?php echo htmlspecialchars($top['rejection_reason']); ?>
+                                                </small>
+                                            <?php endif; ?>
                                         <?php elseif ($t_status === 'amount_mismatch'): ?>
                                             <span style="background: rgba(155, 89, 182, 0.15); color: #9b59b6; padding: 0.35rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(155, 89, 182, 0.3);">
                                                 <i class="fas fa-exclamation-triangle"></i> Mismatch Review
@@ -454,7 +459,13 @@ include 'includes/header.php';
                                         <?php if ($t_status === 'approved'): ?>
                                             <span style="color: #2ed573; font-size: 0.85rem; font-weight: 600;"><i class="fas fa-check-circle"></i> Credited</span>
                                         <?php elseif ($t_status === 'rejected' || $t_status === 'payment_failed'): ?>
-                                            <span style="color: #ff4757; font-size: 0.85rem; font-weight: 600;"><i class="fas fa-ban"></i> Rejected</span>
+                                            <form method="POST" action="admin_wallets.php" onsubmit="return handleFormSubmit(this, 'Re-approving and crediting customer wallet...');" style="display: inline-block;">
+                                                <input type="hidden" name="action" value="approve_topup">
+                                                <input type="hidden" name="topup_id" value="<?php echo htmlspecialchars($top['topup_id']); ?>">
+                                                <button type="submit" onclick="return confirm('Confirm Admin Re-Approval: Change status to Approved and credit ₹<?php echo number_format($top['paid_amount'] > 0 ? $top['paid_amount'] : $top['amount'], 2); ?> to customer wallet?');" class="btn btn-primary approve-btn" style="font-size: 0.8rem; padding: 0.45rem 0.85rem; background: #2ed573; border-color: #2ed573;">
+                                                    <i class="fas fa-check-circle"></i> Re-Approve & Credit
+                                                </button>
+                                            </form>
                                         <?php else: ?>
                                             <form method="POST" action="admin_wallets.php" onsubmit="return handleFormSubmit(this, 'Approving and crediting customer wallet...');" style="display: inline-block;">
                                                 <input type="hidden" name="action" value="approve_topup">

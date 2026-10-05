@@ -430,11 +430,6 @@ function verify_and_complete_topup($topup_id, $admin_id, $gateway_reference = 'A
             return ['success' => false, 'message' => 'Top-up has already been approved and credited. Duplicate approval prevented.'];
         }
 
-        if ($topup['status'] === 'rejected') {
-            $conn->rollback();
-            return ['success' => false, 'message' => 'Cannot approve a rejected top-up request.'];
-        }
-
         $customer_id = (int)$topup['customer_id'];
         $credit_amount = floatval($topup['paid_amount'] > 0 ? $topup['paid_amount'] : $topup['amount']);
 
