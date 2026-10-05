@@ -110,6 +110,10 @@ function init_wallet_tables() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )");
+
+    // 6. Ensure users table column compatibility (phone and mobile)
+    @$conn->query("ALTER TABLE users ADD COLUMN phone VARCHAR(50) DEFAULT NULL");
+    @$conn->query("ALTER TABLE users ADD COLUMN mobile VARCHAR(50) DEFAULT NULL");
 }
 
 // Run Table Initialization & Migration automatically

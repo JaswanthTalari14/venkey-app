@@ -21,7 +21,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_customer_details') {
     }
 
     // Customer Info
-    $u_stmt = $conn->prepare("SELECT id, name, email, mobile, created_at FROM users WHERE id = ? AND role = 'patient'");
+    $u_stmt = $conn->prepare("SELECT id, name, email, COALESCE(phone, mobile, '') as mobile, created_at FROM users WHERE id = ? AND role = 'patient'");
     $u_stmt->bind_param("i", $cust_id);
     $u_stmt->execute();
     $u_res = $u_stmt->get_result();
@@ -221,11 +221,11 @@ $where_clause = "WHERE u.role = 'patient'";
 
 if ($search !== '') {
     $search_safe = $conn->real_escape_string($search);
-    $where_clause .= " AND (u.name LIKE '%$search_safe%' OR u.mobile LIKE '%$search_safe%' OR u.id LIKE '%$search_safe%' OR u.email LIKE '%$search_safe%')";
+    $where_clause .= " AND (u.name LIKE '%$search_safe%' OR u.phone LIKE '%$search_safe%' OR u.mobile LIKE '%$search_safe%' OR u.id LIKE '%$search_safe%' OR u.email LIKE '%$search_safe%')";
 }
 
 $customer_wallets = $conn->query("
-    SELECT u.id as customer_id, u.name, u.mobile, u.email, u.profile_image,
+    SELECT u.id as customer_id, u.name, COALESCE(u.phone, u.mobile, 'N/A') as mobile, u.email, u.profile_image,
            COALESCE(w.available_balance, 0.00) as available_balance,
            COALESCE(w.pending_balance, 0.00) as pending_balance,
            COALESCE(w.status, 'active') as wallet_status,
@@ -255,7 +255,7 @@ if ($topup_status === 'pending') {
 $pending_topups_list = $conn->query("
     SELECT t.*, 
            COALESCE(u.name, CONCAT('Customer #', t.customer_id)) as customer_name, 
-           COALESCE(u.mobile, 'N/A') as customer_mobile, 
+           COALESCE(u.phone, u.mobile, 'N/A') as customer_mobile, 
            COALESCE(u.email, 'N/A') as customer_email,
            COALESCE(w.available_balance, 0.00) as current_wallet_balance
     FROM wallet_topups t
@@ -268,7 +268,7 @@ $pending_topups_list = $conn->query("
 // Filtered Audit Log
 $ledger_filter = isset($_GET['ledger_filter']) ? $_GET['ledger_filter'] : 'all';
 $ledger_query = "
-    SELECT wt.*, u.name as customer_name, u.mobile as customer_mobile
+    SELECT wt.*, u.name as customer_name, COALESCE(u.phone, u.mobile, 'N/A') as customer_mobile
     FROM wallet_transactions wt
     JOIN users u ON wt.customer_id = u.id
 ";
