@@ -112,7 +112,7 @@ function init_wallet_tables() {
     )");
 }
 
-// Run Table Initialization conditionally to optimize performance
+// Run Table Initialization & Migration automatically
 if (!isset($GLOBALS['wallet_tables_inited'])) {
     $GLOBALS['wallet_tables_inited'] = true;
     global $conn;
@@ -120,10 +120,7 @@ if (!isset($GLOBALS['wallet_tables_inited'])) {
         $conn = $GLOBALS['conn'] ?? null;
     }
     if ($conn && $conn instanceof mysqli) {
-        $check_wallet_tbl = @$conn->query("SELECT 1 FROM wallet_settings LIMIT 1");
-        if (!$check_wallet_tbl) {
-            init_wallet_tables();
-        }
+        init_wallet_tables();
     }
 }
 

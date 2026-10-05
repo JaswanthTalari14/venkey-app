@@ -59,7 +59,7 @@ $rev_appointments = $conn->query("SELECT COUNT(*) * 300 as total FROM appointmen
 $total_revenue = $rev_orders + $rev_appointments;
 
 $pending_refunds = $conn->query("SELECT COUNT(*) as count FROM refund_requests WHERE status='Requested'")->fetch_assoc()['count'] ?? 0;
-$pending_wallet_topups = $conn->query("SELECT COUNT(*) as count FROM wallet_topups WHERE LOWER(status) IN ('pending', 'pending_approval', 'amount_mismatch')")->fetch_assoc()['count'] ?? 0;
+$pending_wallet_topups = $conn->query("SELECT COUNT(*) as count FROM wallet_topups WHERE (LOWER(status) IN ('pending', 'pending_approval', 'amount_mismatch') OR status IS NULL OR status = '' OR LOWER(status) NOT IN ('approved', 'rejected', 'payment_failed'))")->fetch_assoc()['count'] ?? 0;
 
 // Feature 17: Admin Global Search Query
 $search_query = isset($_GET['q']) ? trim($_GET['q']) : '';

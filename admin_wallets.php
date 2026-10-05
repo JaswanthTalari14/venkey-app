@@ -194,7 +194,7 @@ $settings = get_wallet_settings();
 $tot_bal_res = $conn->query("SELECT SUM(available_balance) as total FROM wallets");
 $platform_wallet_balance = floatval($tot_bal_res->fetch_assoc()['total'] ?? 0);
 
-$pend_top_res = $conn->query("SELECT COUNT(*) as cnt, SUM(COALESCE(paid_amount, amount)) as amt FROM wallet_topups WHERE LOWER(status) IN ('pending_approval', 'amount_mismatch', 'pending')");
+$pend_top_res = $conn->query("SELECT COUNT(*) as cnt, SUM(COALESCE(paid_amount, amount)) as amt FROM wallet_topups WHERE (LOWER(status) IN ('pending_approval', 'amount_mismatch', 'pending') OR status IS NULL OR status = '' OR LOWER(status) NOT IN ('approved', 'rejected', 'payment_failed'))");
 $pend_top_row = $pend_top_res->fetch_assoc();
 $pending_topups_count = intval($pend_top_row['cnt']);
 $pending_topups_amt = floatval($pend_top_row['amt'] ?? 0);
@@ -240,7 +240,7 @@ $customer_wallets = $conn->query("
 $topup_status = isset($_GET['topup_status']) ? strtolower(trim($_GET['topup_status'])) : 'pending';
 $topup_where = "";
 if ($topup_status === 'pending') {
-    $topup_where = "WHERE LOWER(t.status) IN ('pending_approval', 'amount_mismatch', 'pending')";
+    $topup_where = "WHERE (LOWER(t.status) IN ('pending_approval', 'amount_mismatch', 'pending') OR t.status IS NULL OR t.status = '' OR LOWER(t.status) NOT IN ('approved', 'rejected', 'payment_failed'))";
 } else if ($topup_status === 'approved') {
     $topup_where = "WHERE LOWER(t.status) = 'approved'";
 } else if ($topup_status === 'rejected') {
@@ -249,7 +249,7 @@ if ($topup_status === 'pending') {
     $topup_where = "";
 } else {
     $topup_status = 'pending';
-    $topup_where = "WHERE LOWER(t.status) IN ('pending_approval', 'amount_mismatch', 'pending')";
+    $topup_where = "WHERE (LOWER(t.status) IN ('pending_approval', 'amount_mismatch', 'pending') OR t.status IS NULL OR t.status = '' OR LOWER(t.status) NOT IN ('approved', 'rejected', 'payment_failed'))";
 }
 
 $pending_topups_list = $conn->query("
