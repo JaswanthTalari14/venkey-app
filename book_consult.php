@@ -12,20 +12,30 @@ $success = '';
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['book'])) {
-    $doctor_id = $_POST['doctor_id'];
+    $doctor_id = (int)$_POST['doctor_id'];
     $date = $conn->real_escape_string($_POST['date']);
     $time = $conn->real_escape_string($_POST['time']);
-    $type = $_POST['type'];
+    $type = $conn->real_escape_string($_POST['type']);
     $notes = $conn->real_escape_string($_POST['notes']);
-    $patient_id = $_SESSION['user_id'];
-    
-    $query = "INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, type, notes) 
-              VALUES ($patient_id, $doctor_id, '$date', '$time', '$type', '$notes')";
-    
-    if ($conn->query($query)) {
-        $success = "Appointment booked successfully!";
+    $patient_id = (int)$_SESSION['user_id'];
+
+    if ($doctor_id <= 0 || empty($date) || empty($time)) {
+        $error = "Please select a valid doctor, date, and time slot.";
     } else {
-        $error = "Failed to book appointment.";
+        // Slot Double Booking Protection Check
+        $slot_chk = $conn->query("SELECT id FROM appointments WHERE doctor_id = $doctor_id AND appointment_date = '$date' AND appointment_time = '$time' AND (status IS NULL OR LOWER(status) NOT IN ('cancelled', 'rejected'))");
+        if ($slot_chk && $slot_chk->num_rows > 0) {
+            $error = "This appointment time slot (" . date('h:i A', strtotime($time)) . " on " . date('M d, Y', strtotime($date)) . ") is already booked. Please choose a different date or time.";
+        } else {
+            $query = "INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, type, notes) 
+                      VALUES ($patient_id, $doctor_id, '$date', '$time', '$type', '$notes')";
+            
+            if ($conn->query($query)) {
+                $success = "Appointment booked successfully!";
+            } else {
+                $error = "Failed to book appointment.";
+            }
+        }
     }
 }
 

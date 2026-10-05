@@ -46,6 +46,7 @@ if ($action === 'save') {
     $city = isset($input['city']) ? trim($conn->real_escape_string($input['city'])) : '';
     $state = isset($input['state']) ? trim($conn->real_escape_string($input['state'])) : '';
     $pincode = isset($input['pincode']) ? trim($conn->real_escape_string($input['pincode'])) : '';
+    $address_type = isset($input['address_type']) && in_array($input['address_type'], ['Home', 'Work', 'Other']) ? $input['address_type'] : 'Home';
     
     if (empty($full_name) || empty($phone) || empty($address_line) || empty($city) || empty($pincode)) {
         echo json_encode(['success' => false, 'message' => 'Please fill all required delivery address fields.']);
@@ -57,19 +58,19 @@ if ($action === 'save') {
     
     if ($address_id > 0) {
         // Update existing address
-        $stmt = $conn->prepare("UPDATE patient_addresses SET full_name = ?, phone = ?, address_line = ?, city = ?, state = ?, pincode = ?, is_default = 1 WHERE id = ? AND patient_id = ?");
-        $stmt->bind_param("ssssssii", $full_name, $phone, $address_line, $city, $state, $pincode, $address_id, $patient_id);
+        $stmt = $conn->prepare("UPDATE patient_addresses SET full_name = ?, phone = ?, address_line = ?, city = ?, state = ?, pincode = ?, address_type = ?, is_default = 1 WHERE id = ? AND patient_id = ?");
+        $stmt->bind_param("sssssssii", $full_name, $phone, $address_line, $city, $state, $pincode, $address_type, $address_id, $patient_id);
         $stmt->execute();
         $saved_id = $address_id;
     } else {
         // Insert new address
-        $stmt = $conn->prepare("INSERT INTO patient_addresses (patient_id, full_name, phone, address_line, city, state, pincode, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, 1)");
-        $stmt->bind_param("issssss", $patient_id, $full_name, $phone, $address_line, $city, $state, $pincode);
+        $stmt = $conn->prepare("INSERT INTO patient_addresses (patient_id, full_name, phone, address_line, city, state, pincode, address_type, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)");
+        $stmt->bind_param("issssssss", $patient_id, $full_name, $phone, $address_line, $city, $state, $pincode, $address_type);
         $stmt->execute();
         $saved_id = $stmt->insert_id;
     }
     
-    $full_address_str = "$full_name ($phone), $address_line, $city, $state - $pincode";
+    $full_address_str = "[$address_type] $full_name ($phone), $address_line, $city, $state - $pincode";
     
     echo json_encode([
         'success' => true,
@@ -88,6 +89,19 @@ if ($action === 'set_default') {
         $conn->query("UPDATE patient_addresses SET is_default = 0 WHERE patient_id = $patient_id");
         $conn->query("UPDATE patient_addresses SET is_default = 1 WHERE id = $address_id AND patient_id = $patient_id");
         echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Invalid address ID']);
+    }
+    exit;
+}
+
+if ($action === 'delete') {
+    $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+    $address_id = isset($input['address_id']) ? (int)$input['address_id'] : 0;
+    
+    if ($address_id > 0) {
+        $conn->query("DELETE FROM patient_addresses WHERE id = $address_id AND patient_id = $patient_id");
+        echo json_encode(['success' => true, 'message' => 'Address deleted successfully']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Invalid address ID']);
     }

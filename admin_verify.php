@@ -6,15 +6,34 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     exit;
 }
 
+require_once 'includes/notification_functions.php';
+
 // Handle Verification Action
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'toggle_verify') {
     $target_user_id = (int)$_POST['user_id'];
     $new_status = (int)$_POST['status'];
-    $stmt = $conn->prepare("UPDATE users SET is_verified = ? WHERE id = ? AND role IN ('doctor', 'rmp')");
-    if ($stmt) {
-        $stmt->bind_param("ii", $new_status, $target_user_id);
-        $stmt->execute();
+    $admin_id = (int)$_SESSION['user_id'];
+
+    $u_res = $conn->query("SELECT role, is_verified FROM users WHERE id = $target_user_id AND role IN ('doctor', 'rmp')");
+    if ($u_res && $u_res->num_rows > 0) {
+        $u_row = $u_res->fetch_assoc();
+        $prev_status = (int)$u_row['is_verified'];
+        $role = $u_row['role'];
+
+        $stmt = $conn->prepare("UPDATE users SET is_verified = ? WHERE id = ?");
+        if ($stmt) {
+            $stmt->bind_param("ii", $new_status, $target_user_id);
+            $stmt->execute();
+
+            // Log Verification History
+            $conn->query("INSERT INTO verification_history (user_id, admin_id, previous_status, new_status, reason) VALUES ($target_user_id, $admin_id, $prev_status, $new_status, 'Admin verification status update')");
+
+            // Send Realtime Notification
+            $status_txt = $new_status ? "VERIFIED" : "UNVERIFIED";
+            create_notification($target_user_id, "Account Verification Update", "Your account verification status has been updated to {$status_txt} by Admin.", "info", "verification", (string)$target_user_id, $role);
+        }
     }
+
     $page_param = isset($_GET['page']) ? '?page=' . (int)$_GET['page'] : '';
     header("Location: admin_verify.php" . $page_param);
     exit;

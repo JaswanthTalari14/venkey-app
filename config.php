@@ -119,10 +119,12 @@ function ensure_database_indexes($conn) {
         city VARCHAR(50) NOT NULL,
         state VARCHAR(50) NOT NULL,
         pincode VARCHAR(10) NOT NULL,
+        address_type VARCHAR(20) DEFAULT 'Home',
         is_default TINYINT(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (patient_id) REFERENCES users(id) ON DELETE CASCADE
     )");
+    @$conn->query("ALTER TABLE patient_addresses ADD COLUMN address_type VARCHAR(20) DEFAULT 'Home'");
 
     $add_index_if_missing = function($table, $index_name, $columns) use ($conn) {
         $check = @$conn->query("SHOW INDEX FROM `$table` WHERE Key_name = '$index_name'");

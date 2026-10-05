@@ -29,9 +29,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 } else {
                     $conn->query("UPDATE orders SET status = 'cancelled' WHERE id = $order_id AND patient_id = $patient_id");
                     
-                    // Refund to wallet if paid via Wallet
+                    // Refund to wallet if paid via Wallet, or log Refund Request for online payments
                     if ($ord_data['payment_method'] === 'Wallet' || $ord_data['payment_status'] === 'Paid via Wallet') {
                         add_wallet_transaction($patient_id, 'refund', 'credit', $ord_data['total_amount'], "Refund for cancelled Order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT), $order_id);
+                    } else if (in_array(strtolower($ord_data['payment_status'] ?? ''), ['paid', 'completed']) || !empty($ord_data['gateway_payment_id'])) {
+                        $amt_val = floatval($ord_data['total_amount']);
+                        $gw_ref = $conn->real_escape_string($ord_data['gateway_payment_id'] ?? '');
+                        $conn->query("INSERT INTO refund_requests (patient_id, order_id, transaction_id, amount, reason, status) VALUES ($patient_id, $order_id, '$gw_ref', $amt_val, 'Patient cancelled Order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . "', 'Requested')");
                     }
                     
                     $success = "Order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . " has been cancelled successfully.";
