@@ -194,7 +194,7 @@ $settings = get_wallet_settings();
 $tot_bal_res = $conn->query("SELECT SUM(available_balance) as total FROM wallets");
 $platform_wallet_balance = floatval($tot_bal_res->fetch_assoc()['total'] ?? 0);
 
-$pend_top_res = $conn->query("SELECT COUNT(*) as cnt, SUM(COALESCE(paid_amount, amount)) as amt FROM wallet_topups WHERE status IN ('pending_approval', 'amount_mismatch', 'pending')");
+$pend_top_res = $conn->query("SELECT COUNT(*) as cnt, SUM(COALESCE(paid_amount, amount)) as amt FROM wallet_topups WHERE LOWER(status) IN ('pending_approval', 'amount_mismatch', 'pending')");
 $pend_top_row = $pend_top_res->fetch_assoc();
 $pending_topups_count = intval($pend_top_row['cnt']);
 $pending_topups_amt = floatval($pend_top_row['amt'] ?? 0);
@@ -204,7 +204,7 @@ $tot_top_row = $tot_top_res->fetch_assoc();
 $total_topups_count = intval($tot_top_row['cnt'] ?? 0);
 $total_topups_amount = floatval($tot_top_row['total'] ?? 0);
 
-$rej_top_res = $conn->query("SELECT COUNT(*) as cnt, SUM(amount) as total FROM wallet_topups WHERE status = 'rejected'");
+$rej_top_res = $conn->query("SELECT COUNT(*) as cnt, SUM(amount) as total FROM wallet_topups WHERE LOWER(status) IN ('rejected', 'payment_failed')");
 $rej_top_row = $rej_top_res->fetch_assoc();
 $rejected_topups_count = intval($rej_top_row['cnt'] ?? 0);
 $rejected_topups_amt = floatval($rej_top_row['total'] ?? 0);
