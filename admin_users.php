@@ -148,10 +148,23 @@ function build_user_page_link($p, $search, $role) {
                 </thead>
                 <tbody>
                     <?php if ($users && $users->num_rows > 0): ?>
-                        <?php while($u = $users->fetch_assoc()): ?>
+                        <?php while($u = $users->fetch_assoc()): 
+                            $u_img_url = get_profile_image_url($u);
+                        ?>
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
                                 <td style="padding: 1rem;">#<?php echo $u['id']; ?></td>
-                                <td style="padding: 1rem; font-weight: bold; color: var(--text-primary);"><?php echo htmlspecialchars($u['name']); ?></td>
+                                <td style="padding: 1rem; font-weight: bold; color: var(--text-primary);">
+                                    <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                        <?php if (!empty($u_img_url)): ?>
+                                            <img src="<?php echo $u_img_url; ?>" alt="" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--primary-color);">
+                                        <?php else: ?>
+                                            <div style="width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; font-size: 0.85rem; color: var(--text-secondary);">
+                                                <i class="fas fa-user"></i>
+                                            </div>
+                                        <?php endif; ?>
+                                        <span><?php echo htmlspecialchars($u['name']); ?></span>
+                                    </div>
+                                </td>
                                 <td style="padding: 1rem; color: var(--text-secondary);"><?php echo htmlspecialchars($u['email']); ?></td>
                                 <td style="padding: 1rem; color: var(--text-secondary);"><?php echo htmlspecialchars($u['phone'] ?? '-'); ?></td>
                                 <td style="padding: 1rem;">

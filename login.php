@@ -24,7 +24,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['role'] = $user['role'];
                 $_SESSION['name'] = $user['name'];
-                $_SESSION['profile_image'] = $user['profile_image'] ?? '';
+
+                $user_p_img = '';
+                foreach (['profile_image', 'image', 'avatar', 'photo'] as $f) {
+                    if (!empty($user[$f])) {
+                        $user_p_img = $user[$f];
+                        break;
+                    }
+                }
+                $_SESSION['profile_image'] = $user_p_img;
 
                 register_current_session($conn, $user['id']);
                 session_write_close();

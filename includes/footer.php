@@ -9,14 +9,12 @@ $current_page = basename($_SERVER['PHP_SELF']);
 $mobile_nav_items = [];
 
 if ($is_logged_in) {
-    // Populate profile image in session memory if not set yet
-    if (!isset($_SESSION['profile_image']) && isset($conn)) {
+    // Populate/Sync profile image from database for logged-in user
+    if (isset($conn)) {
         $uid = (int)$_SESSION['user_id'];
         $u_res = @$conn->query("SELECT profile_image FROM users WHERE id = $uid");
         if ($u_res && $u_row = $u_res->fetch_assoc()) {
             $_SESSION['profile_image'] = $u_row['profile_image'] ?? '';
-        } else {
-            $_SESSION['profile_image'] = '';
         }
     }
 
@@ -48,8 +46,8 @@ if ($is_logged_in) {
         $mobile_nav_items = [
             ['label' => 'Overview', 'icon' => 'fas fa-chart-pie', 'url' => 'admin_dashboard.php', 'active_pages' => ['admin_dashboard.php']],
             ['label' => 'Orders', 'icon' => 'fas fa-boxes', 'url' => 'admin_orders_management.php', 'active_pages' => ['admin_orders_management.php', 'admin_orders.php']],
+            ['label' => 'Wallets', 'icon' => 'fas fa-wallet', 'url' => 'admin_wallets.php', 'active_pages' => ['admin_wallets.php']],
             ['label' => 'Users', 'icon' => 'fas fa-users-cog', 'url' => 'admin_users.php', 'active_pages' => ['admin_users.php', 'admin_verify.php']],
-            ['label' => 'Refunds', 'icon' => 'fas fa-undo', 'url' => 'admin_refunds.php', 'active_pages' => ['admin_refunds.php']],
             ['label' => 'Profile', 'icon' => 'fas fa-user-cog', 'url' => 'profile.php', 'is_profile' => true, 'active_pages' => ['profile.php']]
         ];
     }
@@ -62,9 +60,10 @@ if (isset($header_unread)) {
     $mobile_unread_cnt = get_unread_notification_count($_SESSION['user_id']);
 }
 
-// Check Profile Photo Availability
+// Check Profile Photo Availability via Centralized Resolver
 $user_profile_img = $_SESSION['profile_image'] ?? '';
-$has_profile_img = !empty($user_profile_img) && file_exists($user_profile_img);
+$user_profile_url = function_exists('get_profile_image_url') ? get_profile_image_url($user_profile_img) : '';
+$has_profile_img = !empty($user_profile_url);
 ?>
 
 <?php if ($is_logged_in && !empty($mobile_nav_items)): ?>
@@ -87,10 +86,11 @@ $has_profile_img = !empty($user_profile_img) && file_exists($user_profile_img);
            <?php if ($is_notif): ?>onclick="handleMobileNotifToggle(event);"<?php endif; ?>>
             
             <?php if ($is_profile && $has_profile_img): ?>
-                <img src="<?php echo htmlspecialchars($user_profile_img); ?>" 
+                <img src="<?php echo $user_profile_url; ?>" 
                      alt="Profile" 
                      class="mobile-nav-profile-img" 
                      onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';" />
+                <i class="<?php echo $item['icon']; ?>" style="display: none;"></i>
                 <i class="<?php echo $item['icon']; ?>" style="display: none;"></i>
             <?php else: ?>
                 <i class="<?php echo $item['icon']; ?>"></i>

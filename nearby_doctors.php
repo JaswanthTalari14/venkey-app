@@ -90,16 +90,8 @@ if ($booked_slots_res) {
             <?php if ($nearby_doctors && $nearby_doctors->num_rows > 0): ?>
                 <?php while($doc = $nearby_doctors->fetch_assoc()): ?>
                     <?php
-                        // Check for doctor uploaded profile photo
-                        $doc_img = '';
-                        $possible_fields = ['profile_image', 'image', 'avatar', 'photo'];
-                        foreach ($possible_fields as $f) {
-                            if (!empty($doc[$f]) && file_exists($doc[$f])) {
-                                $doc_img = $doc[$f];
-                                break;
-                            }
-                        }
-                        $doc_img_url = !empty($doc_img) ? htmlspecialchars($doc_img) . '?v=' . filemtime($doc_img) : '';
+                        // Check for doctor uploaded profile photo via Centralized Resolver
+                        $doc_img_url = get_profile_image_url($doc);
                         $doc_id = (int)$doc['id'];
                         $doc_booked = isset($booked_slots_by_doctor[$doc_id]) ? $booked_slots_by_doctor[$doc_id] : [];
                     ?>
@@ -119,7 +111,7 @@ if ($booked_slots_res) {
                         
                         <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.8rem;">
                             <!-- Doctor Profile Image Display -->
-                            <?php if (!empty($doc_img)): ?>
+                            <?php if (!empty($doc_img_url)): ?>
                                 <img src="<?php echo $doc_img_url; ?>" alt="Dr. <?php echo htmlspecialchars($doc['name']); ?>" style="width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary-color); flex-shrink: 0; background: rgba(0,0,0,0.15);">
                             <?php else: ?>
                                 <div style="width: 54px; height: 54px; border-radius: 50%; background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); display: flex; align-items: center; justify-content: center; color: #ffffff; font-size: 1.3rem; border: 2px solid var(--primary-color); flex-shrink: 0; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">

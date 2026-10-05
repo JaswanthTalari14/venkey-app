@@ -52,12 +52,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && (isset($_POST['update_profile']) || 
             $query .= ", password='$password'";
         }
 
-        // Handle Profile Photo Upload
+        // Handle Profile Photo Upload (main input or quick camera trigger)
+        $photo_file = null;
         if (isset($_FILES['profile_photo']) && $_FILES['profile_photo']['error'] === UPLOAD_ERR_OK) {
-            $file = $_FILES['profile_photo'];
-            $file_name = $file['name'];
-            $file_tmp = $file['tmp_name'];
-            $file_size = $file['size'];
+            $photo_file = $_FILES['profile_photo'];
+        } elseif (isset($_FILES['avatar_quick_upload']) && $_FILES['avatar_quick_upload']['error'] === UPLOAD_ERR_OK) {
+            $photo_file = $_FILES['avatar_quick_upload'];
+        }
+
+        if ($photo_file) {
+            $file_name = $photo_file['name'];
+            $file_tmp = $photo_file['tmp_name'];
+            $file_size = $photo_file['size'];
 
             $allowed_exts = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
             $ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
@@ -79,8 +85,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && (isset($_POST['update_profile']) || 
                     // Remove old profile photo if present
                     $old_photo_q = $conn->query("SELECT profile_image FROM users WHERE id = $user_id");
                     if ($old_photo_q && $old_row = $old_photo_q->fetch_assoc()) {
-                        if (!empty($old_row['profile_image']) && file_exists($old_row['profile_image'])) {
-                            @unlink($old_row['profile_image']);
+                        $old_img = $old_row['profile_image'] ?? '';
+                        if (!empty($old_img)) {
+                            $clean_old = ltrim(str_replace('\\', '/', $old_img), '/.');
+                            $clean_old = ltrim($clean_old, '/');
+                            $old_abs = __DIR__ . '/' . $clean_old;
+                            if (file_exists($old_abs) && is_file($old_abs)) {
+                                @unlink($old_abs);
+                            }
                         }
                     }
                     $query .= ", profile_image='$target_file'";
@@ -149,17 +161,10 @@ $user = $conn->query("SELECT * FROM users WHERE id=$user_id")->fetch_assoc();
         <div style="position: relative; width: 130px; height: 130px; margin-bottom: 1.5rem; margin-left: auto; margin-right: auto;">
             <div style="width: 130px; height: 130px; border-radius: 50%; background: linear-gradient(45deg, var(--primary-color), var(--secondary-color)); display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 30px rgba(74, 144, 226, 0.4); overflow: hidden; border: 3px solid rgba(255,255,255,0.25);">
                 <?php
-                    $user_img = '';
-                    $possible_fields = ['profile_image', 'image', 'avatar', 'photo'];
-                    foreach ($possible_fields as $f) {
-                        if (!empty($user[$f]) && file_exists($user[$f])) {
-                            $user_img = $user[$f];
-                            break;
-                        }
-                    }
+                    $user_img_url = get_profile_image_url($user);
                 ?>
-                <?php if (!empty($user_img)): ?>
-                    <img src="<?php echo htmlspecialchars($user_img); ?>?v=<?php echo filemtime($user_img); ?>" alt="<?php echo htmlspecialchars($user['name']); ?>" style="width: 100%; height: 100%; object-fit: cover;">
+                <?php if (!empty($user_img_url)): ?>
+                    <img src="<?php echo $user_img_url; ?>" alt="<?php echo htmlspecialchars($user['name']); ?>" style="width: 100%; height: 100%; object-fit: cover;">
                 <?php else: ?>
                     <i class="fas <?php 
                         if ($user['role'] === 'doctor') echo 'fa-user-md';
@@ -217,7 +222,7 @@ $user = $conn->query("SELECT * FROM users WHERE id=$user_id")->fetch_assoc();
         <form method="POST" action="" enctype="multipart/form-data">
             <input type="hidden" name="update_profile" value="1">
             <!-- Hidden quick upload input triggered by camera button -->
-            <input type="file" id="avatar_quick_upload" name="profile_photo" accept="image/png, image/jpeg, image/webp, image/gif" style="display: none;" onchange="this.form.submit();">
+            <input type="file" id="avatar_quick_upload" name="avatar_quick_upload" accept="image/png, image/jpeg, image/webp, image/gif" style="display: none;" onchange="this.form.submit();">
 
             <!-- Profile Photo Upload Field -->
             <div class="form-group" style="margin-bottom: 1.5rem;">

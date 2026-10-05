@@ -393,4 +393,53 @@ function ensure_database_indexes($conn) {
 }
 
 ensure_database_indexes($conn);
+
+/**
+ * Centralized Profile Image Path & URL Resolver
+ * Resolves a profile image from a database user array or path string,
+ * checks file existence on disk using absolute base directory,
+ * and appends cache-busting timestamp URL parameter when valid.
+ */
+function get_profile_image_url($input) {
+    $path = '';
+
+    if (is_array($input)) {
+        $possible_fields = ['profile_image', 'image', 'avatar', 'photo'];
+        foreach ($possible_fields as $f) {
+            if (!empty($input[$f])) {
+                $path = $input[$f];
+                break;
+            }
+        }
+    } else if (is_string($input)) {
+        $path = $input;
+    }
+
+    $path = trim($path);
+    if (empty($path)) {
+        return '';
+    }
+
+    // Normalize slashes and strip leading slashes/dots
+    $clean_path = str_replace('\\', '/', $path);
+    $clean_path = ltrim($clean_path, '/.');
+    $clean_path = ltrim($clean_path, '/');
+
+    // Base directory of the web application root
+    $base_dir = __DIR__;
+    $abs_disk_path = $base_dir . '/' . $clean_path;
+
+    if (file_exists($abs_disk_path) && is_file($abs_disk_path)) {
+        $version = filemtime($abs_disk_path);
+        return htmlspecialchars($clean_path) . '?v=' . $version;
+    }
+
+    // Direct check if path is relative to current working dir
+    if (file_exists($clean_path) && is_file($clean_path)) {
+        $version = filemtime($clean_path);
+        return htmlspecialchars($clean_path) . '?v=' . $version;
+    }
+
+    return '';
+}
 ?>

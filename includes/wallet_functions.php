@@ -402,6 +402,7 @@ function mark_topup_payment_failed($topup_id, $reason = 'Payment Failed') {
 function verify_and_complete_topup($topup_id, $admin_id, $gateway_reference = 'ADMIN_APPROVED') {
     global $conn;
 
+    $admin_id_int = (int)$admin_id;
     $conn->begin_transaction();
 
     try {
@@ -419,7 +420,7 @@ function verify_and_complete_topup($topup_id, $admin_id, $gateway_reference = 'A
 
         if ($topup['status'] === 'approved') {
             $conn->rollback();
-            return ['success' => false, 'message' => 'Top-up has already been approved and credited.'];
+            return ['success' => false, 'message' => 'Top-up has already been approved and credited. Duplicate approval prevented.'];
         }
 
         if ($topup['status'] === 'rejected') {
@@ -430,15 +431,33 @@ function verify_and_complete_topup($topup_id, $admin_id, $gateway_reference = 'A
         $customer_id = (int)$topup['customer_id'];
         $credit_amount = floatval($topup['paid_amount'] > 0 ? $topup['paid_amount'] : $topup['amount']);
 
+        // Double-credit safeguard: verify no ledger credit transaction already exists for this topup_id
+        $ref_search = "%Ref: " . $topup_id . "%";
+        $payment_id_chk = !empty($topup['payment_id']) ? $topup['payment_id'] : $topup_id;
+        $chk_tx = $conn->prepare("SELECT id FROM wallet_transactions WHERE customer_id = ? AND transaction_type = 'topup_approved' AND (payment_id = ? OR reason LIKE ?)");
+        $chk_tx->bind_param("iss", $customer_id, $payment_id_chk, $ref_search);
+        $chk_tx->execute();
+        $chk_res = $chk_tx->get_result();
+
+        if ($chk_res && $chk_res->num_rows > 0) {
+            // Already credited in ledger, mark topup as approved to sync state and rollback credit
+            $upd_sync = $conn->prepare("UPDATE wallet_topups SET status = 'approved', approved_by = ?, approved_at = NOW() WHERE topup_id = ?");
+            $upd_sync->bind_param("is", $admin_id_int, $topup_id);
+            $upd_sync->execute();
+
+            $conn->commit();
+            return ['success' => false, 'message' => 'Top-up has already been credited in customer ledger. Duplicate credit prevented.'];
+        }
+
         // Perform atomic credit to available_balance
         $res_tx = add_wallet_transaction(
             $customer_id,
             'topup_approved',
             'credit',
             $credit_amount,
-            "Wallet Top-Up Approved by Admin (ID: {$admin_id}). Ref: {$topup_id}",
+            "Wallet Top-Up Approved by Admin (ID: {$admin_id_int}). Ref: {$topup_id}",
             null,
-            $topup['payment_id'] ?: $topup_id
+            $payment_id_chk
         );
 
         if (!$res_tx['success']) {
@@ -449,7 +468,7 @@ function verify_and_complete_topup($topup_id, $admin_id, $gateway_reference = 'A
         // Update wallet_topups record status to approved
         $gw_ref = !empty($topup['gateway_reference']) ? $topup['gateway_reference'] : $gateway_reference;
         $upd = $conn->prepare("UPDATE wallet_topups SET status = 'approved', approved_by = ?, approved_at = NOW(), gateway_reference = ? WHERE topup_id = ?");
-        $upd->bind_param("iss", $admin_id, $gw_ref, $topup_id);
+        $upd->bind_param("iss", $admin_id_int, $gw_ref, $topup_id);
         $upd->execute();
 
         // Recalculate pending balance
@@ -480,38 +499,55 @@ function verify_and_complete_topup($topup_id, $admin_id, $gateway_reference = 'A
 function reject_topup_with_reason($topup_id, $admin_id, $reason = 'Payment not received') {
     global $conn;
 
-    $stmt = $conn->prepare("SELECT * FROM wallet_topups WHERE topup_id = ?");
-    $stmt->bind_param("s", $topup_id);
-    $stmt->execute();
-    $res = $stmt->get_result();
+    $admin_id_int = (int)$admin_id;
+    $conn->begin_transaction();
 
-    if (!$res || $res->num_rows === 0) {
-        return ['success' => false, 'message' => 'Top-up request not found.'];
+    try {
+        $stmt = $conn->prepare("SELECT * FROM wallet_topups WHERE topup_id = ? FOR UPDATE");
+        $stmt->bind_param("s", $topup_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+
+        if (!$res || $res->num_rows === 0) {
+            $conn->rollback();
+            return ['success' => false, 'message' => 'Top-up request not found.'];
+        }
+
+        $topup = $res->fetch_assoc();
+        if ($topup['status'] === 'approved') {
+            $conn->rollback();
+            return ['success' => false, 'message' => 'Cannot reject an already approved top-up request.'];
+        }
+
+        if ($topup['status'] === 'rejected') {
+            $conn->rollback();
+            return ['success' => false, 'message' => 'Top-up request is already rejected.'];
+        }
+
+        $upd = $conn->prepare("UPDATE wallet_topups SET status = 'rejected', rejection_reason = ?, approved_by = ?, approved_at = NOW() WHERE topup_id = ?");
+        $upd->bind_param("sis", $reason, $admin_id_int, $topup_id);
+        
+        if ($upd->execute()) {
+            $customer_id = (int)$topup['customer_id'];
+            update_customer_pending_balance($customer_id);
+
+            $amt_fmt = number_format(floatval($topup['amount']), 2);
+            add_user_notification(
+                $customer_id,
+                "Wallet Top-Up Rejected",
+                "Your ₹{$amt_fmt} wallet top-up request was rejected. Reason: {$reason}"
+            );
+
+            $conn->commit();
+            return ['success' => true, 'message' => 'Top-up request rejected successfully.'];
+        }
+
+        $conn->rollback();
+        return ['success' => false, 'message' => 'Failed to reject top-up request.'];
+    } catch (Exception $e) {
+        $conn->rollback();
+        return ['success' => false, 'message' => $e->getMessage()];
     }
-
-    $topup = $res->fetch_assoc();
-    if ($topup['status'] === 'approved') {
-        return ['success' => false, 'message' => 'Cannot reject an already approved top-up.'];
-    }
-
-    $upd = $conn->prepare("UPDATE wallet_topups SET status = 'rejected', rejection_reason = ?, approved_by = ?, approved_at = NOW() WHERE topup_id = ?");
-    $upd->bind_param("sis", $reason, $admin_id, $topup_id);
-    
-    if ($upd->execute()) {
-        $customer_id = (int)$topup['customer_id'];
-        update_customer_pending_balance($customer_id);
-
-        $amt_fmt = number_format(floatval($topup['amount']), 2);
-        add_user_notification(
-            $customer_id,
-            "Wallet Top-Up Rejected",
-            "Your ₹{$amt_fmt} wallet top-up was rejected. Reason: {$reason}"
-        );
-
-        return ['success' => true, 'message' => 'Top-up request rejected successfully.'];
-    }
-
-    return ['success' => false, 'message' => 'Failed to reject top-up request.'];
 }
 
 // Backward compatibility alias for reject_topup
