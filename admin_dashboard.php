@@ -59,6 +59,7 @@ $rev_appointments = $conn->query("SELECT COUNT(*) * 300 as total FROM appointmen
 $total_revenue = $rev_orders + $rev_appointments;
 
 $pending_refunds = $conn->query("SELECT COUNT(*) as count FROM refund_requests WHERE status='Requested'")->fetch_assoc()['count'] ?? 0;
+$pending_wallet_topups = $conn->query("SELECT COUNT(*) as count FROM wallet_topups WHERE LOWER(status) IN ('pending', 'pending_approval', 'amount_mismatch')")->fetch_assoc()['count'] ?? 0;
 
 // Feature 17: Admin Global Search Query
 $search_query = isset($_GET['q']) ? trim($_GET['q']) : '';
@@ -220,6 +221,12 @@ include 'includes/header.php';
             <div class="feature-card glass-panel" style="padding: 1.5rem; text-align: center;">
                 <h4 style="color: #ff4757;"><i class="fas fa-undo"></i> Pending Refunds</h4>
                 <p style="font-size: 2.2rem; font-weight: bold; margin: 0.5rem 0;"><?php echo $pending_refunds; ?></p>
+            </div>
+
+            <div class="feature-card glass-panel" style="padding: 1.5rem; text-align: center;">
+                <h4 style="color: #f39c12;"><a href="admin_wallets.php?topup_status=pending" style="color: inherit; text-decoration: none;"><i class="fas fa-wallet"></i> Pending Wallet Requests</a></h4>
+                <p style="font-size: 2.2rem; font-weight: bold; margin: 0.5rem 0; color: #f39c12;"><?php echo $pending_wallet_topups; ?></p>
+                <small><a href="admin_wallets.php?topup_status=pending" style="color: #f39c12; text-decoration: underline; font-size: 0.8rem;">Review Requests &rarr;</a></small>
             </div>
         </div>
 

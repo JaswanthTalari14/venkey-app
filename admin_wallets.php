@@ -236,14 +236,32 @@ $customer_wallets = $conn->query("
     ORDER BY w.available_balance DESC
 ");
 
-// Pending Top-ups Verification Queue
+// Top-ups Verification Queue with Status Filtering
+$topup_status = isset($_GET['topup_status']) ? strtolower(trim($_GET['topup_status'])) : 'pending';
+$topup_where = "";
+if ($topup_status === 'pending') {
+    $topup_where = "WHERE LOWER(t.status) IN ('pending_approval', 'amount_mismatch', 'pending')";
+} else if ($topup_status === 'approved') {
+    $topup_where = "WHERE LOWER(t.status) = 'approved'";
+} else if ($topup_status === 'rejected') {
+    $topup_where = "WHERE LOWER(t.status) IN ('rejected', 'payment_failed')";
+} else if ($topup_status === 'all') {
+    $topup_where = "";
+} else {
+    $topup_status = 'pending';
+    $topup_where = "WHERE LOWER(t.status) IN ('pending_approval', 'amount_mismatch', 'pending')";
+}
+
 $pending_topups_list = $conn->query("
-    SELECT t.*, u.name as customer_name, u.mobile as customer_mobile, u.email as customer_email,
+    SELECT t.*, 
+           COALESCE(u.name, CONCAT('Customer #', t.customer_id)) as customer_name, 
+           COALESCE(u.mobile, 'N/A') as customer_mobile, 
+           COALESCE(u.email, 'N/A') as customer_email,
            COALESCE(w.available_balance, 0.00) as current_wallet_balance
     FROM wallet_topups t
-    JOIN users u ON t.customer_id = u.id
-    LEFT JOIN wallets w ON u.id = w.customer_id
-    WHERE t.status IN ('pending_approval', 'amount_mismatch', 'pending')
+    LEFT JOIN users u ON t.customer_id = u.id
+    LEFT JOIN wallets w ON t.customer_id = w.customer_id
+    $topup_where
     ORDER BY t.created_at DESC
 ");
 
@@ -365,33 +383,48 @@ include 'includes/header.php';
             </div>
         </div>
 
-        <!-- SECTION 2: Pending Wallet Top-Up Verification Requests -->
-        <?php if ($pending_topups_list && $pending_topups_list->num_rows > 0): ?>
-            <div style="margin-bottom: 2.5rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; gap: 0.5rem;">
-                    <h3 style="margin: 0; color: #f39c12; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
-                        <i class="fas fa-clock"></i> Pending Wallet Top-Up Verification Requests
-                        <span style="background: #f39c12; color: #121212; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.8rem; font-weight: bold;"><?php echo $pending_topups_count; ?> Pending</span>
-                    </h3>
-                    <small style="color: var(--text-secondary);">Verify payment gateway references before approving credit to customer wallet.</small>
+        <!-- SECTION 2: Customer Wallet Top-Up Verification Requests -->
+        <div style="margin-bottom: 2.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; gap: 0.5rem;">
+                <h3 style="margin: 0; color: #f39c12; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="fas fa-clock"></i> Customer Wallet Top-Up Verification Requests
+                    <span style="background: #f39c12; color: #121212; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.8rem; font-weight: bold;"><?php echo $pending_topups_count; ?> Pending</span>
+                </h3>
+                <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                    <a href="admin_wallets.php?topup_status=pending" class="btn <?php echo $topup_status === 'pending' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                        Pending (<?php echo $pending_topups_count; ?>)
+                    </a>
+                    <a href="admin_wallets.php?topup_status=approved" class="btn <?php echo $topup_status === 'approved' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                        Approved
+                    </a>
+                    <a href="admin_wallets.php?topup_status=rejected" class="btn <?php echo $topup_status === 'rejected' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                        Rejected
+                    </a>
+                    <a href="admin_wallets.php?topup_status=all" class="btn <?php echo $topup_status === 'all' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                        All Requests
+                    </a>
                 </div>
+            </div>
 
-                <div class="glass-panel" style="overflow-x: auto; padding: 1rem; border-radius: 16px; border-left: 4px solid #f39c12;">
-                    <table style="width: 100%; min-width: 900px; text-align: left; border-collapse: collapse;">
-                        <thead>
-                            <tr style="border-bottom: 1px solid var(--glass-border); color: var(--text-secondary); font-size: 0.85rem;">
-                                <th style="padding: 0.8rem 1rem;">Top-Up ID</th>
-                                <th style="padding: 0.8rem 1rem;">Customer Details</th>
-                                <th style="padding: 0.8rem 1rem;">Requested / Paid</th>
-                                <th style="padding: 0.8rem 1rem;">Gateway Ref & Payment ID</th>
-                                <th style="padding: 0.8rem 1rem;">Current Balance</th>
-                                <th style="padding: 0.8rem 1rem;">Verification Status</th>
-                                <th style="padding: 0.8rem 1rem;">Request Date & Time</th>
-                                <th style="padding: 0.8rem 1rem; text-align: right;">Administrative Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php while ($top = $pending_topups_list->fetch_assoc()): ?>
+            <div class="glass-panel" style="overflow-x: auto; padding: 1rem; border-radius: 16px; border-left: 4px solid #f39c12;">
+                <table style="width: 100%; min-width: 900px; text-align: left; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--glass-border); color: var(--text-secondary); font-size: 0.85rem;">
+                            <th style="padding: 0.8rem 1rem;">Top-Up ID</th>
+                            <th style="padding: 0.8rem 1rem;">Customer Details</th>
+                            <th style="padding: 0.8rem 1rem;">Requested / Paid</th>
+                            <th style="padding: 0.8rem 1rem;">Gateway Ref & Payment ID</th>
+                            <th style="padding: 0.8rem 1rem;">Current Balance</th>
+                            <th style="padding: 0.8rem 1rem;">Verification Status</th>
+                            <th style="padding: 0.8rem 1rem;">Request Date & Time</th>
+                            <th style="padding: 0.8rem 1rem; text-align: right;">Administrative Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if ($pending_topups_list && $pending_topups_list->num_rows > 0): ?>
+                            <?php while ($top = $pending_topups_list->fetch_assoc()): 
+                                $t_status = strtolower($top['status']);
+                            ?>
                                 <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.9rem;">
                                     <td style="padding: 1rem; font-family: monospace; font-weight: bold; color: var(--primary-color); white-space: nowrap;">
                                         <?php echo htmlspecialchars($top['topup_id']); ?>
@@ -422,17 +455,25 @@ include 'includes/header.php';
                                         ₹<?php echo number_format($top['current_wallet_balance'], 2); ?>
                                     </td>
                                     <td style="padding: 1rem; white-space: nowrap;">
-                                        <?php if ($top['status'] === 'amount_mismatch'): ?>
+                                        <?php if ($t_status === 'approved'): ?>
+                                            <span style="background: rgba(46, 213, 115, 0.15); color: #2ed573; padding: 0.35rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(46, 213, 115, 0.3);">
+                                                <i class="fas fa-check-circle"></i> Approved
+                                            </span>
+                                        <?php elseif ($t_status === 'rejected' || $t_status === 'payment_failed'): ?>
+                                            <span style="background: rgba(255, 71, 87, 0.15); color: #ff4757; padding: 0.35rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(255, 71, 87, 0.3);">
+                                                <i class="fas fa-times-circle"></i> Rejected
+                                            </span>
+                                        <?php elseif ($t_status === 'amount_mismatch'): ?>
                                             <span style="background: rgba(155, 89, 182, 0.15); color: #9b59b6; padding: 0.35rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(155, 89, 182, 0.3);">
                                                 <i class="fas fa-exclamation-triangle"></i> Mismatch Review
                                             </span>
-                                        <?php elseif ($top['status'] === 'pending_approval'): ?>
+                                        <?php elseif ($t_status === 'pending_approval'): ?>
                                             <span style="background: rgba(230, 126, 34, 0.15); color: #e67e22; padding: 0.35rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(230, 126, 34, 0.3);">
                                                 <i class="fas fa-clock"></i> Pending Verification
                                             </span>
                                         <?php else: ?>
                                             <span style="background: rgba(241, 196, 15, 0.15); color: #f1c40f; padding: 0.35rem 0.8rem; border-radius: 12px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(241, 196, 15, 0.3);">
-                                                Payment Pending
+                                                <i class="fas fa-hourglass-half"></i> Payment Pending
                                             </span>
                                         <?php endif; ?>
                                     </td>
@@ -440,25 +481,38 @@ include 'includes/header.php';
                                         <?php echo date('M d, Y h:i A', strtotime($top['created_at'])); ?>
                                     </td>
                                     <td style="padding: 1rem; text-align: right; white-space: nowrap;">
-                                        <form method="POST" action="admin_wallets.php" onsubmit="return handleFormSubmit(this, 'Approving and crediting customer wallet...');" style="display: inline-block;">
-                                            <input type="hidden" name="action" value="approve_topup">
-                                            <input type="hidden" name="topup_id" value="<?php echo htmlspecialchars($top['topup_id']); ?>">
-                                            <button type="submit" onclick="return confirm('Confirm Admin Approval: Add ₹<?php echo number_format($top['paid_amount'] > 0 ? $top['paid_amount'] : $top['amount'], 2); ?> to customer wallet?');" class="btn btn-primary approve-btn" style="font-size: 0.8rem; padding: 0.45rem 0.85rem;">
-                                                <i class="fas fa-check-circle"></i> Approve & Credit Wallet
-                                            </button>
-                                        </form>
+                                        <?php if ($t_status === 'approved'): ?>
+                                            <span style="color: #2ed573; font-size: 0.85rem; font-weight: 600;"><i class="fas fa-check-circle"></i> Credited</span>
+                                        <?php elseif ($t_status === 'rejected' || $t_status === 'payment_failed'): ?>
+                                            <span style="color: #ff4757; font-size: 0.85rem; font-weight: 600;"><i class="fas fa-ban"></i> Rejected</span>
+                                        <?php else: ?>
+                                            <form method="POST" action="admin_wallets.php" onsubmit="return handleFormSubmit(this, 'Approving and crediting customer wallet...');" style="display: inline-block;">
+                                                <input type="hidden" name="action" value="approve_topup">
+                                                <input type="hidden" name="topup_id" value="<?php echo htmlspecialchars($top['topup_id']); ?>">
+                                                <button type="submit" onclick="return confirm('Confirm Admin Approval: Add ₹<?php echo number_format($top['paid_amount'] > 0 ? $top['paid_amount'] : $top['amount'], 2); ?> to customer wallet?');" class="btn btn-primary approve-btn" style="font-size: 0.8rem; padding: 0.45rem 0.85rem;">
+                                                    <i class="fas fa-check-circle"></i> Approve & Credit Wallet
+                                                </button>
+                                            </form>
 
-                                        <button type="button" onclick="openRejectModal('<?php echo htmlspecialchars(addslashes($top['topup_id'])); ?>', '<?php echo htmlspecialchars(addslashes($top['customer_name'])); ?>', <?php echo $top['amount']; ?>)" class="btn btn-outline" style="font-size: 0.8rem; padding: 0.45rem 0.85rem; color: #ff4757; border-color: #ff4757; margin-left: 0.3rem;">
-                                            <i class="fas fa-times-circle"></i> Reject
-                                        </button>
+                                            <button type="button" onclick="openRejectModal('<?php echo htmlspecialchars(addslashes($top['topup_id'])); ?>', '<?php echo htmlspecialchars(addslashes($top['customer_name'])); ?>', <?php echo $top['amount']; ?>)" class="btn btn-outline" style="font-size: 0.8rem; padding: 0.45rem 0.85rem; color: #ff4757; border-color: #ff4757; margin-left: 0.3rem;">
+                                                <i class="fas fa-times-circle"></i> Reject
+                                            </button>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
                             <?php endwhile; ?>
-                        </tbody>
-                    </table>
-                </div>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="8" style="padding: 2.5rem; text-align: center; color: var(--text-secondary);">
+                                    <i class="fas fa-inbox" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.5; display: block;"></i>
+                                    No customer wallet top-up requests found for status "<strong><?php echo htmlspecialchars(ucfirst($topup_status)); ?></strong>".
+                                </td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
             </div>
-        <?php endif; ?>
+        </div>
 
         <!-- SECTION 3: Customer Wallets Directory -->
         <div style="margin-bottom: 2.5rem;">
