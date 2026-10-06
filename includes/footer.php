@@ -24,7 +24,7 @@ if ($is_logged_in) {
             ['label' => 'Medicines', 'icon' => 'fas fa-pills', 'url' => 'medicines.php', 'active_pages' => ['medicines.php', 'your_orders.php']],
             ['label' => 'Doctors', 'icon' => 'fas fa-user-md', 'url' => 'nearby_doctors.php', 'active_pages' => ['nearby_doctors.php', 'book_consult.php']],
             ['label' => 'Notifs', 'icon' => 'fas fa-bell', 'url' => '#', 'is_notif' => true, 'active_pages' => []],
-            ['label' => 'Profile', 'icon' => 'fas fa-user-circle', 'url' => 'profile.php', 'is_profile' => true, 'active_pages' => ['profile.php', 'prescription_vault.php', 'my_wallet.php']]
+            ['label' => 'Profile', 'icon' => 'fas fa-user-circle', 'url' => 'profile.php', 'is_profile' => true, 'active_pages' => ['profile.php', 'prescription_vault.php', 'my_wallet.php', 'health_vault.php', 'health_journey.php', 'security_center.php', 'data_privacy.php']]
         ];
     } elseif ($mobile_user_role === 'doctor') {
         $mobile_nav_items = [

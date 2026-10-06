@@ -104,5 +104,229 @@ if ($action === 'submit_refund_request') {
     exit;
 }
 
+// 6. Family Member Management (Feature Group 3)
+if ($action === 'add_family_member') {
+    $name = trim($_POST['name'] ?? '');
+    $rel = trim($_POST['relationship'] ?? '');
+    $dob = trim($_POST['dob'] ?? '');
+    $gender = trim($_POST['gender'] ?? 'Other');
+    $blood = trim($_POST['blood_group'] ?? '');
+    $allergies = trim($_POST['allergies'] ?? '');
+    $emergency = trim($_POST['emergency_contact'] ?? '');
+    $notes = trim($_POST['medical_notes'] ?? '');
+
+    if (empty($name) || empty($rel)) {
+        echo json_encode(['success' => false, 'message' => 'Name and relationship are required']);
+        exit;
+    }
+
+    $stmt = $conn->prepare("INSERT INTO family_members (primary_user_id, name, relationship, dob, gender, blood_group, allergies, emergency_contact, medical_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $dob_val = !empty($dob) ? $dob : null;
+    $stmt->bind_param("issssssss", $user_id, $name, $rel, $dob_val, $gender, $blood, $allergies, $emergency, $notes);
+    $ok = $stmt->execute();
+    echo json_encode(['success' => (bool)$ok, 'message' => 'Family member profile added successfully']);
+    exit;
+}
+
+if ($action === 'delete_family_member') {
+    $fid = (int)($_POST['family_id'] ?? 0);
+    $conn->query("DELETE FROM family_members WHERE id = $fid AND primary_user_id = $user_id");
+    echo json_encode(['success' => true, 'message' => 'Family profile removed']);
+    exit;
+}
+
+// 7. Emergency Medical Card Config & QR Generation (Feature Group 4)
+if ($action === 'save_emergency_card') {
+    $fields = $_POST['public_fields'] ?? [];
+    if (!is_array($fields)) $fields = [];
+
+    $fields_json = json_encode($fields);
+    $qr_token = md5('EMG_' . $user_id . '_' . time() . '_' . rand(1000, 9999));
+
+    // Check existing
+    $chk = $conn->query("SELECT id, qr_token FROM emergency_cards WHERE user_id = $user_id");
+    if ($chk && $chk->num_rows > 0) {
+        $existing = $chk->fetch_assoc();
+        $qr_token = $existing['qr_token']; // retain persistent token
+        $stmt = $conn->prepare("UPDATE emergency_cards SET public_fields_json = ? WHERE user_id = ?");
+        $stmt->bind_param("si", $fields_json, $user_id);
+        $stmt->execute();
+    } else {
+        $stmt = $conn->prepare("INSERT INTO emergency_cards (user_id, public_fields_json, qr_token) VALUES (?, ?, ?)");
+        $stmt->bind_param("iss", $user_id, $fields_json, $qr_token);
+        $stmt->execute();
+    }
+
+    echo json_encode(['success' => true, 'qr_token' => $qr_token, 'message' => 'Emergency Medical Card configuration saved']);
+    exit;
+}
+
+// 8. Health Trends Metric Logger (Feature Group 5)
+if ($action === 'add_health_trend') {
+    $metric = trim($_POST['metric_type'] ?? '');
+    $val = (float)($_POST['metric_value'] ?? 0);
+    $unit = trim($_POST['unit'] ?? '');
+    $notes = trim($_POST['notes'] ?? '');
+
+    if (empty($metric) || $val <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Valid metric type and value required']);
+        exit;
+    }
+
+    $stmt = $conn->prepare("INSERT INTO health_trends (patient_id, metric_type, metric_value, unit, notes) VALUES (?, ?, ?, ?, ?)");
+    $stmt->bind_param("isdss", $user_id, $metric, $val, $unit, $notes);
+    $ok = $stmt->execute();
+    echo json_encode(['success' => (bool)$ok, 'message' => 'Health metric recorded']);
+    exit;
+}
+
+// 9. Upload & Categorize Medical Document (Feature Group 9)
+if ($action === 'upload_medical_document') {
+    $title = trim($_POST['title'] ?? '');
+    $category = trim($_POST['category'] ?? 'Other');
+
+    if (empty($title) || !isset($_FILES['document_file'])) {
+        echo json_encode(['success' => false, 'message' => 'Document title and file are required']);
+        exit;
+    }
+
+    $file = $_FILES['document_file'];
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['success' => false, 'message' => 'File upload error code: ' . $file['error']]);
+        exit;
+    }
+
+    $allowed = ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx'];
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, $allowed)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid file format. Allowed: JPG, PNG, PDF, DOC']);
+        exit;
+    }
+
+    $upload_dir = __DIR__ . '/uploads/medical_docs/';
+    if (!is_dir($upload_dir)) {
+        @mkdir($upload_dir, 0777, true);
+    }
+
+    $file_name = 'DOC_' . $user_id . '_' . time() . '_' . rand(100, 999) . '.' . $ext;
+    $target_file = $upload_dir . $file_name;
+    $rel_path = 'uploads/medical_docs/' . $file_name;
+
+    if (move_uploaded_file($file['tmp_name'], $target_file)) {
+        $stmt = $conn->prepare("INSERT INTO medical_documents (patient_id, title, category, file_path) VALUES (?, ?, ?, ?)");
+        $stmt->bind_param("isss", $user_id, $title, $category, $rel_path);
+        $ok = $stmt->execute();
+        echo json_encode(['success' => (bool)$ok, 'message' => 'Medical document uploaded and categorized successfully']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Failed to save document file on server']);
+    }
+    exit;
+}
+
+if ($action === 'delete_medical_document') {
+    $doc_id = (int)($_POST['doc_id'] ?? 0);
+    $chk = $conn->query("SELECT file_path FROM medical_documents WHERE id = $doc_id AND patient_id = $user_id");
+    if ($chk && $row = $chk->fetch_assoc()) {
+        if (!empty($row['file_path']) && file_exists(__DIR__ . '/' . $row['file_path'])) {
+            @unlink(__DIR__ . '/' . $row['file_path']);
+        }
+        $conn->query("DELETE FROM medical_documents WHERE id = $doc_id AND patient_id = $user_id");
+        echo json_encode(['success' => true, 'message' => 'Document deleted']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Document not found or access denied']);
+    }
+    exit;
+}
+
+// 10. Secure Selective Record Sharing (Feature Group 10)
+if ($action === 'create_secure_share') {
+    $items = $_POST['items'] ?? [];
+    $exp_minutes = (int)($_POST['expiration_minutes'] ?? 60);
+
+    if (empty($items) || !is_array($items)) {
+        echo json_encode(['success' => false, 'message' => 'Please select at least one record to share']);
+        exit;
+    }
+
+    $valid_exp = [15, 30, 60, 1440];
+    if (!in_array($exp_minutes, $valid_exp)) $exp_minutes = 60;
+
+    $expires_at = date('Y-m-d H:i:s', time() + ($exp_minutes * 60));
+    $share_token = bin2hex(random_bytes(16));
+    $items_json = json_encode($items);
+
+    $stmt = $conn->prepare("INSERT INTO secure_shares (patient_id, share_token, items_json, expires_at) VALUES (?, ?, ?, ?)");
+    $stmt->bind_param("isss", $user_id, $share_token, $items_json, $expires_at);
+    $ok = $stmt->execute();
+
+    if ($ok) {
+        $share_url = 'view_shared.php?token=' . $share_token;
+        echo json_encode(['success' => true, 'share_token' => $share_token, 'share_url' => $share_url, 'expires_at' => $expires_at, 'message' => 'Secure share link generated']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Failed to create secure share token']);
+    }
+    exit;
+}
+
+if ($action === 'revoke_secure_share') {
+    $share_id = (int)($_POST['share_id'] ?? 0);
+    $conn->query("UPDATE secure_shares SET is_revoked = 1 WHERE id = $share_id AND patient_id = $user_id");
+    echo json_encode(['success' => true, 'message' => 'Share access revoked immediately']);
+    exit;
+}
+
+// 11. AI Doctor Preparation Assistant Questionnaire Save (Feature Group 30)
+if ($action === 'save_doctor_prep') {
+    $appt_id = (int)($_POST['appointment_id'] ?? 0);
+    $concern = trim($_POST['main_concern'] ?? '');
+    $duration = trim($_POST['duration'] ?? '');
+    $severity = trim($_POST['severity'] ?? '');
+    $meds = trim($_POST['current_medicines'] ?? '');
+    $notes = trim($_POST['notes'] ?? '');
+
+    if (empty($concern)) {
+        echo json_encode(['success' => false, 'message' => 'Main concern description is required']);
+        exit;
+    }
+
+    $stmt = $conn->prepare("INSERT INTO doctor_prep_summaries (patient_id, appointment_id, main_concern, duration, severity, current_medicines, notes) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("iisssss", $user_id, $appt_id, $concern, $duration, $severity, $meds, $notes);
+    $ok = $stmt->execute();
+
+    echo json_encode(['success' => (bool)$ok, 'prep_id' => $conn->insert_id, 'message' => 'Doctor Preparation Summary generated for your upcoming visit']);
+    exit;
+}
+
+// 12. Record Recently Viewed (Feature Group 35)
+if ($action === 'record_recently_viewed') {
+    $type = trim($_POST['item_type'] ?? '');
+    $item_id = (int)($_POST['item_id'] ?? 0);
+    $title = trim($_POST['title'] ?? '');
+    $url = trim($_POST['url'] ?? '');
+
+    if (!empty($type) && $item_id > 0) {
+        $stmt = $conn->prepare("INSERT INTO recently_viewed (user_id, item_type, item_id, title, url) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE title=VALUES(title), url=VALUES(url), viewed_at=CURRENT_TIMESTAMP");
+        $stmt->bind_param("isiss", $user_id, $type, $item_id, $title, $url);
+        $stmt->execute();
+    }
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+// 13. Save Notification Preferences (Feature Group 27)
+if ($action === 'save_notification_preferences') {
+    $ord = isset($_POST['order_notif']) ? 1 : 0;
+    $app = isset($_POST['appointment_notif']) ? 1 : 0;
+    $ref = isset($_POST['referral_notif']) ? 1 : 0;
+    $pay = isset($_POST['payment_notif']) ? 1 : 0;
+    $sys = isset($_POST['system_notif']) ? 1 : 0;
+
+    $stmt = $conn->prepare("INSERT INTO notification_preferences (user_id, order_notif, appointment_notif, referral_notif, payment_notif, system_notif) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE order_notif=?, appointment_notif=?, referral_notif=?, payment_notif=?, system_notif=?");
+    $stmt->bind_param("iiiiiiiiii", $user_id, $ord, $app, $ref, $pay, $sys, $ord, $app, $ref, $pay, $sys);
+    $ok = $stmt->execute();
+    echo json_encode(['success' => (bool)$ok, 'message' => 'Notification preferences saved']);
+    exit;
+}
+
 echo json_encode(['success' => false, 'message' => 'Invalid action']);
 ?>

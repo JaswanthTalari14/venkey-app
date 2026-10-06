@@ -71,6 +71,45 @@ function getSmartFallbackReply($msg) {
         return "You're very welcome! 😊 I am always here to assist you with your health and platform navigation on MedicalAk.";
     }
     
+    // Check Patient Database Real-Record Queries (Feature Group 28)
+    if (isset($_SESSION['user_id'])) {
+        $patient_id = (int)$_SESSION['user_id'];
+        global $conn;
+
+        // Prescription query
+        if (strpos($lower, 'prescription') !== false || strpos($lower, 'last rx') !== false) {
+            $rx_q = $conn->query("SELECT p.*, u.name as doctor_name FROM prescriptions p JOIN users u ON p.doctor_id = u.id WHERE p.patient_id = $patient_id ORDER BY p.created_at DESC LIMIT 1");
+            if ($rx_q && $rx_q->num_rows > 0) {
+                $rx = $rx_q->fetch_assoc();
+                return "Your latest prescription (Rx #" . $rx['id'] . ") was issued by Dr. " . htmlspecialchars($rx['doctor_name']) . " on " . date('M d, Y', strtotime($rx['consultation_date'])) . ". Note: " . htmlspecialchars($rx['notes'] ?: 'No special notes');
+            } else {
+                return "I couldn't find any prescription records in your profile.";
+            }
+        }
+
+        // Appointment query
+        if (strpos($lower, 'appointment') !== false || strpos($lower, 'next visit') !== false || strpos($lower, 'doctor visit') !== false) {
+            $app_q = $conn->query("SELECT a.*, u.name as doctor_name FROM appointments a JOIN users u ON a.doctor_id = u.id WHERE a.patient_id = $patient_id AND a.status NOT IN ('cancelled', 'completed') ORDER BY a.appointment_date ASC LIMIT 1");
+            if ($app_q && $app_q->num_rows > 0) {
+                $app = $app_q->fetch_assoc();
+                return "Your next appointment is with Dr. " . htmlspecialchars($app['doctor_name']) . " on " . date('M d, Y', strtotime($app['appointment_date'])) . " at " . date('h:i A', strtotime($app['appointment_time'])) . ". Status: " . ucfirst($app['status']) . ".";
+            } else {
+                return "You currently have no upcoming appointments scheduled.";
+            }
+        }
+
+        // Report / Document query
+        if (strpos($lower, 'report') !== false || strpos($lower, 'lab test') !== false || strpos($lower, 'x-ray') !== false) {
+            $doc_q = $conn->query("SELECT * FROM medical_documents WHERE patient_id = $patient_id ORDER BY created_at DESC LIMIT 1");
+            if ($doc_q && $doc_q->num_rows > 0) {
+                $doc = $doc_q->fetch_assoc();
+                return "Your latest uploaded report is \"" . htmlspecialchars($doc['title']) . "\" (" . htmlspecialchars($doc['category']) . ") uploaded on " . date('M d, Y', strtotime($doc['created_at'])) . ". You can view it in your Health Vault under Documents.";
+            } else {
+                return "I couldn't find any lab or medical report documents in your records.";
+            }
+        }
+    }
+
     return "I'm right here to assist you! If you have any health symptoms or questions about our platform services (like ordering medicines or booking doctors), feel free to ask me.";
 }
 

@@ -336,6 +336,139 @@ function ensure_database_indexes($conn) {
         INDEX (ip_address, email_or_phone)
     )");
 
+    // Feature Groups 3, 4, 5, 9, 10, 24, 25, 30, 35 Database Structures
+    $conn->query("CREATE TABLE IF NOT EXISTS family_members (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        primary_user_id INT NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        relationship VARCHAR(50) NOT NULL,
+        dob DATE DEFAULT NULL,
+        gender VARCHAR(20) DEFAULT NULL,
+        blood_group VARCHAR(10) DEFAULT NULL,
+        allergies TEXT DEFAULT NULL,
+        emergency_contact VARCHAR(20) DEFAULT NULL,
+        medical_notes TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (primary_user_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS emergency_cards (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL UNIQUE,
+        public_fields_json TEXT NOT NULL,
+        qr_token VARCHAR(100) UNIQUE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS health_trends (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        metric_type VARCHAR(50) NOT NULL,
+        metric_value DECIMAL(10,2) NOT NULL,
+        unit VARCHAR(20) DEFAULT NULL,
+        notes TEXT DEFAULT NULL,
+        measured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (patient_id, metric_type)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS medical_documents (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        category VARCHAR(50) NOT NULL,
+        file_path VARCHAR(255) NOT NULL,
+        doctor_id INT DEFAULT NULL,
+        consultation_id INT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (patient_id, category)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS secure_shares (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        share_token VARCHAR(100) UNIQUE NOT NULL,
+        items_json TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        is_revoked TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (share_token)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS announcements (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        target_role VARCHAR(20) DEFAULT 'all',
+        status VARCHAR(20) DEFAULT 'published',
+        start_time TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        end_time TIMESTAMP NULL DEFAULT NULL,
+        created_by INT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (target_role, status)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS system_risk_flags (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT DEFAULT NULL,
+        entity_type VARCHAR(50) NOT NULL,
+        entity_id INT DEFAULT NULL,
+        severity VARCHAR(20) NOT NULL,
+        flag_reason TEXT NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (status, severity)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS recently_viewed (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        item_type VARCHAR(50) NOT NULL,
+        item_id INT NOT NULL,
+        title VARCHAR(255) DEFAULT NULL,
+        url VARCHAR(255) DEFAULT NULL,
+        viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX (user_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS doctor_prep_summaries (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        appointment_id INT DEFAULT NULL,
+        main_concern TEXT NOT NULL,
+        duration VARCHAR(100) DEFAULT NULL,
+        severity VARCHAR(50) DEFAULT NULL,
+        current_medicines TEXT DEFAULT NULL,
+        notes TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (patient_id)
+    )");
+
+    // Auto-migrate columns for appointments table
+    @$conn->query("ALTER TABLE appointments MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+    $app_col_res = @$conn->query("SHOW COLUMNS FROM appointments");
+    if ($app_col_res) {
+        $app_cols = [];
+        while ($acol_row = $app_col_res->fetch_assoc()) {
+            $app_cols[] = strtolower($acol_row['Field']);
+        }
+        if (!in_array('token_no', $app_cols)) {
+            @$conn->query("ALTER TABLE appointments ADD COLUMN token_no VARCHAR(20) DEFAULT NULL");
+        }
+        if (!in_array('chief_complaint', $app_cols)) {
+            @$conn->query("ALTER TABLE appointments ADD COLUMN chief_complaint TEXT DEFAULT NULL");
+        }
+        if (!in_array('clinical_notes', $app_cols)) {
+            @$conn->query("ALTER TABLE appointments ADD COLUMN clinical_notes TEXT DEFAULT NULL");
+        }
+        if (!in_array('diagnosis', $app_cols)) {
+            @$conn->query("ALTER TABLE appointments ADD COLUMN diagnosis TEXT DEFAULT NULL");
+        }
+        if (!in_array('followup_date', $app_cols)) {
+            @$conn->query("ALTER TABLE appointments ADD COLUMN followup_date DATE DEFAULT NULL");
+        }
+    }
+
     // Auto-migrate columns for users table
     $ucol_res = @$conn->query("SHOW COLUMNS FROM users");
     if ($ucol_res) {
@@ -360,6 +493,18 @@ function ensure_database_indexes($conn) {
         }
         if (!in_array('is_online_available', $u_cols)) {
             @$conn->query("ALTER TABLE users ADD COLUMN is_online_available TINYINT(1) DEFAULT 1");
+        }
+        if (!in_array('blood_group', $u_cols)) {
+            @$conn->query("ALTER TABLE users ADD COLUMN blood_group VARCHAR(10) DEFAULT NULL");
+        }
+        if (!in_array('allergies', $u_cols)) {
+            @$conn->query("ALTER TABLE users ADD COLUMN allergies TEXT DEFAULT NULL");
+        }
+        if (!in_array('emergency_contact', $u_cols)) {
+            @$conn->query("ALTER TABLE users ADD COLUMN emergency_contact VARCHAR(20) DEFAULT NULL");
+        }
+        if (!in_array('last_login', $u_cols)) {
+            @$conn->query("ALTER TABLE users ADD COLUMN last_login TIMESTAMP NULL DEFAULT NULL");
         }
     }
 

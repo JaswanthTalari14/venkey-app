@@ -11,7 +11,7 @@ $patient_id = (int)$_SESSION['user_id'];
 $success = '';
 $error = '';
 
-// Handle Cancel Order and Delete Order Requests
+// Handle Cancel Order, Delete Order, and Reorder Requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
     $order_id = isset($_POST['order_id']) ? (int)$_POST['order_id'] : 0;
@@ -39,6 +39,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     }
                     
                     $success = "Order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . " has been cancelled successfully.";
+                }
+            } elseif ($action === 'reorder_order') {
+                // Feature Group 8: Medicine Reorder with Prescription Validation Review
+                $items_res = $conn->query("SELECT medicine_id, quantity, price FROM order_items WHERE order_id = $order_id");
+                if ($items_res && $items_res->num_rows > 0) {
+                    $total_amt = (float)$ord_data['total_amount'];
+                    $addr_esc = $conn->real_escape_string($ord_data['address']);
+                    
+                    $conn->query("INSERT INTO orders (patient_id, total_amount, status, payment_method, payment_status, address) VALUES ($patient_id, $total_amt, 'pending', 'COD', 'Cash on Delivery', '$addr_esc')");
+                    $new_order_id = $conn->insert_id;
+                    
+                    while ($it = $items_res->fetch_assoc()) {
+                        $mid = (int)$it['medicine_id'];
+                        $qty = (int)$it['quantity'];
+                        $prc = (float)$it['price'];
+                        $conn->query("INSERT INTO order_items (order_id, medicine_id, quantity, price) VALUES ($new_order_id, $mid, $qty, $prc)");
+                    }
+                    
+                    $success = "Reorder placed successfully as Order #ORD-" . str_pad($new_order_id, 4, '0', STR_PAD_LEFT) . "! Please review your medicines and prescription instructions.";
                 }
             } elseif ($action === 'delete_order') {
                 $conn->query("DELETE FROM order_items WHERE order_id = $order_id");

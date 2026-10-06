@@ -105,10 +105,17 @@ $appointments = $conn->query("
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if ($appointments && $appointments->num_rows > 0): ?>
-                        <?php while($a = $appointments->fetch_assoc()): ?>
+                    <?php if ($appointments && $appointments->num_rows > 0): 
+                        $token_counter = 1;
+                    ?>
+                        <?php while($a = $appointments->fetch_assoc()): 
+                            $token_no = $a['token_no'] ?: ('A-' . str_pad($token_counter++, 2, '0', STR_PAD_LEFT));
+                        ?>
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                <td style="padding: 1rem; font-weight: bold; color: var(--text-primary);"><?php echo htmlspecialchars($a['patient_name']); ?></td>
+                                <td style="padding: 1rem; font-weight: bold; color: var(--text-primary);">
+                                    <span style="display: inline-block; padding: 0.15rem 0.4rem; background: rgba(74, 144, 226, 0.15); color: var(--primary-color); border-radius: 6px; font-size: 0.75rem; margin-right: 0.4rem; font-weight: bold;"><?php echo htmlspecialchars($token_no); ?></span>
+                                    <?php echo htmlspecialchars($a['patient_name']); ?>
+                                </td>
                                 <td style="padding: 1rem;">
                                     <a href="tel:<?php echo htmlspecialchars($a['patient_phone']); ?>" style="color: var(--primary-color); font-size: 0.9rem;"><i class="fas fa-phone"></i> Call</a>
                                 </td>
@@ -117,15 +124,24 @@ $appointments = $conn->query("
                                 </td>
                                 <td style="padding: 1rem; text-transform: capitalize; font-size: 0.9rem;"><?php echo $a['type']; ?></td>
                                 <td style="padding: 1rem;">
-                                    <span style="color: <?php echo $a['status'] == 'pending' ? 'var(--accent)' : 'var(--text-primary)'; ?>; text-transform: capitalize; font-weight: 600; font-size: 0.85rem;"><?php echo $a['status']; ?></span>
+                                    <?php
+                                        $st_color = 'var(--text-primary)';
+                                        if ($a['status'] === 'waiting') $st_color = 'var(--accent)';
+                                        elseif ($a['status'] === 'in_consultation') $st_color = '#3498db';
+                                        elseif ($a['status'] === 'completed') $st_color = '#2ed573';
+                                        elseif ($a['status'] === 'cancelled' || $a['status'] === 'no_show') $st_color = '#ff4757';
+                                    ?>
+                                    <span style="color: <?php echo $st_color; ?>; text-transform: capitalize; font-weight: 700; font-size: 0.85rem; padding: 0.2rem 0.5rem; background: rgba(255,255,255,0.04); border-radius: 8px;">
+                                        <?php echo str_replace('_', ' ', $a['status']); ?>
+                                    </span>
                                 </td>
                                 <td style="padding: 1rem;">
                                     <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                                        <a href="doctor_workspace.php?patient_id=<?php echo $a['patient_id']; ?>&appointment_id=<?php echo $a['id']; ?>" class="btn btn-primary" style="font-size: 0.75rem; padding: 0.25rem 0.65rem;">
+                                            <i class="fas fa-stethoscope"></i> Start Consultation
+                                        </a>
                                         <button type="button" class="btn btn-outline" style="font-size: 0.75rem; padding: 0.25rem 0.55rem; color: var(--secondary-color); border-color: var(--secondary-color);" onclick="openPrescriptionModal(<?php echo $a['id']; ?>, <?php echo $a['patient_id']; ?>, '<?php echo htmlspecialchars(addslashes($a['patient_name'])); ?>')">
-                                            <i class="fas fa-file-medical"></i> Rx
-                                        </button>
-                                        <button type="button" class="btn btn-outline" style="font-size: 0.75rem; padding: 0.25rem 0.55rem;" onclick="openNotesModal(<?php echo $a['id']; ?>, <?php echo $a['patient_id']; ?>, '<?php echo htmlspecialchars(addslashes($a['patient_name'])); ?>')">
-                                            <i class="fas fa-sticky-note"></i> Notes
+                                            <i class="fas fa-file-medical"></i> Quick Rx
                                         </button>
                                     </div>
                                 </td>
@@ -134,9 +150,12 @@ $appointments = $conn->query("
                                         <input type="hidden" name="appointment_id" value="<?php echo $a['id']; ?>">
                                         <select name="status" class="form-control" style="width: auto; padding: 0.3rem; font-size: 0.82rem;" required>
                                             <option value="pending" <?php if($a['status'] == 'pending') echo 'selected'; ?>>Pending</option>
-                                            <option value="confirmed" <?php if($a['status'] == 'confirmed') echo 'selected'; ?>>Confirm</option>
+                                            <option value="confirmed" <?php if($a['status'] == 'confirmed') echo 'selected'; ?>>Confirmed</option>
+                                            <option value="waiting" <?php if($a['status'] == 'waiting') echo 'selected'; ?>>Waiting</option>
+                                            <option value="in_consultation" <?php if($a['status'] == 'in_consultation') echo 'selected'; ?>>In Consultation</option>
                                             <option value="completed" <?php if($a['status'] == 'completed') echo 'selected'; ?>>Completed</option>
-                                            <option value="cancelled" <?php if($a['status'] == 'cancelled') echo 'selected'; ?>>Cancel</option>
+                                            <option value="cancelled" <?php if($a['status'] == 'cancelled') echo 'selected'; ?>>Cancelled</option>
+                                            <option value="no_show" <?php if($a['status'] == 'no_show') echo 'selected'; ?>>No-Show</option>
                                         </select>
                                         <button type="submit" name="update_status" class="btn btn-primary" style="padding: 0.3rem 0.7rem; font-size: 0.8rem;">Save</button>
                                     </form>

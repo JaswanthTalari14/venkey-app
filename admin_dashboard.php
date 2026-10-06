@@ -124,6 +124,11 @@ include 'includes/header.php';
         <h3 class="sidebar-title" style="margin-bottom: 2rem;">Admin Menu</h3>
         <ul class="sidebar-menu">
             <li><a href="admin_dashboard.php" class="active"><i class="fas fa-chart-pie"></i> Overview</a></li>
+            <li><a href="admin_search.php"><i class="fas fa-search"></i> Global Search</a></li>
+            <li><a href="admin_reconciliation.php"><i class="fas fa-calculator"></i> Reconciliation</a></li>
+            <li><a href="admin_audit.php"><i class="fas fa-clipboard-list"></i> Audit Logs</a></li>
+            <li><a href="admin_risk.php"><i class="fas fa-shield-alt"></i> Risk Center</a></li>
+            <li><a href="admin_announcements.php"><i class="fas fa-bullhorn"></i> Announcements</a></li>
             <li><a href="admin_users.php"><i class="fas fa-users-cog"></i> Manage Users</a></li>
             <li><a href="admin_verify.php"><i class="fas fa-user-md"></i> Verify Doctors & RMPs</a></li>
             <li><a href="admin_bookings.php"><i class="fas fa-calendar-check"></i> All Bookings</a></li>
