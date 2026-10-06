@@ -388,5 +388,13 @@ if ($action === 'report_order_issue') {
     exit;
 }
 
+// 17. Digital Queue Tracker Data (Feature Group 10)
+if ($action === 'get_queue_tracker') {
+    $appt_id = isset($_GET['appointment_id']) ? (int)$_GET['appointment_id'] : 0;
+    $queue_data = getPatientQueueData($conn, $user_id, $appt_id);
+    echo json_encode(['success' => true, 'data' => $queue_data]);
+    exit;
+}
+
 echo json_encode(['success' => false, 'message' => 'Invalid action']);
 ?>

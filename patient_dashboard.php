@@ -74,12 +74,106 @@ $my_orders = $conn->query("
                 <a href="medicines.php" class="btn btn-outline" style="font-size: 0.8rem;">Order More</a>
             </div>
             
-            <div class="feature-card glass-panel" style="padding: 1.5rem;">
-                <h4 style="color: var(--accent);"><i class="fas fa-user-secret"></i> Privacy Queries</h4>
-                <p style="font-size: 2rem; font-weight: bold; margin: 1rem 0;"><?php echo $privacy_queries; ?></p>
-                <a href="privacy_consult.php" class="btn btn-outline" style="font-size: 0.8rem;">New Query</a>
+        </div>
+
+        <?php
+        $queue_data = getPatientQueueData($conn, $patient_id);
+        if ($queue_data['has_appointment']):
+        ?>
+        <!-- DIGITAL QUEUE TRACKING (Feature Group 10) -->
+        <div class="glass-panel" id="live-queue-card" style="margin-top: 2rem; padding: 1.5rem; border: 1px solid rgba(74, 144, 226, 0.3); background: linear-gradient(135deg, rgba(16, 26, 43, 0.85), rgba(22, 33, 62, 0.95)); border-radius: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.8rem; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+                <h3 style="margin: 0; font-size: 1.15rem; color: #3498db; display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="fas fa-digital-tachograph" style="color: #2ed573;"></i> 
+                    Live Digital Queue Tracker
+                </h3>
+                <span style="font-size: 0.75rem; color: var(--text-secondary); background: rgba(255,255,255,0.05); padding: 0.25rem 0.6rem; border-radius: 12px; display: inline-flex; align-items: center; gap: 0.4rem;">
+                    <i class="fas fa-sync-alt" id="queue-spinner"></i> Real DB Queue Data
+                </span>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1rem; margin-bottom: 1rem; text-align: center;">
+                <!-- Patient Token -->
+                <div style="background: rgba(255,255,255,0.03); padding: 1rem 0.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Patient Token</div>
+                    <div id="q-patient-token" style="font-size: 1.8rem; font-weight: 800; color: var(--primary-color); margin-top: 0.2rem;">
+                        <?php echo htmlspecialchars($queue_data['patient_token']); ?>
+                    </div>
+                </div>
+
+                <!-- Current Serving Token -->
+                <div style="background: rgba(255,255,255,0.03); padding: 1rem 0.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Current Serving</div>
+                    <div id="q-serving-token" style="font-size: 1.8rem; font-weight: 800; color: #2ed573; margin-top: 0.2rem;">
+                        <?php echo htmlspecialchars($queue_data['current_serving_token']); ?>
+                    </div>
+                </div>
+
+                <!-- Position -->
+                <div style="background: rgba(255,255,255,0.03); padding: 1rem 0.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Position</div>
+                    <div id="q-position" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-top: 0.5rem;">
+                        <?php echo htmlspecialchars($queue_data['position']); ?>
+                    </div>
+                </div>
+
+                <!-- Estimated Position / Wait -->
+                <div style="background: rgba(255,255,255,0.03); padding: 1rem 0.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Estimated Wait</div>
+                    <div id="q-est-wait" style="font-size: 0.95rem; font-weight: 700; color: var(--accent); margin-top: 0.5rem;">
+                        <?php echo htmlspecialchars($queue_data['estimated_wait']); ?>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Doctor Info & Consultation Status -->
+            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.25); padding: 0.75rem 1rem; border-radius: 10px; font-size: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
+                <div>
+                    <span style="color: var(--text-secondary);">Doctor:</span>
+                    <strong style="color: var(--text-primary); margin-left: 0.3rem;">Dr. <?php echo htmlspecialchars($queue_data['doctor_name']); ?></strong>
+                    <span style="color: var(--text-secondary); font-size: 0.75rem;">(<?php echo htmlspecialchars($queue_data['specialization']); ?>)</span>
+                    <span style="margin-left: 0.6rem; font-size: 0.75rem; color: var(--secondary-color);"><?php echo $queue_data['appointment_date']; ?> @ <?php echo $queue_data['appointment_time']; ?></span>
+                </div>
+                <div>
+                    <span style="color: var(--text-secondary); margin-right: 0.4rem;">Consultation Status:</span>
+                    <span id="q-status-badge" style="padding: 0.25rem 0.7rem; background: rgba(52, 152, 219, 0.2); color: #3498db; border-radius: 8px; font-weight: 700; font-size: 0.8rem; text-transform: capitalize;">
+                        <?php echo htmlspecialchars($queue_data['status']); ?>
+                    </span>
+                </div>
             </div>
         </div>
+
+        <script>
+        (function() {
+            function refreshLiveQueue() {
+                const spinner = document.getElementById('queue-spinner');
+                if (spinner) spinner.classList.add('fa-spin');
+                fetch('api_patient_features.php?action=get_queue_tracker&appointment_id=<?php echo $queue_data['appointment_id']; ?>')
+                    .then(r => r.json())
+                    .then(res => {
+                        if (spinner) spinner.classList.remove('fa-spin');
+                        if (res.success && res.data && res.data.has_appointment) {
+                            const d = res.data;
+                            const patEl = document.getElementById('q-patient-token');
+                            const srvEl = document.getElementById('q-serving-token');
+                            const posEl = document.getElementById('q-position');
+                            const estEl = document.getElementById('q-est-wait');
+                            const stEl = document.getElementById('q-status-badge');
+
+                            if (patEl) patEl.innerText = d.patient_token;
+                            if (srvEl) srvEl.innerText = d.current_serving_token;
+                            if (posEl) posEl.innerText = d.position;
+                            if (estEl) estEl.innerText = d.estimated_wait;
+                            if (stEl) stEl.innerText = d.status;
+                        }
+                    })
+                    .catch(() => { if (spinner) spinner.classList.remove('fa-spin'); });
+            }
+            // Poll real database every 15 seconds (no fake movement)
+            setInterval(refreshLiveQueue, 15000);
+        })();
+        </script>
+        <?php endif; ?>
 
         <h3 style="margin-top: 3rem; margin-bottom: 1rem;">Recent Medicine Orders tracker</h3>
         <div class="glass-panel" style="overflow-x: auto; padding: 1rem;">

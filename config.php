@@ -692,4 +692,130 @@ function get_profile_image_url($input) {
 
     return '';
 }
+
+/**
+ * Real Digital Queue Tracking helper (Feature Group 10)
+ * Computes exact live token numbers, currently serving token, queue position,
+ * estimated wait time, and consultation status based on real database records.
+ */
+function getPatientQueueData($conn, $patient_id, $appointment_id = null) {
+    $patient_id = (int)$patient_id;
+    
+    // Find target appointment or nearest active appointment
+    if ($appointment_id > 0) {
+        $appt_res = $conn->query("SELECT a.*, d.name as doctor_name, d.specialization FROM appointments a JOIN users d ON a.doctor_id = d.id WHERE a.id = $appointment_id AND a.patient_id = $patient_id LIMIT 1");
+    } else {
+        $appt_res = $conn->query("SELECT a.*, d.name as doctor_name, d.specialization FROM appointments a JOIN users d ON a.doctor_id = d.id WHERE a.patient_id = $patient_id AND LOWER(COALESCE(a.status, '')) NOT IN ('cancelled', 'rejected') AND a.appointment_date >= CURDATE() ORDER BY a.appointment_date ASC, a.appointment_time ASC LIMIT 1");
+    }
+    
+    if (!$appt_res || $appt_res->num_rows === 0) {
+        return [
+            'has_appointment' => false,
+            'message' => 'No active appointment scheduled'
+        ];
+    }
+    
+    $appt = $appt_res->fetch_assoc();
+    $doctor_id = (int)$appt['doctor_id'];
+    $appt_date = $conn->real_escape_string($appt['appointment_date']);
+    $appt_id = (int)$appt['id'];
+    $appt_time = $appt['appointment_time'];
+    $status = strtolower($appt['status'] ?: 'pending');
+    
+    // Fetch all valid appointments for this doctor on this appointment date
+    $q_list = $conn->query("SELECT id, token_no, status, appointment_time FROM appointments WHERE doctor_id = $doctor_id AND appointment_date = '$appt_date' AND LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'rejected') ORDER BY appointment_time ASC, id ASC");
+    
+    $token_idx = 1;
+    $patient_token = $appt['token_no'];
+    $patient_seq = 0;
+    $currently_serving_token = null;
+    $last_completed_token = null;
+    $patients_ahead = 0;
+    
+    if ($q_list && $q_list->num_rows > 0) {
+        while ($row = $q_list->fetch_assoc()) {
+            $row_id = (int)$row['id'];
+            $seq_token = !empty($row['token_no']) ? $row['token_no'] : ('Q-' . str_pad($token_idx, 2, '0', STR_PAD_LEFT));
+            
+            // Backfill token_no in DB if missing
+            if (empty($row['token_no'])) {
+                @$conn->query("UPDATE appointments SET token_no = '$seq_token' WHERE id = $row_id");
+            }
+            
+            if ($row_id === $appt_id) {
+                $patient_token = $seq_token;
+                $patient_seq = $token_idx;
+            }
+            
+            $row_st = strtolower($row['status'] ?: 'pending');
+            if ($row_st === 'in_consultation') {
+                $currently_serving_token = $seq_token;
+            } elseif ($row_st === 'completed') {
+                $last_completed_token = $seq_token;
+            }
+            
+            // Count active patients ahead
+            if ($row_id !== $appt_id && !in_array($row_st, ['completed', 'cancelled', 'rejected', 'no_show'])) {
+                if ($row['appointment_time'] < $appt_time || ($row['appointment_time'] == $appt_time && $row_id < $appt_id)) {
+                    $patients_ahead++;
+                }
+            }
+            
+            $token_idx++;
+        }
+    }
+    
+    if (!$patient_token) {
+        $patient_token = 'Q-' . str_pad($patient_seq ?: 1, 2, '0', STR_PAD_LEFT);
+    }
+    
+    // Determine serving token
+    if (!$currently_serving_token) {
+        if ($last_completed_token) {
+            $currently_serving_token = $last_completed_token . " (Last Served)";
+        } else {
+            $currently_serving_token = "Q-01 (Next)";
+        }
+    }
+    
+    // Calculate Position and Estimated Wait Time
+    if ($status === 'in_consultation') {
+        $position = "1 (Currently Serving)";
+        $est_wait = "Now in Consultation Room";
+    } elseif ($status === 'completed') {
+        $position = "Consultation Finished";
+        $est_wait = "Completed";
+    } elseif ($status === 'cancelled' || $status === 'rejected') {
+        $position = "Cancelled";
+        $est_wait = "N/A";
+    } else {
+        $pos_num = $patients_ahead + 1;
+        $ordinal = $pos_num . ($pos_num % 10 == 1 && $pos_num != 11 ? 'st' : ($pos_num % 10 == 2 && $pos_num != 12 ? 'nd' : ($pos_num % 10 == 3 && $pos_num != 13 ? 'rd' : 'th')));
+        $position = "$ordinal in Queue (" . ($patients_ahead == 0 ? "You are next!" : "$patients_ahead patient" . ($patients_ahead > 1 ? "s" : "") . " ahead") . ")";
+        
+        $est_minutes = $patients_ahead * 10;
+        if ($est_minutes == 0) {
+            $est_wait = "~5-10 mins (Next in line)";
+        } else {
+            $est_wait = "~$est_minutes mins wait";
+        }
+    }
+    
+    return [
+        'has_appointment' => true,
+        'appointment_id' => $appt_id,
+        'patient_token' => $patient_token,
+        'current_serving_token' => $currently_serving_token,
+        'position' => $position,
+        'patients_ahead' => $patients_ahead,
+        'estimated_wait' => $est_wait,
+        'status' => ucfirst(str_replace('_', ' ', $status)),
+        'raw_status' => $status,
+        'doctor_name' => $appt['doctor_name'],
+        'specialization' => $appt['specialization'],
+        'appointment_date' => date('M d, Y', strtotime($appt['appointment_date'])),
+        'appointment_time' => date('h:i A', strtotime($appt['appointment_time'])),
+        'type' => strtoupper($appt['type'] ?: 'OFFLINE')
+    ];
+}
 ?>
