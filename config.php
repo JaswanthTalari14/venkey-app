@@ -444,6 +444,102 @@ function ensure_database_indexes($conn) {
         INDEX (patient_id)
     )");
 
+    // Feature 1, 9, 27, 24, 29, 18, 40, 50, 39, 42 Database Structures
+    $conn->query("CREATE TABLE IF NOT EXISTS appointment_waitlist (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        doctor_id INT NOT NULL,
+        preferred_date DATE NOT NULL,
+        notes TEXT DEFAULT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (doctor_id, preferred_date)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS doctor_leave (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        doctor_id INT NOT NULL,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        reason TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (doctor_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS prescription_templates (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        doctor_id INT NOT NULL,
+        title VARCHAR(150) NOT NULL,
+        description TEXT DEFAULT NULL,
+        items_json TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (doctor_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS doctor_earnings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        doctor_id INT NOT NULL,
+        appointment_id INT DEFAULT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        status VARCHAR(20) DEFAULT 'completed',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (doctor_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS order_issues (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        order_id INT NOT NULL,
+        issue_type VARCHAR(50) NOT NULL,
+        description TEXT NOT NULL,
+        status VARCHAR(30) DEFAULT 'Under Review',
+        admin_notes TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (order_id),
+        INDEX (patient_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS support_cases (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        category VARCHAR(50) NOT NULL,
+        reference_id VARCHAR(100) DEFAULT NULL,
+        assigned_admin_id INT DEFAULT NULL,
+        status VARCHAR(30) DEFAULT 'open',
+        notes TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (user_id),
+        INDEX (status)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS privacy_access_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        accessed_by_id INT NOT NULL,
+        record_type VARCHAR(50) NOT NULL,
+        record_id INT DEFAULT NULL,
+        accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (patient_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS admin_saved_filters (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        admin_id INT NOT NULL,
+        filter_name VARCHAR(100) NOT NULL,
+        filter_params_json TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (admin_id)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS failed_jobs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        job_type VARCHAR(50) NOT NULL,
+        payload_json TEXT NOT NULL,
+        error_message TEXT DEFAULT NULL,
+        status VARCHAR(20) DEFAULT 'failed',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )");
+
     // Auto-migrate columns for appointments table
     @$conn->query("ALTER TABLE appointments MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
     $app_col_res = @$conn->query("SHOW COLUMNS FROM appointments");
@@ -476,6 +572,10 @@ function ensure_database_indexes($conn) {
         while ($ucol_row = $ucol_res->fetch_assoc()) {
             $u_cols[] = strtolower($ucol_row['Field']);
         }
+        if (!in_array('health_id', $u_cols)) {
+            @$conn->query("ALTER TABLE users ADD COLUMN health_id VARCHAR(50) DEFAULT NULL");
+            @$conn->query("CREATE UNIQUE INDEX idx_u_health_id ON users (health_id)");
+        }
         if (!in_array('profile_image', $u_cols) && !in_array('image', $u_cols) && !in_array('avatar', $u_cols)) {
             @$conn->query("ALTER TABLE users ADD COLUMN profile_image VARCHAR(255) DEFAULT NULL");
         }
@@ -506,6 +606,9 @@ function ensure_database_indexes($conn) {
         if (!in_array('last_login', $u_cols)) {
             @$conn->query("ALTER TABLE users ADD COLUMN last_login TIMESTAMP NULL DEFAULT NULL");
         }
+
+        // Backfill Health IDs for patients missing health_id
+        @$conn->query("UPDATE users SET health_id = CONCAT('MAK-', LPAD(id, 6, '0')) WHERE (health_id IS NULL OR health_id = '') AND role = 'patient'");
     }
 
     // Auto-migrate columns for user_notifications table

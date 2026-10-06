@@ -126,6 +126,8 @@ include 'includes/header.php';
             <li><a href="admin_dashboard.php" class="active"><i class="fas fa-chart-pie"></i> Overview</a></li>
             <li><a href="admin_search.php"><i class="fas fa-search"></i> Global Search</a></li>
             <li><a href="admin_reconciliation.php"><i class="fas fa-calculator"></i> Reconciliation</a></li>
+            <li><a href="admin_cases.php"><i class="fas fa-briefcase"></i> Case Management</a></li>
+            <li><a href="admin_system_health.php"><i class="fas fa-heartbeat"></i> System Health</a></li>
             <li><a href="admin_audit.php"><i class="fas fa-clipboard-list"></i> Audit Logs</a></li>
             <li><a href="admin_risk.php"><i class="fas fa-shield-alt"></i> Risk Center</a></li>
             <li><a href="admin_announcements.php"><i class="fas fa-bullhorn"></i> Announcements</a></li>

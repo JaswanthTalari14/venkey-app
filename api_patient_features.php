@@ -328,5 +328,65 @@ if ($action === 'save_notification_preferences') {
     exit;
 }
 
+// 14. Join Appointment Waitlist (Feature Group 9)
+if ($action === 'join_waitlist') {
+    $doctor_id = (int)($_POST['doctor_id'] ?? 0);
+    $pref_date = trim($_POST['preferred_date'] ?? date('Y-m-d'));
+    $notes = trim($_POST['notes'] ?? '');
+
+    if ($doctor_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid doctor selection']);
+        exit;
+    }
+
+    $stmt = $conn->prepare("INSERT INTO appointment_waitlist (patient_id, doctor_id, preferred_date, notes) VALUES (?, ?, ?, ?)");
+    $stmt->bind_param("iiss", $user_id, $doctor_id, $pref_date, $notes);
+    $ok = $stmt->execute();
+    echo json_encode(['success' => (bool)$ok, 'message' => 'Successfully joined doctor appointment waitlist']);
+    exit;
+}
+
+// 15. Reschedule Appointment (Feature Group 8)
+if ($action === 'reschedule_appointment') {
+    $appt_id = (int)($_POST['appointment_id'] ?? 0);
+    $new_date = trim($_POST['new_date'] ?? '');
+    $new_time = trim($_POST['new_time'] ?? '');
+
+    if ($appt_id <= 0 || empty($new_date) || empty($new_time)) {
+        echo json_encode(['success' => false, 'message' => 'Appointment ID, date, and time are required']);
+        exit;
+    }
+
+    $chk = $conn->query("SELECT id FROM appointments WHERE id = $appt_id AND patient_id = $user_id");
+    if (!$chk || $chk->num_rows === 0) {
+        echo json_encode(['success' => false, 'message' => 'Appointment not found or access denied']);
+        exit;
+    }
+
+    $stmt = $conn->prepare("UPDATE appointments SET appointment_date = ?, appointment_time = ?, status = 'pending' WHERE id = ? AND patient_id = ?");
+    $stmt->bind_param("ssii", $new_date, $new_time, $appt_id, $user_id);
+    $ok = $stmt->execute();
+    echo json_encode(['success' => (bool)$ok, 'message' => 'Appointment rescheduled successfully']);
+    exit;
+}
+
+// 16. Report Order Issue (Feature Group 18)
+if ($action === 'report_order_issue') {
+    $order_id = (int)($_POST['order_id'] ?? 0);
+    $issue_type = trim($_POST['issue_type'] ?? 'General Issue');
+    $desc = trim($_POST['description'] ?? '');
+
+    if ($order_id <= 0 || empty($desc)) {
+        echo json_encode(['success' => false, 'message' => 'Order ID and issue description required']);
+        exit;
+    }
+
+    $stmt = $conn->prepare("INSERT INTO order_issues (patient_id, order_id, issue_type, description) VALUES (?, ?, ?, ?)");
+    $stmt->bind_param("iiss", $user_id, $order_id, $issue_type, $desc);
+    $ok = $stmt->execute();
+    echo json_encode(['success' => (bool)$ok, 'message' => 'Order issue reported to Support and Admin']);
+    exit;
+}
+
 echo json_encode(['success' => false, 'message' => 'Invalid action']);
 ?>
