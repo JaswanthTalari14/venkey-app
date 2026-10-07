@@ -471,23 +471,24 @@ include 'includes/header.php';
 .chat-bottom-composer {
     background: rgba(15, 23, 42, 0.98);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 0.9rem 1.2rem;
+    padding: 0.7rem 1rem;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.5rem;
     position: relative;
     z-index: 10;
+    width: 100%;
 }
 
 .composer-input-row {
     display: flex;
-    align-items: flex-end;
-    gap: 0.7rem;
-    background: rgba(30, 41, 59, 0.8);
+    align-items: center;
+    gap: 0.6rem;
+    background: rgba(30, 41, 59, 0.85);
     border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 16px;
-    padding: 0.5rem 0.8rem;
-    transition: border-color 0.2s;
+    border-radius: 20px;
+    padding: 0.35rem 0.5rem 0.35rem 0.8rem;
+    width: 100%;
 }
 
 .composer-input-row:focus-within {
@@ -496,7 +497,9 @@ include 'includes/header.php';
 }
 
 .chat-textarea {
-    flex: 1;
+    flex: 1 !important;
+    min-width: 0 !important;
+    width: 100% !important;
     background: transparent;
     border: none;
     outline: none;
@@ -506,7 +509,7 @@ include 'includes/header.php';
     resize: none;
     max-height: 120px;
     min-height: 38px;
-    padding: 0.4rem 0.2rem;
+    padding: 0.45rem 0.3rem;
     line-height: 1.4;
 }
 
@@ -515,6 +518,7 @@ include 'includes/header.php';
 }
 
 .attach-btn-icon {
+    flex-shrink: 0;
     background: transparent;
     border: none;
     color: #94a3b8;
@@ -534,11 +538,12 @@ include 'includes/header.php';
 }
 
 .send-msg-btn {
+    flex-shrink: 0;
     background: linear-gradient(135deg, #059669 0%, #047857 100%);
     color: #ffffff;
     border: none;
-    border-radius: 12px;
-    padding: 0.6rem 1.2rem;
+    border-radius: 14px;
+    padding: 0.55rem 1.1rem;
     font-weight: 700;
     font-size: 0.9rem;
     cursor: pointer;
@@ -1011,26 +1016,36 @@ function renderMessagesBatch(rawList, isInitial = false) {
         emptyState.remove();
     }
 
-    let lastDateStr = '';
-
     rawList.forEach(m => {
         const msgId = parseInt(m.id || 0);
+        
+        // 1. Strict Duplicate Check: If message with this ID is already in the DOM, skip!
+        if (msgId > 0 && listContainer.querySelector(`.chat-bubble-row[data-id="${msgId}"]`)) {
+            if (msgId > lastReplyId) lastReplyId = msgId;
+            return;
+        }
+
         if (msgId > lastReplyId) {
             lastReplyId = msgId;
         }
 
+        // 2. Date Separator Check
         const msgDateStr = m.created_at ? m.created_at.split(' ')[0] : '';
-        if (msgDateStr && msgDateStr !== lastDateStr) {
-            lastDateStr = msgDateStr;
-            const dateDivider = document.createElement('div');
-            dateDivider.className = 'chat-date-separator';
-
+        if (msgDateStr) {
             const todayStr = new Date().toISOString().split('T')[0];
             let label = m.formatted_date || msgDateStr;
             if (msgDateStr === todayStr) label = 'Today';
 
-            dateDivider.innerHTML = `<span>${label}</span>`;
-            listContainer.appendChild(dateDivider);
+            const lastSeparator = listContainer.querySelector('.chat-date-separator:last-of-type span');
+            const lastSepLabel = lastSeparator ? lastSeparator.textContent.trim().toUpperCase() : '';
+            const currentLabelUpper = label.trim().toUpperCase();
+
+            if (lastSepLabel !== currentLabelUpper) {
+                const dateDivider = document.createElement('div');
+                dateDivider.className = 'chat-date-separator';
+                dateDivider.innerHTML = `<span>${escapeHtml(label)}</span>`;
+                listContainer.appendChild(dateDivider);
+            }
         }
 
         const isMine = (parseInt(m.sender_id) === CURRENT_USER_ID);
@@ -1114,6 +1129,7 @@ function handleSendReply(e) {
 
     const messageText = textarea ? textarea.value.trim() : '';
     if (!messageText && (!fileInput || !fileInput.files[0])) return;
+    if (sendBtn && sendBtn.disabled) return;
 
     // Loading State
     sendBtn.disabled = true;
