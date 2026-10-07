@@ -86,6 +86,56 @@ if ($action === 'fetch_messages') {
     exit;
 }
 
+// ACTION 1B: FETCH OLDER MESSAGES (PAGINATION)
+if ($action === 'fetch_older_messages') {
+    $before_id = isset($_GET['before_id']) ? (int)$_GET['before_id'] : 0;
+    $limit     = isset($_GET['limit']) ? min(50, max(10, (int)$_GET['limit'])) : 20;
+
+    $replies_where = $is_admin ? "1=1" : "is_internal_note = 0";
+    $before_sql = ($before_id > 0) ? " AND r.id < $before_id " : "";
+
+    $replies_stmt = $conn->prepare("
+        SELECT r.*, u.name as sender_name 
+        FROM support_ticket_replies r
+        JOIN users u ON r.sender_id = u.id
+        WHERE r.ticket_id = ? $before_sql AND $replies_where
+        ORDER BY r.id DESC
+        LIMIT ?
+    ");
+    $replies_stmt->bind_param("ii", $ticket_id, $limit);
+    $replies_stmt->execute();
+    $res = $replies_stmt->get_result();
+
+    $messages = [];
+    while ($r = $res->fetch_assoc()) {
+        $messages[] = [
+            'id'               => (int)$r['id'],
+            'ticket_id'        => (int)$r['ticket_id'],
+            'sender_id'        => (int)$r['sender_id'],
+            'sender_name'      => $r['sender_name'],
+            'sender_role'      => $r['sender_role'],
+            'message'          => $r['message'],
+            'is_internal_note' => (bool)$r['is_internal_note'],
+            'attachment_path'  => $r['attachment_path'],
+            'created_at'       => $r['created_at'],
+            'formatted_time'   => date('h:i A', strtotime($r['created_at'])),
+            'formatted_date'   => date('M d, Y', strtotime($r['created_at'])),
+            'is_today'         => (date('Y-m-d', strtotime($r['created_at'])) === date('Y-m-d')),
+            'is_mine'          => ((int)$r['sender_id'] === $user_id)
+        ];
+    }
+    $messages = array_reverse($messages);
+
+    echo json_encode([
+        'success'       => true,
+        'ticket_status' => $ticket['status'],
+        'messages'      => $messages,
+        'user_id'       => $user_id,
+        'has_more'      => (count($messages) >= $limit)
+    ]);
+    exit;
+}
+
 // ACTION 2: SEND NEW REPLY MESSAGE
 if ($action === 'send_reply') {
     if (strtolower($ticket['status']) === 'closed') {

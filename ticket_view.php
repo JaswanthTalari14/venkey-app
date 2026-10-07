@@ -170,16 +170,16 @@ include 'includes/header.php';
 .support-chat-workspace {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 180px);
-    min-height: 560px;
-    max-height: 850px;
+    height: calc(100dvh - 140px);
+    height: calc(100vh - 140px);
+    min-height: 580px;
     background: rgba(15, 23, 42, 0.75);
     backdrop-filter: blur(16px);
     border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
     border-radius: 20px;
     overflow: hidden;
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
 }
 
 /* Chat Header */
@@ -628,9 +628,11 @@ include 'includes/header.php';
 /* Mobile Adjustments */
 @media (max-width: 768px) {
     .support-chat-workspace {
-        height: calc(100vh - 120px);
-        min-height: 460px;
+        height: calc(100dvh - 80px);
+        height: calc(100vh - 80px);
+        min-height: 480px;
         border-radius: 12px;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
     }
     .chat-bubble-row {
         max-width: 88%;
@@ -639,7 +641,7 @@ include 'includes/header.php';
         padding: 0.8rem 1rem;
     }
     .chat-messages-stream {
-        padding: 1rem;
+        padding: 0.9rem;
     }
 }
 </style>
