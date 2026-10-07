@@ -185,13 +185,16 @@ if ($action === 'send_reply') {
         $reply_id = $conn->insert_id;
 
         // Update Ticket Status & Timestamps
+        $current_updated_status = $ticket['status'];
         if ($is_admin && !$is_internal) {
             $new_st = 'waiting_customer';
             $conn->query("UPDATE support_tickets SET status = '$new_st', updated_at = NOW() WHERE id = $ticket_id");
+            $current_updated_status = $new_st;
             create_notification((int)$ticket['customer_id'], "Support Team Replied", "Support team replied to ticket #{$ticket['ticket_number']}.", 'system', 'ticket', (string)$ticket_id);
         } elseif (!$is_admin) {
-            $new_st = ($ticket['status'] === 'waiting_customer') ? 'in_progress' : $ticket['status'];
+            $new_st = ($ticket['status'] === 'waiting_customer' || $ticket['status'] === 'open') ? 'in_progress' : $ticket['status'];
             $conn->query("UPDATE support_tickets SET status = '$new_st', updated_at = NOW() WHERE id = $ticket_id");
+            $current_updated_status = $new_st;
 
             // Notify Admins
             $admins_q = $conn->query("SELECT id FROM users WHERE role = 'admin'");
@@ -214,9 +217,10 @@ if ($action === 'send_reply') {
         $new_msg = $inserted_stmt->get_result()->fetch_assoc();
 
         echo json_encode([
-            'success' => true,
-            'message' => 'Reply sent successfully.',
-            'reply'   => [
+            'success'       => true,
+            'message'       => 'Reply sent successfully.',
+            'ticket_status' => $current_updated_status,
+            'reply'         => [
                 'id'               => (int)$new_msg['id'],
                 'ticket_id'        => (int)$new_msg['ticket_id'],
                 'sender_id'        => (int)$new_msg['sender_id'],

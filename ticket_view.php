@@ -750,7 +750,7 @@ include 'includes/header.php';
                                 $st_label = 'Closed';
                             }
                         ?>
-                        <span class="ticket-status-pill" style="background: <?php echo $badge_bg; ?>; color: <?php echo $badge_color; ?>; border: 1px solid <?php echo $badge_color; ?>;">
+                        <span id="ticketStatusPill" class="ticket-status-pill" style="background: <?php echo $badge_bg; ?>; color: <?php echo $badge_color; ?>; border: 1px solid <?php echo $badge_color; ?>;">
                             <i class="fas fa-circle" style="font-size: 0.5rem;"></i> <?php echo $st_label; ?>
                         </span>
 
@@ -783,34 +783,33 @@ include 'includes/header.php';
                     <?php if (!empty($ticket['related_entity_type']) && !empty($ticket['related_entity_id'])): ?>
                         <div><strong>Related Record:</strong> <span style="color: #34d399; font-weight: bold; text-transform: uppercase;"><?php echo htmlspecialchars($ticket['related_entity_type']); ?> #<?php echo htmlspecialchars($ticket['related_entity_id']); ?></span></div>
                     <?php endif; ?>
+
+                    <?php if ($is_admin): ?>
+                        <div style="display: none; grid-column: 1 / -1; padding-top: 0.6rem; border-top: 1px dashed rgba(255,255,255,0.08); margin-top: 0.4rem;">
+                            <form method="POST" style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+                                <span style="font-weight: 700; font-size: 0.78rem; color: #10b981;">STATUS OVERRIDE:</span>
+                                <select name="status" class="form-control" style="max-width: 150px; font-size: 0.78rem; padding: 0.25rem 0.5rem;">
+                                    <option value="open" <?php echo $ticket['status'] === 'open' ? 'selected' : ''; ?>>🟡 Open</option>
+                                    <option value="in_progress" <?php echo $ticket['status'] === 'in_progress' ? 'selected' : ''; ?>>🔵 In Progress</option>
+                                    <option value="waiting_customer" <?php echo $ticket['status'] === 'waiting_customer' ? 'selected' : ''; ?>>🟠 Waiting Customer</option>
+                                    <option value="resolved" <?php echo $ticket['status'] === 'resolved' ? 'selected' : ''; ?>>🟢 Resolved</option>
+                                    <option value="closed" <?php echo $ticket['status'] === 'closed' ? 'selected' : ''; ?>>⚫ Closed</option>
+                                </select>
+
+                                <select name="priority" class="form-control" style="max-width: 120px; font-size: 0.78rem; padding: 0.25rem 0.5rem;">
+                                    <option value="low" <?php echo $ticket['priority'] === 'low' ? 'selected' : ''; ?>>Low</option>
+                                    <option value="normal" <?php echo $ticket['priority'] === 'normal' ? 'selected' : ''; ?>>Normal</option>
+                                    <option value="high" <?php echo $ticket['priority'] === 'high' ? 'selected' : ''; ?>>High</option>
+                                    <option value="urgent" <?php echo $ticket['priority'] === 'urgent' ? 'selected' : ''; ?>>Urgent</option>
+                                </select>
+
+                                <button type="submit" name="update_status_priority" value="1" class="btn btn-primary" style="font-size: 0.76rem; padding: 0.25rem 0.7rem;">
+                                    Save
+                                </button>
+                            </form>
+                        </div>
+                    <?php endif; ?>
                 </div>
-
-                <!-- Admin Status Manager -->
-                <?php if ($is_admin): ?>
-                    <div style="padding-top: 0.6rem; border-top: 1px dashed rgba(255,255,255,0.08);">
-                        <form method="POST" style="display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap;">
-                            <span style="font-weight: 700; font-size: 0.8rem; color: #10b981;">ADMIN CONTROLS:</span>
-                            <select name="status" class="form-control" style="max-width: 170px; font-size: 0.82rem; padding: 0.3rem 0.6rem;">
-                                <option value="open" <?php echo $ticket['status'] === 'open' ? 'selected' : ''; ?>>🟡 Open</option>
-                                <option value="in_progress" <?php echo $ticket['status'] === 'in_progress' ? 'selected' : ''; ?>>🔵 In Progress</option>
-                                <option value="waiting_customer" <?php echo $ticket['status'] === 'waiting_customer' ? 'selected' : ''; ?>>🟠 Waiting Customer</option>
-                                <option value="resolved" <?php echo $ticket['status'] === 'resolved' ? 'selected' : ''; ?>>🟢 Resolved</option>
-                                <option value="closed" <?php echo $ticket['status'] === 'closed' ? 'selected' : ''; ?>>⚫ Closed</option>
-                            </select>
-
-                            <select name="priority" class="form-control" style="max-width: 130px; font-size: 0.82rem; padding: 0.3rem 0.6rem;">
-                                <option value="low" <?php echo $ticket['priority'] === 'low' ? 'selected' : ''; ?>>Low</option>
-                                <option value="normal" <?php echo $ticket['priority'] === 'normal' ? 'selected' : ''; ?>>Normal</option>
-                                <option value="high" <?php echo $ticket['priority'] === 'high' ? 'selected' : ''; ?>>High</option>
-                                <option value="urgent" <?php echo $ticket['priority'] === 'urgent' ? 'selected' : ''; ?>>Urgent</option>
-                            </select>
-
-                            <button type="submit" name="update_status_priority" value="1" class="btn btn-primary" style="font-size: 0.8rem; padding: 0.3rem 0.8rem;">
-                                Save Status
-                            </button>
-                        </form>
-                    </div>
-                <?php endif; ?>
             </div>
 
             <!-- Scrollable Messages Stream -->
@@ -1106,13 +1105,56 @@ function renderMessagesBatch(rawList, isInitial = false) {
     }
 }
 
+// Update Ticket Status Badge dynamically
+function updateTicketStatusBadge(statusStr) {
+    const pill = document.getElementById('ticketStatusPill');
+    if (!pill || !statusStr) return;
+    
+    const st = statusStr.toLowerCase();
+    let bg = 'rgba(245, 158, 11, 0.18)';
+    let color = '#f59e0b';
+    let label = 'Open';
+    
+    if (st === 'in_progress') {
+        bg = 'rgba(59, 130, 246, 0.18)';
+        color = '#60a5fa';
+        label = 'In Progress';
+    } else if (st === 'waiting_customer') {
+        bg = 'rgba(245, 158, 11, 0.18)';
+        color = '#fbbf24';
+        label = 'Waiting Customer';
+    } else if (st === 'resolved') {
+        bg = 'rgba(16, 185, 129, 0.18)';
+        color = '#34d399';
+        label = 'Resolved';
+    } else if (st === 'closed') {
+        bg = 'rgba(148, 163, 184, 0.15)';
+        color = '#94a3b8';
+        label = 'Closed';
+    } else if (st === 'open') {
+        bg = 'rgba(245, 158, 11, 0.18)';
+        color = '#f59e0b';
+        label = 'Open';
+    }
+    
+    pill.style.background = bg;
+    pill.style.color = color;
+    pill.style.borderColor = color;
+    pill.innerHTML = `<i class="fas fa-circle" style="font-size: 0.5rem;"></i> ${escapeHtml(label)}`;
+}
+
 // Fetch Live Messages via AJAX
 function fetchLiveMessages() {
     fetch(`api_support_chat.php?action=fetch_messages&ticket_id=${TICKET_ID}&last_id=${lastReplyId}`)
         .then(res => res.json())
         .then(data => {
-            if (data.success && data.messages && data.messages.length > 0) {
-                renderMessagesBatch(data.messages, false);
+            if (data.success) {
+                if (data.ticket_status) {
+                    updateTicketStatusBadge(data.ticket_status);
+                }
+                if (data.messages && data.messages.length > 0) {
+                    renderMessagesBatch(data.messages, false);
+                }
             }
         })
         .catch(err => console.log('Polling notice:', err));
@@ -1161,6 +1203,10 @@ function handleSendReply(e) {
             clearSelectedFile();
 
             if (internalCheckbox) internalCheckbox.checked = false;
+
+            if (data.ticket_status) {
+                updateTicketStatusBadge(data.ticket_status);
+            }
 
             renderMessagesBatch([data.reply], false);
             scrollToBottom(true);
