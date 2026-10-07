@@ -53,6 +53,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // 1b. Resolve Ticket Action (Customer or Admin)
+    if (isset($_POST['resolve_ticket'])) {
+        $stmt_resolve = $conn->prepare("UPDATE support_tickets SET status = 'resolved', resolved_at = NOW() WHERE id = ?");
+        $stmt_resolve->bind_param("i", $ticket_id);
+        if ($stmt_resolve->execute()) {
+            $ticket['status'] = 'resolved';
+            log_admin_activity($conn, $user_id, "Ticket Resolved", "support_tickets", $ticket_id, "Resolved ticket #{$ticket['ticket_number']}");
+            create_notification((int)$ticket['customer_id'], "Support Ticket Resolved", "Your support ticket #{$ticket['ticket_number']} has been marked as resolved.", 'system', 'ticket', (string)$ticket_id);
+            $msg_success = "Support ticket has been marked as resolved.";
+        }
+    }
+
     // 2. Admin Status / Priority Update
     if ($is_admin && isset($_POST['update_status_priority'])) {
         $new_st   = trim($_POST['status'] ?? $ticket['status']);
@@ -759,10 +771,18 @@ include 'includes/header.php';
                         </span>
                     </div>
 
-                    <div style="display: flex; gap: 0.6rem; align-items: center;">
+                    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
                         <button id="toggleDetailsBtn" type="button" class="btn btn-outline" style="font-size: 0.78rem; padding: 0.3rem 0.7rem;" onclick="toggleTicketDrawer()">
                             <i class="fas fa-info-circle"></i> Ticket Details <i class="fas fa-chevron-down" id="drawerChevron"></i>
                         </button>
+
+                        <?php if ($st !== 'resolved' && $st !== 'closed'): ?>
+                            <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to mark this ticket as resolved?');">
+                                <button type="submit" name="resolve_ticket" value="1" class="btn btn-outline" style="font-size: 0.78rem; padding: 0.3rem 0.7rem; color: #10b981; border-color: #10b981;">
+                                    <i class="fas fa-check-circle"></i> Resolve
+                                </button>
+                            </form>
+                        <?php endif; ?>
 
                         <?php if ($st !== 'closed'): ?>
                             <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to close this ticket?');">
@@ -785,7 +805,7 @@ include 'includes/header.php';
                     <?php endif; ?>
 
                     <?php if ($is_admin): ?>
-                        <div style="display: none; grid-column: 1 / -1; padding-top: 0.6rem; border-top: 1px dashed rgba(255,255,255,0.08); margin-top: 0.4rem;">
+                        <div style="grid-column: 1 / -1; padding-top: 0.6rem; border-top: 1px dashed rgba(255,255,255,0.08); margin-top: 0.4rem;">
                             <form method="POST" style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
                                 <span style="font-weight: 700; font-size: 0.78rem; color: #10b981;">STATUS OVERRIDE:</span>
                                 <select name="status" class="form-control" style="max-width: 150px; font-size: 0.78rem; padding: 0.25rem 0.5rem;">

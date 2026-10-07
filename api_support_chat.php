@@ -243,5 +243,38 @@ if ($action === 'send_reply') {
     }
 }
 
+// ACTION 3: UPDATE TICKET STATUS
+if ($action === 'update_status') {
+    $new_st = trim($_POST['status'] ?? '');
+    $allowed_st = ['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'];
+    if (!in_array($new_st, $allowed_st)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid status']);
+        exit;
+    }
+
+    if (!$is_admin && !in_array($new_st, ['resolved', 'closed'])) {
+        echo json_encode(['success' => false, 'message' => 'Permission denied']);
+        exit;
+    }
+
+    $prev_st = $ticket['status'];
+    $resolved_sql = ($new_st === 'resolved' && $prev_st !== 'resolved') ? ", resolved_at = NOW()" : "";
+    $closed_sql   = ($new_st === 'closed' && $prev_st !== 'closed') ? ", closed_at = NOW()" : "";
+
+    $stmt_upd = $conn->prepare("UPDATE support_tickets SET status = ? $resolved_sql $closed_sql WHERE id = ?");
+    $stmt_upd->bind_param("si", $new_st, $ticket_id);
+    if ($stmt_upd->execute()) {
+        log_admin_activity($conn, $user_id, "Ticket Status Updated", "support_tickets", $ticket_id, "Updated ticket #{$ticket['ticket_number']} status to '$new_st'");
+        $st_label = ucfirst(str_replace('_', ' ', $new_st));
+        create_notification((int)$ticket['customer_id'], "Support Ticket Status: $st_label", "Your support ticket #{$ticket['ticket_number']} status is now $st_label.", 'system', 'ticket', (string)$ticket_id);
+
+        echo json_encode(['success' => true, 'message' => "Ticket status updated to $st_label", 'ticket_status' => $new_st]);
+        exit;
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Failed to update ticket status.']);
+        exit;
+    }
+}
+
 echo json_encode(['success' => false, 'message' => 'Invalid action']);
 exit;
