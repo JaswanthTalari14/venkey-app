@@ -74,59 +74,78 @@ function init_wallet_tables() {
     )");
 
     // Auto-migrate wallet_topups columns if table existed
-    $conn->query("ALTER TABLE wallet_topups MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
-    $conn->query("ALTER TABLE wallet_transactions MODIFY COLUMN transaction_type VARCHAR(50) NOT NULL");
-    $conn->query("ALTER TABLE wallet_transactions MODIFY COLUMN status VARCHAR(50) DEFAULT 'completed'");
+    try { @$conn->query("ALTER TABLE wallet_topups MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'"); } catch (Throwable $t) {}
+    try { @$conn->query("ALTER TABLE wallet_transactions MODIFY COLUMN transaction_type VARCHAR(50) NOT NULL"); } catch (Throwable $t) {}
+    try { @$conn->query("ALTER TABLE wallet_transactions MODIFY COLUMN status VARCHAR(50) DEFAULT 'completed'"); } catch (Throwable $t) {}
 
-    $col_res = $conn->query("SHOW COLUMNS FROM wallet_topups");
-    if ($col_res) {
-        $existing_cols = [];
-        while ($col_row = $col_res->fetch_assoc()) {
-            $existing_cols[] = strtolower($col_row['Field']);
+    try {
+        $col_res = @$conn->query("SHOW COLUMNS FROM wallet_topups");
+        if ($col_res) {
+            $existing_cols = [];
+            while ($col_row = $col_res->fetch_assoc()) {
+                $existing_cols[] = strtolower($col_row['Field']);
+            }
+            if (!empty($existing_cols)) {
+                if (!in_array('paid_amount', $existing_cols)) {
+                    @$conn->query("ALTER TABLE wallet_topups ADD COLUMN paid_amount DECIMAL(10,2) DEFAULT NULL AFTER amount");
+                }
+                if (!in_array('rejection_reason', $existing_cols)) {
+                    @$conn->query("ALTER TABLE wallet_topups ADD COLUMN rejection_reason TEXT DEFAULT NULL");
+                }
+                if (!in_array('approved_by', $existing_cols)) {
+                    @$conn->query("ALTER TABLE wallet_topups ADD COLUMN approved_by INT DEFAULT NULL");
+                }
+                if (!in_array('approved_at', $existing_cols)) {
+                    @$conn->query("ALTER TABLE wallet_topups ADD COLUMN approved_at TIMESTAMP NULL");
+                }
+            }
         }
-        if (!empty($existing_cols)) {
-            if (!in_array('paid_amount', $existing_cols)) {
-                $conn->query("ALTER TABLE wallet_topups ADD COLUMN paid_amount DECIMAL(10,2) DEFAULT NULL AFTER amount");
-            }
-            if (!in_array('rejection_reason', $existing_cols)) {
-                $conn->query("ALTER TABLE wallet_topups ADD COLUMN rejection_reason TEXT DEFAULT NULL");
-            }
-            if (!in_array('approved_by', $existing_cols)) {
-                $conn->query("ALTER TABLE wallet_topups ADD COLUMN approved_by INT DEFAULT NULL");
-            }
-            if (!in_array('approved_at', $existing_cols)) {
-                $conn->query("ALTER TABLE wallet_topups ADD COLUMN approved_at TIMESTAMP NULL");
-            }
-        }
-    }
+    } catch (Throwable $t) {}
 
     // 5. User Notifications Table
-    $conn->query("CREATE TABLE IF NOT EXISTS user_notifications (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        user_id INT NOT NULL,
-        title VARCHAR(255) NOT NULL,
-        message TEXT NOT NULL,
-        is_read TINYINT(1) DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )");
+    try {
+        $conn->query("CREATE TABLE IF NOT EXISTS user_notifications (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            user_id INT NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
+            is_read TINYINT(1) DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )");
+    } catch (Throwable $t) {}
 
     // 6. Wallet Audit Logs Table
-    $conn->query("CREATE TABLE IF NOT EXISTS wallet_audit_logs (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        topup_id VARCHAR(100) NOT NULL,
-        admin_id INT NOT NULL,
-        action VARCHAR(50) NOT NULL,
-        prev_status VARCHAR(50) DEFAULT NULL,
-        new_status VARCHAR(50) NOT NULL,
-        reason TEXT DEFAULT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE
-    )");
+    try {
+        $conn->query("CREATE TABLE IF NOT EXISTS wallet_audit_logs (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            topup_id VARCHAR(100) NOT NULL,
+            admin_id INT NOT NULL,
+            action VARCHAR(50) NOT NULL,
+            prev_status VARCHAR(50) DEFAULT NULL,
+            new_status VARCHAR(50) NOT NULL,
+            reason TEXT DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE
+        )");
+    } catch (Throwable $t) {}
 
     // 7. Ensure users table column compatibility (phone and mobile)
-    @$conn->query("ALTER TABLE users ADD COLUMN phone VARCHAR(50) DEFAULT NULL");
-    @$conn->query("ALTER TABLE users ADD COLUMN mobile VARCHAR(50) DEFAULT NULL");
+    try {
+        $uc_res = @$conn->query("SHOW COLUMNS FROM users");
+        if ($uc_res) {
+            $u_fields = [];
+            while ($uc_row = $uc_res->fetch_assoc()) {
+                $u_fields[] = strtolower($uc_row['Field']);
+            }
+            if (!in_array('phone', $u_fields)) {
+                @$conn->query("ALTER TABLE users ADD COLUMN phone VARCHAR(50) DEFAULT NULL");
+            }
+            if (!in_array('mobile', $u_fields)) {
+                @$conn->query("ALTER TABLE users ADD COLUMN mobile VARCHAR(50) DEFAULT NULL");
+            }
+        }
+    } catch (Throwable $t) {}
 }
 
 // Run Table Initialization & Migration automatically
