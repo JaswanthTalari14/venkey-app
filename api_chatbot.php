@@ -76,6 +76,42 @@ function getSmartFallbackReply($msg) {
         $patient_id = (int)$_SESSION['user_id'];
         global $conn;
 
+        // Order / Tracking query
+        if (strpos($lower, 'order') !== false || strpos($lower, 'track') !== false || strpos($lower, 'delivery') !== false) {
+            $ord_q = $conn->query("SELECT * FROM orders WHERE patient_id = $patient_id AND (is_deleted IS NULL OR is_deleted = 0) ORDER BY id DESC LIMIT 1");
+            if ($ord_q && $ord_q->num_rows > 0) {
+                $ord = $ord_q->fetch_assoc();
+                $st = ucfirst($ord['status'] ?? 'Pending');
+                return "Your latest order (#ORD-" . $ord['id'] . ") placed on " . date('M d, Y', strtotime($ord['created_at'])) . " is currently **" . $st . "**. Total: ₹" . number_format($ord['total_amount'], 2) . ". You can view full tracking details under **Your Orders**.";
+            } else {
+                return "You have no active orders in your account.";
+            }
+        }
+
+        // Wallet query
+        if (strpos($lower, 'wallet') !== false || strpos($lower, 'balance') !== false) {
+            $wal_q = $conn->query("SELECT balance FROM wallets WHERE customer_id = $patient_id LIMIT 1");
+            if ($wal_q && $wal_q->num_rows > 0) {
+                $wal = $wal_q->fetch_assoc();
+                return "Your current MedicalAk Wallet balance is **₹" . number_format($wal['balance'], 2) . "**. You can manage top-ups or transactions under **My Wallet**.";
+            } else {
+                return "Your wallet balance is currently **₹0.00**. You can top up your wallet under **My Wallet**.";
+            }
+        }
+
+        // Digital Medical Card query
+        if (strpos($lower, 'medical card') !== false || strpos($lower, 'card') !== false || strpos($lower, 'dmc') !== false) {
+            $card_q = $conn->query("SELECT * FROM digital_medical_cards WHERE patient_id = $patient_id ORDER BY id DESC LIMIT 1");
+            if ($card_q && $card_q->num_rows > 0) {
+                $card = $card_q->fetch_assoc();
+                $c_num = $card['card_number'] ?: ('DMC-PENDING-' . $card['id']);
+                $c_st = ucfirst($card['status']);
+                return "Your Digital Medical Card (" . htmlspecialchars($c_num) . ") status is **" . $c_st . "**. " . ($card['status'] === 'active' && !empty($card['valid_until']) ? "Valid until " . date('M d, Y', strtotime($card['valid_until'])) . "." : "Check details under **Digital Medical Card**.");
+            } else {
+                return "You haven't applied for a Digital Medical Card yet. You can apply for ₹50 under **Digital Medical Card** to unlock healthcare discounts!";
+            }
+        }
+
         // Prescription query
         if (strpos($lower, 'prescription') !== false || strpos($lower, 'last rx') !== false) {
             $rx_q = $conn->query("SELECT p.*, u.name as doctor_name FROM prescriptions p JOIN users u ON p.doctor_id = u.id WHERE p.patient_id = $patient_id ORDER BY p.created_at DESC LIMIT 1");
@@ -110,7 +146,7 @@ function getSmartFallbackReply($msg) {
         }
     }
 
-    return "I'm right here to assist you! If you have any health symptoms or questions about our platform services (like ordering medicines or booking doctors), feel free to ask me.";
+    return "I'm right here to assist you! If you have any health symptoms or questions about our platform services (like ordering medicines, booking doctors, tracking orders, or checking your wallet), feel free to ask me.";
 }
 
 $apiKey = isset($gemini_api_key) ? trim($gemini_api_key) : '';
@@ -130,6 +166,9 @@ Platform layout:
 - 'Find Doctors (10km)' to see nearby offline doctors
 - 'Book Labs (RMP)' to schedule a home lab test via an RMP.
 - 'Privacy Consult' for discreet or sensitive consultations.
+- 'Digital Medical Card' for medical card discounts.
+- 'Your Orders' to track medicine deliveries.
+- 'My Wallet' to check or top up wallet balance.
 
 When the user greets you (like 'hi', 'hii', 'hello', 'how are you'), respond warmly and conversationally as a friendly human assistant.
 When a user asks medical or health questions, give clear, comforting, easy-to-understand advice.
