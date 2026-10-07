@@ -28,50 +28,82 @@ $port   = getenv('DB_PORT') ? intval(getenv('DB_PORT')) : 3306;
 
 $conn = null;
 $max_retries = 3;
-$retry_count = 0;
 
-while ($retry_count < $max_retries) {
-    try {
-        $conn = @new mysqli($host, $user, $pass, $dbname, $port);
-    } catch (Throwable $e) {
-        $conn = null;
-    }
+// Determine candidate host addresses (e.g. try localhost then 127.0.0.1 if default local environment)
+$hosts_to_try = [$host];
+if ($host === 'localhost' && !getenv('DB_HOST')) {
+    $hosts_to_try[] = '127.0.0.1';
+} elseif ($host === '127.0.0.1' && !getenv('DB_HOST')) {
+    $hosts_to_try[] = 'localhost';
+}
 
-    if ($conn && !$conn->connect_error) {
-        break; // Connected successfully!
-    }
+$last_err_str = "";
 
-    $err_str = ($conn && $conn->connect_error) ? $conn->connect_error : "";
-    if ($conn) {
-        try { @$conn->close(); } catch (Throwable $t) {}
-        $conn = null;
-    }
-
-    // Auto-retry if max_user_connections resource limit is reached
-    if (strpos($err_str, 'max_user_connections') !== false || strpos($err_str, 'Too many connections') !== false) {
-        $retry_count++;
-        usleep(150000); // Wait 150ms for a connection slot to free up
-        continue;
-    }
-
-    // Fallback: If database does not exist on localhost, attempt creation
-    if (($host === 'localhost' || $host === '127.0.0.1') && (strpos($err_str, 'Unknown database') !== false || strpos($err_str, '1049') !== false)) {
+foreach ($hosts_to_try as $curr_host) {
+    $retry_count = 0;
+    while ($retry_count < $max_retries) {
         try {
-            $conn = @new mysqli($host, $user, $pass, "", $port);
-            if ($conn && !$conn->connect_error) {
-                @$conn->query("CREATE DATABASE IF NOT EXISTS `$dbname`");
-                @$conn->select_db($dbname);
-                break;
-            }
-        } catch (Throwable $e2) {
-            if ($conn) { @$conn->close(); $conn = null; }
+            $conn = @new mysqli($curr_host, $user, $pass, $dbname, $port);
+        } catch (Throwable $e) {
+            $conn = null;
+            $last_err_str = $e->getMessage();
         }
+
+        if ($conn && !$conn->connect_error) {
+            break 2; // Successfully connected!
+        }
+
+        $err_str = ($conn && $conn->connect_error) ? $conn->connect_error : ($last_err_str ?: "");
+        $last_err_str = $err_str;
+
+        if ($conn) {
+            try { @$conn->close(); } catch (Throwable $t) {}
+            $conn = null;
+        }
+
+        // Auto-retry if max_user_connections or temporary overload
+        if (strpos($err_str, 'max_user_connections') !== false || strpos($err_str, 'Too many connections') !== false) {
+            $retry_count++;
+            usleep(150000); // 150ms backoff
+            continue;
+        }
+
+        // Fallback: If database does not exist on local setup, attempt auto-creation
+        if (($curr_host === 'localhost' || $curr_host === '127.0.0.1') && (strpos($err_str, 'Unknown database') !== false || strpos($err_str, '1049') !== false)) {
+            try {
+                $conn = @new mysqli($curr_host, $user, $pass, "", $port);
+                if ($conn && !$conn->connect_error) {
+                    @$conn->query("CREATE DATABASE IF NOT EXISTS `$dbname` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+                    if (@$conn->select_db($dbname)) {
+                        break 2;
+                    }
+                }
+            } catch (Throwable $e2) {
+                if ($conn) { @$conn->close(); $conn = null; }
+            }
+        }
+        break;
     }
-    break;
 }
 
 if (!$conn || $conn->connect_error) {
-    $err_msg = ($conn && $conn->connect_error) ? $conn->connect_error : "Connection failed";
+    $err_msg = ($conn && $conn->connect_error) ? $conn->connect_error : ($last_err_str ?: "Connection failed");
+    
+    // Detect API / AJAX request
+    $is_json_request = (!empty($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) ||
+                       (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && stristr($_SERVER['HTTP_X_REQUESTED_WITH'], 'xmlhttprequest')) ||
+                       (!empty($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false);
+
+    if ($is_json_request) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'status' => 'error',
+            'success' => false,
+            'message' => "Database Connection Error: " . $err_msg . ". Please check database credentials."
+        ]);
+        exit;
+    }
+
     if (strpos($err_msg, 'max_user_connections') !== false || strpos($err_msg, 'Too many connections') !== false) {
         die("<div style='font-family:sans-serif; text-align:center; padding:3rem; color:#fff; background:#121826; min-height:100vh;'>
             <h2 style='color:#ff4757;'>Server Busy (Database Connection Limit)</h2>

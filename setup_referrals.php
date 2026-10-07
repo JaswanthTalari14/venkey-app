@@ -1,9 +1,5 @@
 <?php
-$conn = new mysqli("localhost", "root", "", "medicalak");
-
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
+require_once __DIR__ . '/config.php';
 
 $query = "CREATE TABLE IF NOT EXISTS referrals (
     id INT AUTO_INCREMENT PRIMARY KEY,
