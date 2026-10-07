@@ -134,6 +134,8 @@ include 'includes/header.php';
                 <?php endif; ?>
             </a></li>
             <li><a href="admin_search.php"><i class="fas fa-search"></i> Global Search</a></li>
+            <li><a href="admin_support.php"><i class="fas fa-headset"></i> Support Tickets</a></li>
+            <li><a href="admin_whatsapp_settings.php"><i class="fab fa-whatsapp"></i> WhatsApp Settings</a></li>
             <li><a href="admin_audit.php"><i class="fas fa-history"></i> Audit Timeline</a></li>
             <li><a href="admin_digital_cards.php"><i class="fas fa-id-card"></i> Medical Cards</a></li>
             <li><a href="admin_verify.php"><i class="fas fa-user-md"></i> Verify Doctors & RMPs</a></li>

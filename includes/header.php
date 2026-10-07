@@ -179,10 +179,13 @@ if (isset($_SESSION['user_id'])) {
                 <?php if(isset($_SESSION['user_id'])): ?>
                     <?php if($_SESSION['role'] == 'patient'): ?>
                         <li><a href="patient_dashboard.php">Dashboard</a></li>
+                        <li><a href="customer_support.php"><i class="fas fa-headset"></i> Support Center</a></li>
+                        <li><a href="create_ticket.php"><i class="fas fa-plus-circle"></i> Create Ticket</a></li>
                     <?php elseif($_SESSION['role'] == 'doctor'): ?>
                         <li><a href="doctor_dashboard.php">Dashboard</a></li>
                     <?php elseif($_SESSION['role'] == 'admin'): ?>
                         <li><a href="admin_dashboard.php">Admin Panel</a></li>
+                        <li><a href="admin_support.php"><i class="fas fa-headset"></i> Support Center</a></li>
                     <?php elseif($_SESSION['role'] == 'rmp'): ?>
                         <li><a href="rmp_dashboard.php">RMP Panel</a></li>
                     <?php endif; ?>

@@ -61,6 +61,19 @@ include 'includes/header.php';
                 <i class="fas fa-search" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--text-secondary);"></i>
                 <input type="text" id="supportSearch" class="form-control" placeholder="Search your problem (e.g. wallet, order status, refund)..." onkeyup="filterSupportTopics()" style="padding-left: 2.8rem; font-size: 1rem; border-radius: 25px; background: rgba(0,0,0,0.3);">
             </div>
+
+            <!-- Action Buttons Bar -->
+            <div style="display: flex; gap: 0.8rem; margin-top: 1.2rem; flex-wrap: wrap;">
+                <a href="create_ticket.php" class="btn btn-primary" style="padding: 0.65rem 1.4rem; font-weight: 700; font-size: 0.95rem; border-radius: 10px; display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none;">
+                    <i class="fas fa-edit"></i> 📝 Create a Ticket
+                </a>
+                <a href="my_tickets.php" class="btn btn-outline" style="padding: 0.65rem 1.4rem; font-weight: 700; font-size: 0.95rem; border-radius: 10px; display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none;">
+                    <i class="fas fa-list"></i> 💬 My Tickets (<?php echo $cnt_open + $cnt_in_prog + $cnt_waiting; ?>)
+                </a>
+                <a href="<?php echo htmlspecialchars($wa_url); ?>" target="_blank" class="btn" style="background: #25D366; color: #ffffff; padding: 0.65rem 1.4rem; font-weight: 700; font-size: 0.95rem; border-radius: 10px; display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none;">
+                    <i class="fab fa-whatsapp"></i> 🟢 WhatsApp Support
+                </a>
+            </div>
         </div>
 
         <!-- Support Channels (WhatsApp & Support Ticket Options) -->
@@ -89,21 +102,20 @@ include 'includes/header.php';
                     </div>
                 </div>
 
-                <?php if ($is_wa_online): ?>
-                    <p style="color: var(--text-primary); font-size: 0.9rem; line-height: 1.5; margin-bottom: 1.5rem;">
-                        Instant responses for urgent queries, order updates, payment issues, and digital card assistance.
-                    </p>
-                    <a href="<?php echo htmlspecialchars($wa_url); ?>" target="_blank" class="btn" style="background: #25D366; color: #ffffff; width: 100%; text-align: center; font-weight: bold; padding: 0.75rem; font-size: 1rem; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; text-decoration: none;">
-                        <i class="fab fa-whatsapp" style="font-size: 1.2rem;"></i> Chat on WhatsApp
-                    </a>
-                <?php else: ?>
-                    <p style="color: var(--text-secondary); font-size: 0.88rem; line-height: 1.5; margin-bottom: 1.2rem;">
-                        <?php echo htmlspecialchars($wa_settings['offline_message']); ?>
-                    </p>
-                    <a href="create_ticket.php" class="btn btn-primary" style="width: 100%; text-align: center; font-weight: bold; padding: 0.75rem; font-size: 0.95rem; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                <p style="color: var(--text-primary); font-size: 0.9rem; line-height: 1.5; margin-bottom: 1.5rem;">
+                    <?php echo $is_wa_online ? "Instant responses for urgent queries, order updates, payment issues, and digital card assistance." : htmlspecialchars($wa_settings['offline_message']); ?>
+                </p>
+
+                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                    <?php if ($is_wa_online): ?>
+                        <a href="<?php echo htmlspecialchars($wa_url); ?>" target="_blank" class="btn" style="flex: 1; min-width: 140px; background: #25D366; color: #ffffff; text-align: center; font-weight: bold; padding: 0.75rem; font-size: 0.95rem; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; text-decoration: none;">
+                            <i class="fab fa-whatsapp" style="font-size: 1.1rem;"></i> Chat on WhatsApp
+                        </a>
+                    <?php endif; ?>
+                    <a href="create_ticket.php" class="btn btn-primary" style="flex: 1; min-width: 140px; text-align: center; font-weight: bold; padding: 0.75rem; font-size: 0.95rem; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;">
                         <i class="fas fa-ticket-alt"></i> Create Support Ticket
                     </a>
-                <?php endif; ?>
+                </div>
             </div>
 
             <!-- Option 2: Create Support Ticket Box -->

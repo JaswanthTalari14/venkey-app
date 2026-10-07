@@ -53,6 +53,8 @@ $my_orders = $conn->query("
             <li><a href="payment_history.php"><i class="fas fa-receipt"></i> Payment History</a></li>
             <li><a href="refer_earn.php"><i class="fas fa-gift"></i> Refer & Earn</a></li>
             <li><a href="my_wallet.php"><i class="fas fa-wallet"></i> My Wallet</a></li>
+            <li><a href="customer_support.php"><i class="fas fa-headset"></i> Customer Support & Tickets</a></li>
+            <li><a href="create_ticket.php"><i class="fas fa-plus-circle"></i> Create Support Ticket</a></li>
             <li><a href="chatbot.php"><i class="fas fa-robot"></i> AI Chatbot</a></li>
             <li><a href="javascript:void(0);" class="pwaInstallBtn"><i class="fas fa-download"></i> Install App</a></li>
         </ul>
@@ -74,7 +76,15 @@ $my_orders = $conn->query("
                 <p style="font-size: 2rem; font-weight: bold; margin: 1rem 0;"><?php echo $active_orders; ?></p>
                 <a href="medicines.php" class="btn btn-outline" style="font-size: 0.8rem;">Order More</a>
             </div>
-            
+
+            <div class="feature-card glass-panel" style="padding: 1.5rem; border-left: 4px solid var(--primary-color);">
+                <h4 style="color: var(--primary-color);"><i class="fas fa-headset"></i> Customer Support & Tickets</h4>
+                <p style="font-size: 0.88rem; color: var(--text-secondary); margin: 0.5rem 0 1rem 0;">Direct WhatsApp help & tracked support tickets.</p>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <a href="create_ticket.php" class="btn btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem;"><i class="fas fa-plus-circle"></i> Create Ticket</a>
+                    <a href="customer_support.php" class="btn btn-outline" style="font-size: 0.8rem; padding: 0.4rem 0.8rem;"><i class="fas fa-headset"></i> Support Center</a>
+                </div>
+            </div>
         </div>
 
         <?php

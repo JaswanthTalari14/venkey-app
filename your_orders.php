@@ -360,6 +360,7 @@ if ($orders_query) {
             <li><a href="payment_history.php"><i class="fas fa-receipt"></i> Payment History</a></li>
             <li><a href="refer_earn.php"><i class="fas fa-gift"></i> Refer & Earn</a></li>
             <li><a href="my_wallet.php"><i class="fas fa-wallet"></i> My Wallet</a></li>
+            <li><a href="customer_support.php"><i class="fas fa-headset"></i> Customer Support & Tickets</a></li>
             <li><a href="chatbot.php"><i class="fas fa-robot"></i> AI Chatbot</a></li>
             <li><a href="javascript:void(0);" class="pwaInstallBtn"><i class="fas fa-download"></i> Install App</a></li>
         </ul>
