@@ -481,7 +481,7 @@ if ($orders_query) {
                                 <div style="display: flex; align-items: center; gap: 0.75rem;">
                                     <strong style="font-size: 1.1rem; color: var(--primary-color);"><?php echo $formatted_id; ?></strong>
                                     <span style="color: <?php echo $status_color; ?>; font-weight: bold; text-transform: capitalize; background: rgba(255,255,255,0.06); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.8rem; border: 1px solid <?php echo $status_color; ?>;">
-                                        <i class="fas fa-circle" style="font-size: 0.5rem; vertical-align: middle; margin-right: 0.3rem;"></i><?php echo htmlspecialchars($order['order_status']); ?>
+                                        <i class="fas fa-circle" style="font-size: 0.5rem; vertical-align: middle; margin-right: 0.3rem;"></i><span class="status-text-val"><?php echo htmlspecialchars($order['order_status']); ?></span>
                                     </span>
                                 </div>
                                 <div style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 0.3rem;">
@@ -776,7 +776,7 @@ function buildOrderTimelineHtml(order) {
     var currentStepIdx = 0;
     if (rawStatus === 'delivered') {
         currentStepIdx = 5;
-    } else if (rawStatus === 'out for delivery') {
+    } else if (rawStatus === 'out for delivery' || rawStatus === 'out_for_delivery') {
         currentStepIdx = 4;
     } else if (rawStatus === 'shipped') {
         currentStepIdx = 3;
@@ -784,9 +784,9 @@ function buildOrderTimelineHtml(order) {
         currentStepIdx = 2;
     } else if (rawStatus === 'pending') {
         if (isPayConfirmed) {
-            currentStepIdx = 2;
-        } else {
             currentStepIdx = 1;
+        } else {
+            currentStepIdx = 0;
         }
     }
 
@@ -813,6 +813,10 @@ function buildOrderTimelineHtml(order) {
                 state = 'completed';
                 icon = '✓';
                 timeStr = stepConf.time || createdTime;
+            } else if (currentStepIdx === 1 && isPayConfirmed) {
+                state = 'completed';
+                icon = '✓';
+                timeStr = stepConf.time || payConfirmedTime || createdTime;
             } else {
                 state = 'current';
                 icon = '●';
@@ -868,11 +872,8 @@ function inArray(needle, haystack) {
     return haystack.indexOf(needle) !== -1;
 }
 
-function openOrderDetailsModal(orderId) {
-    var order = ordersData[orderId];
-    if (!order) return;
-    
-    document.getElementById('modalOrderTitle').innerText = "Order #ORD-" + String(orderId).padStart(4, '0');
+function renderOrderDetailsModalContent(order) {
+    document.getElementById('modalOrderTitle').innerText = "Order #ORD-" + String(order.order_id).padStart(4, '0');
     
     var itemsHtml = '';
     order.items.forEach(function(item) {
@@ -937,7 +938,42 @@ function openOrderDetailsModal(orderId) {
     `;
     
     document.getElementById('orderDetailsContent').innerHTML = html;
+}
+
+function openOrderDetailsModal(orderId) {
+    var order = ordersData[orderId];
+    if (!order) return;
+
+    renderOrderDetailsModalContent(order);
     document.getElementById('orderDetailsModal').style.display = 'flex';
+
+    // Synchronize latest order status asynchronously from canonical database API
+    fetch('api_patient_features.php?action=get_order_tracking&order_id=' + orderId)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (data && data.success && data.order) {
+                var freshOrder = data.order;
+                ordersData[orderId].order_status = freshOrder.order_status;
+                if (freshOrder.payment_status) ordersData[orderId].payment_status = freshOrder.payment_status;
+                if (freshOrder.payment_confirmed_at) ordersData[orderId].payment_confirmed_at = freshOrder.payment_confirmed_at;
+                if (freshOrder.packing_at) ordersData[orderId].packing_at = freshOrder.packing_at;
+                if (freshOrder.shipped_at) ordersData[orderId].shipped_at = freshOrder.shipped_at;
+                if (freshOrder.out_for_delivery_at) ordersData[orderId].out_for_delivery_at = freshOrder.out_for_delivery_at;
+                if (freshOrder.delivered_at) ordersData[orderId].delivered_at = freshOrder.delivered_at;
+                
+                var modal = document.getElementById('orderDetailsModal');
+                if (modal && modal.style.display === 'flex') {
+                    renderOrderDetailsModalContent(ordersData[orderId]);
+                }
+
+                // Update card status text in list card DOM if present
+                var cardEl = document.querySelector('.order-card-wrapper[data-order-id="' + orderId + '"] .status-text-val');
+                if (cardEl) {
+                    cardEl.innerText = freshOrder.order_status;
+                }
+            }
+        })
+        .catch(function(err) { console.log("Status sync notice:", err); });
 }
 
 function closeOrderDetailsModal() {
