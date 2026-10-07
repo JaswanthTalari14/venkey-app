@@ -378,6 +378,19 @@ if (isset($_SESSION['user_id'])) {
                   if (data.success) {
                       updateBadge(data.unread_count);
                       fetchNotifications();
+                      if (entityType === 'medical_card') {
+                          window.location.href = 'digital_medical_card.php';
+                      } else if (entityType === 'wallet') {
+                          window.location.href = 'my_wallet.php';
+                      } else if (entityType === 'order') {
+                          window.location.href = 'your_orders.php';
+                      } else if (entityType === 'prescription') {
+                          window.location.href = 'health_vault.php';
+                      } else if (entityType === 'appointment') {
+                          window.location.href = 'book_consult.php';
+                      } else if (entityType === 'referral') {
+                          window.location.href = 'refer_earn.php';
+                      }
                   }
               });
         };
@@ -394,14 +407,20 @@ if (isset($_SESSION['user_id'])) {
 
         function showToast(title, msg) {
             const container = document.getElementById('notifToastContainer');
-            if (!container) return;
-            const toast = document.createElement('div');
-            toast.style.cssText = 'background: rgba(20, 25, 40, 0.95); border: 1px solid var(--primary-color); border-radius: 12px; padding: 1rem; color: #fff; box-shadow: 0 10px 25px rgba(0,0,0,0.5); backdrop-filter: blur(10px); animation: fadeIn 0.3s; overflow-wrap: anywhere; word-break: break-word;';
-            toast.innerHTML = `<div style="font-weight: bold; font-size: 0.9rem; color: var(--primary-color);"><i class="fas fa-bell"></i> ${escapeHtml(title)}</div><div style="font-size: 0.8rem; margin-top: 0.3rem;">${escapeHtml(msg)}</div>`;
-            container.appendChild(toast);
-            setTimeout(function() {
-                toast.remove();
-            }, 5000);
+            if (container) {
+                const toast = document.createElement('div');
+                toast.style.cssText = 'background: rgba(20, 25, 40, 0.95); border: 1px solid var(--primary-color); border-radius: 12px; padding: 1rem; color: #fff; box-shadow: 0 10px 25px rgba(0,0,0,0.5); backdrop-filter: blur(10px); animation: fadeIn 0.3s; overflow-wrap: anywhere; word-break: break-word;';
+                toast.innerHTML = `<div style="font-weight: bold; font-size: 0.9rem; color: var(--primary-color);"><i class="fas fa-bell"></i> ${escapeHtml(title)}</div><div style="font-size: 0.8rem; margin-top: 0.3rem;">${escapeHtml(msg)}</div>`;
+                container.appendChild(toast);
+                setTimeout(function() {
+                    if (toast.parentNode) toast.parentNode.removeChild(toast);
+                }, 5000);
+            }
+            if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                try {
+                    new Notification(title, { body: msg });
+                } catch(e) {}
+            }
         }
 
         // Real-time EventSource Listener (Server-Sent Events)

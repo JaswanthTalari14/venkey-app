@@ -19,6 +19,7 @@ function init_notification_tables() {
         related_entity_type VARCHAR(50) DEFAULT NULL,
         related_entity_id VARCHAR(100) DEFAULT NULL,
         is_read TINYINT(1) DEFAULT 0,
+        is_pinned TINYINT(1) DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         read_at TIMESTAMP NULL,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -45,6 +46,9 @@ function init_notification_tables() {
             }
             if (!in_array('role', $existing_cols)) {
                 @$conn->query("ALTER TABLE user_notifications ADD COLUMN role VARCHAR(50) DEFAULT NULL AFTER user_id");
+            }
+            if (!in_array('is_pinned', $existing_cols)) {
+                @$conn->query("ALTER TABLE user_notifications ADD COLUMN is_pinned TINYINT(1) DEFAULT 0 AFTER is_read");
             }
             if (!in_array('read_at', $existing_cols)) {
                 @$conn->query("ALTER TABLE user_notifications ADD COLUMN read_at TIMESTAMP NULL AFTER created_at");
@@ -78,18 +82,15 @@ function create_notification($user_id, $title, $message, $type = 'info', $relate
     $user_id = (int)$user_id;
     if ($user_id <= 0 || empty($title) || empty($message)) return false;
 
-    // Idempotency Check: Prevent duplicate notification within 30 seconds for same entity & user
-    if (!empty($related_entity_type) && !empty($related_entity_id)) {
-        $check = $conn->prepare("
-            SELECT id FROM user_notifications 
-            WHERE user_id = ? AND title = ? AND related_entity_type = ? AND related_entity_id = ? 
-            AND created_at >= NOW() - INTERVAL 30 SECOND
-        ");
-        $check->bind_param("isss", $user_id, $title, $related_entity_type, $related_entity_id);
-        $check->execute();
-        if ($check->get_result()->num_rows > 0) {
-            return false; // Prevent duplicate emission
-        }
+    // Idempotency Check: Prevent duplicate notification within 30 seconds for same title & user
+    $check = $conn->prepare("
+        SELECT id FROM user_notifications 
+        WHERE user_id = ? AND title = ? AND created_at >= NOW() - INTERVAL 30 SECOND
+    ");
+    $check->bind_param("is", $user_id, $title);
+    $check->execute();
+    if ($check->get_result()->num_rows > 0) {
+        return false; // Prevent duplicate emission
     }
 
     $stmt = $conn->prepare("
@@ -98,6 +99,51 @@ function create_notification($user_id, $title, $message, $type = 'info', $relate
     ");
     $stmt->bind_param("issssss", $user_id, $role, $title, $message, $type, $related_entity_type, $related_entity_id);
     return $stmt->execute();
+}
+
+// Alias for send_user_notification used by doctor/admin modules
+function send_user_notification($user_id, $type, $title, $message, $related_entity_type = null, $related_entity_id = null, $role = null) {
+    return create_notification($user_id, $title, $message, $type, $related_entity_type, $related_entity_id, $role);
+}
+
+// Order Status Notification Helper
+function notify_order_status_change($conn, $order_id, $patient_id, $new_status, $reason = '') {
+    $order_id = (int)$order_id;
+    $patient_id = (int)$patient_id;
+    $st = strtolower(trim($new_status));
+    $formatted_ord_id = "#ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT);
+
+    $title = "";
+    $message = "";
+
+    if ($st === 'packing' || $st === 'packed' || $st === 'processing') {
+        $title = "Your Order Is Being Packed 📦";
+        $message = "Your order {$formatted_ord_id} is now being packed.";
+    } elseif ($st === 'shipped') {
+        $title = "Your Order Has Been Shipped 🚚";
+        $message = "Your order {$formatted_ord_id} has been shipped.";
+    } elseif ($st === 'out for delivery') {
+        $title = "Out for Delivery 🚴";
+        $message = "Your order {$formatted_ord_id} is on the way.";
+    } elseif ($st === 'delivered') {
+        $title = "Order Delivered 🎉";
+        $message = "Your order {$formatted_ord_id} has been delivered successfully.";
+    } elseif ($st === 'cancelled' || $st === 'rejected') {
+        $title = "Order Status Update ⚠️";
+        $message = "Your order {$formatted_ord_id} status is now " . ucfirst($st) . ($reason ? ". Reason: " . $reason : ".");
+    } else {
+        $title = "Order Status Update";
+        $message = "Your order {$formatted_ord_id} status updated to: " . ucfirst($st);
+    }
+
+    return create_notification(
+        $patient_id,
+        $title,
+        $message,
+        'order',
+        'order',
+        (string)$order_id
+    );
 }
 
 // Get User Notifications List
@@ -167,7 +213,7 @@ function get_unread_notification_count($user_id) {
     $stmt->execute();
     $res = $stmt->get_result();
     if ($res && $row = $res->fetch_assoc()) {
-        return (int)$row['count'];
+        return max(0, (int)$row['count']);
     }
     return 0;
 }
@@ -221,5 +267,6 @@ function clear_user_notifications($user_id) {
     $stmt->bind_param("i", $user_id);
     return $stmt->execute();
 }
+
 
 

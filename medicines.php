@@ -162,6 +162,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
                 $avail_wallet_balance = get_wallet_balance($patient_id);
                 process_referral_order_qualification($order_id, $patient_id, $original_total, true);
                 
+                require_once 'includes/notification_functions.php';
+                create_notification(
+                    $patient_id,
+                    "Order Placed Successfully 🛍️",
+                    "Your order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . " has been placed successfully.",
+                    'order',
+                    'order',
+                    (string)$order_id
+                );
+
                 header("Location: medicines.php?success=1&order_id=" . $order_id);
                 exit;
             } else if ($payment_method === 'COD') {
@@ -182,6 +192,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
 
                 process_referral_order_qualification($order_id, $patient_id, $original_total, true);
                 
+                require_once 'includes/notification_functions.php';
+                create_notification(
+                    $patient_id,
+                    "Order Placed Successfully 🛍️",
+                    "Your order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . " has been placed successfully.",
+                    'order',
+                    'order',
+                    (string)$order_id
+                );
+
                 header("Location: medicines.php?success=1&order_id=" . $order_id);
                 exit;
             } else {
@@ -199,6 +219,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
                     process_wallet_payment($patient_id, $order_id, $wallet_used);
                     $avail_wallet_balance = get_wallet_balance($patient_id);
                 }
+
+                require_once 'includes/notification_functions.php';
+                create_notification(
+                    $patient_id,
+                    "Order Placed Successfully 🛍️",
+                    "Your order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . " has been placed successfully.",
+                    'order',
+                    'order',
+                    (string)$order_id
+                );
 
                 if (defined('PHONEPE_MERCHANT_ID') && !empty(PHONEPE_MERCHANT_ID)) {
                     header("Location: phonepe_pay.php?order_id=" . $order_id);

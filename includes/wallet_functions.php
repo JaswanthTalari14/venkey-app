@@ -338,6 +338,13 @@ function process_wallet_topup_request($customer_id, $amount, $payment_method = '
     
     if ($stmt->execute()) {
         update_customer_pending_balance($customer_id);
+        $amt_fmt = number_format($amount, 2);
+        add_user_notification(
+            $customer_id,
+            "Wallet Top-Up Submitted",
+            "Your ₹{$amt_fmt} wallet top-up request has been submitted and is waiting for Admin verification.",
+            'wallet'
+        );
         return [
             'success' => true,
             'topup_id' => $topup_id,

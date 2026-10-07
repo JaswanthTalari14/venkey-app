@@ -12,13 +12,22 @@ $success = '';
 // Handle Status Update
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
     $order_id = (int)$_POST['order_id'];
-    $new_status = $conn->real_escape_string($_POST['status']);
+    $new_status = strtolower(trim($_POST['status']));
     
-    if ($conn->query("UPDATE orders SET status='$new_status' WHERE id=$order_id")) {
-        update_order_status_timestamps($conn, $order_id, $new_status);
-        $success = "Order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . " status updated to $new_status!";
-        require_once 'includes/referral_functions.php';
-        sync_pending_referrals();
+    $chk = $conn->query("SELECT patient_id, status FROM orders WHERE id = $order_id");
+    if ($chk && $old_order = $chk->fetch_assoc()) {
+        $patient_id = (int)$old_order['patient_id'];
+        $old_status = strtolower(trim($old_order['status'] ?? ''));
+
+        if ($conn->query("UPDATE orders SET status='$new_status' WHERE id=$order_id")) {
+            update_order_status_timestamps($conn, $order_id, $new_status);
+            if ($old_status !== $new_status) {
+                notify_order_status_change($conn, $order_id, $patient_id, $new_status);
+            }
+            $success = "Order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . " status updated to $new_status!";
+            require_once 'includes/referral_functions.php';
+            sync_pending_referrals();
+        }
     }
 }
 

@@ -130,12 +130,26 @@ if ($action === 'update_status') {
         exit;
     }
 
+    $chk = $conn->query("SELECT patient_id, status FROM orders WHERE id = $order_id");
+    if (!$chk || $chk->num_rows === 0) {
+        echo json_encode(['success' => false, 'message' => 'Order not found']);
+        exit;
+    }
+
+    $old_order = $chk->fetch_assoc();
+    $patient_id = (int)$old_order['patient_id'];
+    $old_status = strtolower(trim($old_order['status'] ?? ''));
+
     $stmt = $conn->prepare("UPDATE orders SET status = ? WHERE id = ?");
     $stmt->bind_param("si", $status, $order_id);
     if ($stmt->execute()) {
         update_order_status_timestamps($conn, $order_id, $status);
         require_once 'includes/referral_functions.php';
         sync_pending_referrals();
+
+        if ($old_status !== $status) {
+            notify_order_status_change($conn, $order_id, $patient_id, $status);
+        }
 
         $reason = '';
         if ($status === 'cancelled') {
