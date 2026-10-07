@@ -29,7 +29,7 @@ if ($failed_attempts >= 3) {
     usleep(500000); // 500ms delay on repeated failures
 }
 
-$expected_key = defined('SECURITY_GATE_KEY') ? SECURITY_GATE_KEY : 'ask mandotary:539539';
+$expected_key = defined('SECURITY_GATE_KEY') ? SECURITY_GATE_KEY : '539539';
 
 // Exact string comparison
 if (hash_equals($expected_key, $input_key)) {

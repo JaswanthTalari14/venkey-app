@@ -18,7 +18,7 @@ if (session_status() === PHP_SESSION_NONE) {
 @ini_set('zlib.output_compression', 'On');
 ob_start();
 
-define('SECURITY_GATE_KEY', getenv('SECURITY_GATE_KEY') ?: 'ask mandotary:539539');
+define('SECURITY_GATE_KEY', getenv('SECURITY_GATE_KEY') ?: '539539');
 
 // Security Key Gate Middleware Guard
 if (empty($_SESSION['security_gate_verified'])) {
