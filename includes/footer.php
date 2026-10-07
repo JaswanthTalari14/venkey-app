@@ -110,6 +110,71 @@ $has_profile_img = !empty($user_profile_url);
     <footer>
         <p>&copy; <?php echo date("Y"); ?> MedicalAk. All Rights Reserved. Transforming Healthcare with Smart Innovation.</p>
     </footer>
+
+<?php
+// Floating WhatsApp Support Button & Indicator (PART 3, 22, 23)
+if (function_exists('get_whatsapp_support_settings') && isset($conn)) {
+    $wa_floating_settings = get_whatsapp_support_settings($conn);
+    if ($wa_floating_settings['is_enabled']) {
+        $wa_is_online = is_whatsapp_support_available($conn);
+        $wa_number = $wa_floating_settings['whatsapp_number'];
+        $wa_direct_url = build_whatsapp_url($wa_number, "Hello, I need help with my healthcare account.");
+?>
+<style>
+#waFloatingContainer {
+    position: fixed;
+    bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+    right: 20px;
+    z-index: 9990;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.5rem;
+}
+@media (min-width: 768px) {
+    #waFloatingContainer {
+        bottom: 25px !important;
+        right: 25px !important;
+    }
+}
+</style>
+<!-- Floating WhatsApp Support Button -->
+<div id="waFloatingContainer">
+    <!-- Status Toast Popup if Offline -->
+    <div id="waOfflinePopup" style="display: none; background: #121826; border: 1px solid #ff4757; color: #ffffff; padding: 0.8rem 1rem; border-radius: 12px; font-size: 0.82rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 250px; text-align: right;">
+        <div style="font-weight: bold; color: #ff4757; margin-bottom: 0.2rem;">🔴 WhatsApp Support Offline</div>
+        <div style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 0.5rem;"><?php echo htmlspecialchars($wa_floating_settings['offline_message']); ?></div>
+        <a href="create_ticket.php" class="btn btn-primary" style="font-size: 0.75rem; padding: 0.3rem 0.6rem; text-decoration: none; display: inline-block;">Create Support Ticket</a>
+    </div>
+
+    <!-- Floating Button -->
+    <a href="<?php echo $wa_is_online ? htmlspecialchars($wa_direct_url) : 'javascript:void(0);'; ?>" 
+       <?php if ($wa_is_online): ?>target="_blank"<?php else: ?>onclick="toggleWaOfflinePopup();"<?php endif; ?>
+       id="waFloatingBtn"
+       style="position: relative; background: #25D366; color: #ffffff; width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; box-shadow: 0 6px 20px rgba(37, 211, 102, 0.4); text-decoration: none; transition: transform 0.2s;"
+       onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'"
+       aria-label="WhatsApp Support"
+       title="WhatsApp Support (<?php echo $wa_is_online ? 'Online' : 'Offline'; ?>)">
+        
+        <i class="fab fa-whatsapp"></i>
+        
+        <!-- Live Status Indicator Badge -->
+        <span style="position: absolute; top: 0; right: 0; width: 14px; height: 14px; border-radius: 50%; background: <?php echo $wa_is_online ? '#2ed573' : '#ff4757'; ?>; border: 2px solid #121826; box-shadow: 0 0 6px <?php echo $wa_is_online ? '#2ed573' : '#ff4757'; ?>;"></span>
+    </a>
+</div>
+
+<script>
+function toggleWaOfflinePopup() {
+    const pop = document.getElementById('waOfflinePopup');
+    if (pop) {
+        pop.style.display = (pop.style.display === 'none' || pop.style.display === '') ? 'block' : 'none';
+    }
+}
+</script>
+<?php 
+    }
+}
+?>
     <script>
     function handleMobileNotifToggle(e) {
         e.preventDefault();

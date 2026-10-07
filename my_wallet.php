@@ -153,6 +153,22 @@ include 'includes/header.php';
             </div>
         </div>
 
+        <!-- Contextual Wallet Support Panel -->
+        <div class="glass-panel" style="padding: 1.2rem 1.5rem; margin-bottom: 2rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; border-left: 4px solid #f39c12; border-radius: 16px;">
+            <div>
+                <h4 style="margin: 0; font-size: 1rem; color: var(--text-primary); font-weight: 700;"><i class="fas fa-headset" style="color: #f39c12; margin-right: 0.5rem;"></i> Wallet Issue or Top-Up Pending?</h4>
+                <p style="margin: 0.3rem 0 0 0; font-size: 0.85rem; color: var(--text-secondary);">If your top-up or refund hasn't reflected in your balance, get direct WhatsApp assistance or track your request with a ticket.</p>
+            </div>
+            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+                <a href="create_ticket.php?category=Wallet&entity_type=Wallet" class="btn btn-outline" style="padding: 0.4rem 0.9rem; font-size: 0.85rem;">
+                    <i class="fas fa-ticket-alt"></i> Create Ticket
+                </a>
+                <a href="<?php echo build_whatsapp_url('Hello, I need help regarding my wallet transaction or balance.'); ?>" target="_blank" class="btn" style="padding: 0.4rem 0.9rem; font-size: 0.85rem; background: #25d366; color: #fff; border: none;">
+                    <i class="fab fa-whatsapp"></i> Chat on WhatsApp
+                </a>
+            </div>
+        </div>
+
         <!-- Top-Up Requests & Admin Approval Status -->
         <h3 style="margin-bottom: 1rem;"><i class="fas fa-clock"></i> Wallet Top-Up Requests & Approval Status</h3>
         <div class="glass-panel" style="overflow-x: auto; padding: 1rem; margin-bottom: 2rem;">

@@ -72,6 +72,14 @@
                 <p>24/7 automated assistance to answer queries and guide you to the right specialist.</p>
             </div>
         </a>
+
+        <a href="customer_support.php" style="text-decoration: none; color: inherit; display: block;">
+            <div class="feature-card glass-panel" style="height: 100%; border-top: 3px solid #25D366;">
+                <i class="fas fa-headset feature-icon" style="color: #25D366;"></i>
+                <h3>Customer & WhatsApp Support</h3>
+                <p>Chat directly on WhatsApp or create tracked support tickets for instant resolution.</p>
+            </div>
+        </a>
     </div>
 </section>
 

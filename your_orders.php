@@ -571,6 +571,19 @@ if ($orders_query) {
                                 <?php endif; ?>
                             </div>
                         </div>
+
+                        <!-- Contextual Support Bar -->
+                        <div style="margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px dashed rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; font-size: 0.82rem;">
+                            <span style="color: var(--text-secondary);"><i class="fas fa-headset" style="color: var(--accent);"></i> Having an issue with this order?</span>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <a href="create_ticket.php?category=Order&entity_type=Order&entity_id=<?php echo $ord_id; ?>" class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.78rem;">
+                                    <i class="fas fa-ticket-alt"></i> Create Ticket
+                                </a>
+                                <a href="<?php echo build_whatsapp_url('Hello, I need help regarding Order ' . $formatted_id); ?>" target="_blank" class="btn" style="padding: 0.25rem 0.6rem; font-size: 0.78rem; background: #25d366; color: #fff; border: none;">
+                                    <i class="fab fa-whatsapp"></i> WhatsApp
+                                </a>
+                            </div>
+                        </div>
                     </div>
                 <?php endforeach; ?>
             </div>

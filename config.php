@@ -759,9 +759,124 @@ function update_order_status_timestamps($conn, $order_id, $new_status) {
     if ($chk_sett && (int)$chk_sett->fetch_assoc()['cnt'] === 0) {
         @$conn->query("INSERT INTO digital_medical_card_settings (id, card_price, validity_months, consultation_discount_percent, medicine_discount_percent) VALUES (1, 50.00, 5, 10.00, 5.00)");
     }
+
+    // WhatsApp Support & Business Settings Table
+    $conn->query("CREATE TABLE IF NOT EXISTS whatsapp_settings (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        is_enabled TINYINT(1) DEFAULT 1,
+        whatsapp_number VARCHAR(50) DEFAULT '919876543210',
+        display_name VARCHAR(100) DEFAULT 'MedicalAk Support',
+        availability_type VARCHAR(20) DEFAULT 'auto',
+        start_time TIME DEFAULT '09:00:00',
+        end_time TIME DEFAULT '21:00:00',
+        working_days VARCHAR(100) DEFAULT 'Mon,Tue,Wed,Thu,Fri,Sat,Sun',
+        offline_message TEXT DEFAULT 'Our WhatsApp support team is currently unavailable. Support hours: 9:00 AM – 9:00 PM.',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )");
+
+    $chk_wa = @$conn->query("SELECT COUNT(*) as cnt FROM whatsapp_settings");
+    if ($chk_wa && (int)$chk_wa->fetch_assoc()['cnt'] === 0) {
+        @$conn->query("INSERT INTO whatsapp_settings (id, is_enabled, whatsapp_number, display_name, availability_type, start_time, end_time, working_days) VALUES (1, 1, '919876543210', 'MedicalAk Support', 'auto', '09:00:00', '21:00:00', 'Mon,Tue,Wed,Thu,Fri,Sat,Sun')");
+    }
+
+    // Customer Support Tickets Table
+    $conn->query("CREATE TABLE IF NOT EXISTS support_tickets (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        ticket_number VARCHAR(50) UNIQUE NOT NULL,
+        customer_id INT NOT NULL,
+        category VARCHAR(50) NOT NULL,
+        subject VARCHAR(255) NOT NULL,
+        description TEXT NOT NULL,
+        priority VARCHAR(20) DEFAULT 'normal',
+        status VARCHAR(30) DEFAULT 'open',
+        related_entity_type VARCHAR(50) DEFAULT NULL,
+        related_entity_id VARCHAR(100) DEFAULT NULL,
+        attachment_path VARCHAR(255) DEFAULT NULL,
+        assigned_admin_id INT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        resolved_at TIMESTAMP NULL DEFAULT NULL,
+        closed_at TIMESTAMP NULL DEFAULT NULL,
+        INDEX idx_st_cust (customer_id),
+        INDEX idx_st_status (status),
+        INDEX idx_st_num (ticket_number)
+    )");
+
+    // Support Ticket Replies & Conversation Table
+    $conn->query("CREATE TABLE IF NOT EXISTS support_ticket_replies (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        ticket_id INT NOT NULL,
+        sender_id INT NOT NULL,
+        sender_role VARCHAR(20) NOT NULL,
+        message TEXT NOT NULL,
+        is_internal_note TINYINT(1) DEFAULT 0,
+        attachment_path VARCHAR(255) DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_str_ticket (ticket_id)
+    )");
 }
 
 ensure_database_indexes($conn);
+
+/**
+ * Dynamic WhatsApp Support Availability & Settings Helper
+ */
+function get_whatsapp_support_settings($conn) {
+    $res = @$conn->query("SELECT * FROM whatsapp_settings WHERE id = 1 LIMIT 1");
+    if ($res && $res->num_rows > 0) {
+        $row = $res->fetch_assoc();
+        return [
+            'is_enabled' => (bool)$row['is_enabled'],
+            'whatsapp_number' => preg_replace('/[^0-9]/', '', $row['whatsapp_number']),
+            'display_name' => $row['display_name'] ?: 'MedicalAk Support',
+            'availability_type' => $row['availability_type'] ?: 'auto',
+            'start_time' => $row['start_time'] ?: '09:00:00',
+            'end_time' => $row['end_time'] ?: '21:00:00',
+            'working_days' => explode(',', $row['working_days'] ?: 'Mon,Tue,Wed,Thu,Fri,Sat,Sun'),
+            'offline_message' => $row['offline_message'] ?: 'Our WhatsApp support team is currently unavailable. Support hours: 9:00 AM – 9:00 PM.'
+        ];
+    }
+    return [
+        'is_enabled' => true,
+        'whatsapp_number' => '919876543210',
+        'display_name' => 'MedicalAk Support',
+        'availability_type' => 'auto',
+        'start_time' => '09:00:00',
+        'end_time' => '21:00:00',
+        'working_days' => ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+        'offline_message' => 'Our WhatsApp support team is currently unavailable. Support hours: 9:00 AM – 9:00 PM.'
+    ];
+}
+
+function is_whatsapp_support_available($conn) {
+    $settings = get_whatsapp_support_settings($conn);
+    if (!$settings['is_enabled'] || empty($settings['whatsapp_number'])) {
+        return false;
+    }
+
+    if ($settings['availability_type'] === 'online') return true;
+    if ($settings['availability_type'] === 'offline') return false;
+
+    $current_day = date('D');
+    if (!in_array($current_day, $settings['working_days'])) {
+        return false;
+    }
+
+    $current_time = date('H:i:s');
+    if ($current_time >= $settings['start_time'] && $current_time <= $settings['end_time']) {
+        return true;
+    }
+
+    return false;
+}
+
+function build_whatsapp_url($number, $prefilled_text = '') {
+    $clean_num = preg_replace('/[^0-9]/', '', $number);
+    if (empty($clean_num)) return '#';
+    $encoded_text = urlencode($prefilled_text);
+    return "https://api.whatsapp.com/send?phone={$clean_num}&text={$encoded_text}";
+}
+
 
 /**
  * Digital Medical Card System Helper Functions

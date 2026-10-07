@@ -373,6 +373,21 @@ include 'includes/header.php';
                     </div>
                 </div>
             </div>
+        <!-- Contextual Support Link -->
+        <div class="glass-panel" style="margin-top: 2rem; padding: 1.2rem 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; border-left: 4px solid var(--secondary-color); border-radius: 16px;">
+            <div>
+                <h4 style="margin: 0; font-size: 1rem; color: var(--text-primary); font-weight: 700;"><i class="fas fa-headset" style="color: var(--secondary-color); margin-right: 0.5rem;"></i> Need Help with your Digital Medical Card?</h4>
+                <p style="margin: 0.3rem 0 0 0; font-size: 0.85rem; color: var(--text-secondary);">Have questions about discounts, card verification, or approval? Contact our support team directly.</p>
+            </div>
+            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+                <a href="create_ticket.php?category=Medical Card&entity_type=Medical Card" class="btn btn-outline" style="padding: 0.4rem 0.9rem; font-size: 0.85rem;">
+                    <i class="fas fa-ticket-alt"></i> Create Ticket
+                </a>
+                <a href="<?php echo build_whatsapp_url('Hello, I need help regarding my Digital Medical Card.'); ?>" target="_blank" class="btn" style="padding: 0.4rem 0.9rem; font-size: 0.85rem; background: #25d366; color: #fff; border: none;">
+                    <i class="fab fa-whatsapp"></i> Chat on WhatsApp
+                </a>
+            </div>
+        </div>
         <?php endif; ?>
     </main>
 </div>
