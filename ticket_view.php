@@ -170,26 +170,27 @@ include 'includes/header.php';
 .support-chat-workspace {
     display: flex;
     flex-direction: column;
-    height: calc(100dvh - 140px);
-    height: calc(100vh - 140px);
-    min-height: 580px;
-    background: rgba(15, 23, 42, 0.75);
+    height: calc(100dvh - 110px);
+    height: calc(100vh - 110px);
+    min-height: 640px;
+    width: 100%;
+    background: rgba(15, 23, 42, 0.85);
     backdrop-filter: blur(16px);
     border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
     border-radius: 20px;
     overflow: hidden;
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem;
 }
 
 /* Chat Header */
 .chat-top-header {
     background: rgba(15, 23, 42, 0.95);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 1rem 1.4rem;
+    padding: 0.9rem 1.3rem;
     display: flex;
     flex-direction: column;
-    gap: 0.8rem;
+    gap: 0.6rem;
 }
 
 .chat-top-bar {
@@ -246,10 +247,10 @@ include 'includes/header.php';
 .chat-messages-stream {
     flex: 1;
     overflow-y: auto;
-    padding: 1.4rem;
+    padding: 1.2rem 1.4rem;
     display: flex;
     flex-direction: column;
-    gap: 1.1rem;
+    gap: 0.8rem;
     scroll-behavior: smooth;
     background: radial-gradient(circle at top right, rgba(5, 150, 105, 0.05), transparent 40%),
                 radial-gradient(circle at bottom left, rgba(15, 23, 42, 0.4), transparent 40%);
@@ -272,7 +273,7 @@ include 'includes/header.php';
 #messagesList {
     display: flex;
     flex-direction: column;
-    gap: 0.65rem;
+    gap: 0.5rem;
     width: 100%;
 }
 
@@ -281,7 +282,7 @@ include 'includes/header.php';
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 0.6rem 0;
+    margin: 0.5rem 0;
     position: relative;
 }
 
@@ -308,14 +309,18 @@ include 'includes/header.php';
 
 /* Message Bubble Architecture */
 .chat-bubble-row {
-    display: flex;
-    flex-direction: column;
-    max-width: 78%;
-    width: fit-content;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    align-items: flex-start !important;
+    max-width: 78% !important;
+    width: fit-content !important;
     height: auto !important;
     min-height: 0 !important;
-    position: relative;
+    max-height: none !important;
+    position: relative !important;
     animation: fadeInBubble 0.2s ease-out forwards;
+    margin-bottom: 0.4rem !important;
 }
 
 @keyframes fadeInBubble {
@@ -324,97 +329,120 @@ include 'includes/header.php';
 }
 
 .chat-bubble-row.mine {
-    align-self: flex-end;
-    align-items: flex-end;
-    margin-left: auto;
+    align-self: flex-end !important;
+    align-items: flex-end !important;
+    margin-left: auto !important;
+    margin-right: 0 !important;
 }
 
 .chat-bubble-row.other {
-    align-self: flex-start;
-    align-items: flex-start;
-    margin-right: auto;
+    align-self: flex-start !important;
+    align-items: flex-start !important;
+    margin-right: auto !important;
+    margin-left: 0 !important;
 }
 
 .chat-bubble-row.internal {
-    align-self: center;
-    max-width: 90%;
-    align-items: center;
-    margin: 0 auto;
+    align-self: center !important;
+    max-width: 90% !important;
+    align-items: center !important;
+    margin: 0 auto !important;
 }
 
 .chat-bubble-card {
-    padding: 0.55rem 0.9rem;
-    border-radius: 14px;
-    font-size: 0.9rem;
-    line-height: 1.4;
-    position: relative;
-    word-break: break-word;
-    white-space: pre-wrap;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    align-items: flex-start !important;
+    padding: 0.45rem 0.8rem !important;
+    border-radius: 14px !important;
+    font-size: 0.88rem !important;
+    line-height: 1.35 !important;
+    position: relative !important;
+    word-break: break-word !important;
+    white-space: pre-wrap !important;
     height: auto !important;
     min-height: 0 !important;
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
-    display: inline-block;
-    max-width: 100%;
+    max-height: none !important;
+    width: fit-content !important;
+    max-width: 100% !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18) !important;
 }
 
 /* Mine (User's own messages) */
 .chat-bubble-row.mine .chat-bubble-card {
-    background: linear-gradient(135deg, #059669 0%, #047857 100%);
-    color: #ffffff;
-    border-bottom-right-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+    color: #ffffff !important;
+    border-bottom-right-radius: 4px !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
 }
 
 /* Other (Support Team / Customer depending on perspective) */
 .chat-bubble-row.other .chat-bubble-card {
-    background: rgba(30, 41, 59, 0.85);
-    color: #f1f5f9;
-    border-bottom-left-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(30, 41, 59, 0.88) !important;
+    color: #f1f5f9 !important;
+    border-bottom-left-radius: 4px !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 
 /* Internal Note */
 .chat-bubble-row.internal .chat-bubble-card {
-    background: rgba(245, 158, 11, 0.12);
-    border: 1px dashed #f59e0b;
-    color: #fbbf24;
-    border-radius: 14px;
-    width: 100%;
+    background: rgba(245, 158, 11, 0.12) !important;
+    border: 1px dashed #f59e0b !important;
+    color: #fbbf24 !important;
+    border-radius: 14px !important;
+    width: 100% !important;
 }
 
 .chat-sender-info {
-    font-size: 0.72rem;
-    font-weight: 700;
-    margin-bottom: 0.2rem;
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
+    font-size: 0.7rem !important;
+    font-weight: 700 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0.15rem !important;
+    padding: 0 !important;
+    line-height: 1.2 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.3rem !important;
+}
+
+.chat-msg-body {
+    font-size: 0.88rem !important;
+    line-height: 1.35 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: inherit !important;
+    word-break: break-word !important;
+    white-space: pre-wrap !important;
 }
 
 .chat-bubble-row.mine .chat-sender-info {
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(255, 255, 255, 0.9) !important;
 }
 .chat-bubble-row.other .chat-sender-info {
-    color: #10b981;
+    color: #10b981 !important;
 }
 
 .chat-timestamp {
-    font-size: 0.68rem;
-    opacity: 0.8;
-    margin-top: 0.25rem;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
+    font-size: 0.65rem !important;
+    opacity: 0.78 !important;
+    margin-top: 0.2rem !important;
+    margin-bottom: 0 !important;
+    padding: 0 !important;
+    line-height: 1 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.25rem !important;
 }
 
 .chat-bubble-row.mine .chat-timestamp {
-    justify-content: flex-end;
-    color: rgba(255, 255, 255, 0.8);
+    justify-content: flex-end !important;
+    color: rgba(255, 255, 255, 0.8) !important;
 }
 
 .chat-bubble-row.other .chat-timestamp {
-    justify-content: flex-start;
-    color: #94a3b8;
+    justify-content: flex-start !important;
+    color: #94a3b8 !important;
 }
 
 /* Image / Attachment Previews */
@@ -1044,7 +1072,7 @@ function renderMessagesBatch(rawList, isInitial = false) {
         bubbleRow.innerHTML = `
             <div class="chat-bubble-card">
                 <div class="chat-sender-info">${senderTitle}</div>
-                <div>${nl2br(escapeHtml(m.message || ''))}</div>
+                <div class="chat-msg-body">${nl2br(escapeHtml(m.message || ''))}</div>
                 ${attachmentHtml}
                 <div class="chat-timestamp">
                     <span>${formattedTime}</span>
