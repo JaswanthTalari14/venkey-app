@@ -18,32 +18,88 @@ if (session_status() === PHP_SESSION_NONE) {
 @ini_set('zlib.output_compression', 'On');
 ob_start();
 
-mysqli_report(MYSQLI_REPORT_OFF);
+if (!function_exists('get_custom_env')) {
+    function get_custom_env($keys, $default = '') {
+        if (!is_array($keys)) $keys = [$keys];
+        foreach ($keys as $key) {
+            if (isset($_ENV[$key]) && $_ENV[$key] !== '') return $_ENV[$key];
+            if (isset($_SERVER[$key]) && $_SERVER[$key] !== '') return $_SERVER[$key];
+            $val = getenv($key);
+            if ($val !== false && $val !== '') return $val;
+        }
+        return $default;
+    }
+}
 
-$host   = getenv('DB_HOST') ?: "localhost";
-$user   = getenv('DB_USER') ?: "root";
-$pass   = getenv('DB_PASS') ?: "";
-$dbname = getenv('DB_NAME') ?: "medicalak";
-$port   = getenv('DB_PORT') ? intval(getenv('DB_PORT')) : 3306;
+// 1. Check for Database URL strings (e.g. DATABASE_URL, MYSQL_URL, CLEARDB_DATABASE_URL, JAWSDB_URL)
+$parsed_url_host = '';
+$parsed_url_user = '';
+$parsed_url_pass = '';
+$parsed_url_db   = '';
+$parsed_url_port = 0;
+
+$db_url = get_custom_env(['DATABASE_URL', 'MYSQL_URL', 'CLEARDB_DATABASE_URL', 'JAWSDB_URL']);
+if (!empty($db_url)) {
+    $p = parse_url($db_url);
+    if ($p && !empty($p['host'])) {
+        $parsed_url_host = $p['host'];
+        $parsed_url_user = $p['user'] ?? 'root';
+        $parsed_url_pass = $p['pass'] ?? '';
+        $parsed_url_db   = ltrim($p['path'] ?? 'medicalak', '/');
+        $parsed_url_port = isset($p['port']) ? intval($p['port']) : 3306;
+    }
+}
+
+// 2. Resolve Host, User, Password, Database, Port from environment or defaults
+$env_host_raw = get_custom_env(['DB_HOST', 'MYSQLHOST', 'MYSQL_HOST']);
+$host   = !empty($parsed_url_host) ? $parsed_url_host : (!empty($env_host_raw) ? $env_host_raw : "localhost");
+$user   = !empty($parsed_url_user) ? $parsed_url_user : get_custom_env(['DB_USER', 'MYSQLUSER', 'MYSQL_USER'], "root");
+$pass   = !empty($parsed_url_pass) ? $parsed_url_pass : get_custom_env(['DB_PASS', 'DB_PASSWORD', 'MYSQLPASSWORD', 'MYSQL_PASSWORD'], "");
+$dbname = !empty($parsed_url_db)   ? $parsed_url_db   : get_custom_env(['DB_NAME', 'DB_DATABASE', 'MYSQLDATABASE', 'MYSQL_DATABASE'], "medicalak");
+
+$port_raw = get_custom_env(['DB_PORT', 'MYSQLPORT', 'MYSQL_PORT']);
+$port   = !empty($parsed_url_port) ? $parsed_url_port : ($port_raw ? intval($port_raw) : 3306);
 
 $conn = null;
 $max_retries = 3;
 
-// Determine candidate host addresses (e.g. try localhost then 127.0.0.1 if default local environment)
-$hosts_to_try = [$host];
-if ($host === 'localhost' && !getenv('DB_HOST')) {
-    $hosts_to_try[] = '127.0.0.1';
-} elseif ($host === '127.0.0.1' && !getenv('DB_HOST')) {
-    $hosts_to_try[] = 'localhost';
+// 3. Build candidate target connections
+$candidates = [];
+$candidates[] = ['host' => $host, 'port' => $port];
+
+// If local environment target, test alternative sockets & ports (3306 and 3307)
+$is_local_host = in_array(strtolower($host), ['localhost', '127.0.0.1', '::1', 'localhost.localdomain']) && empty($env_host_raw);
+if ($is_local_host) {
+    $alt_hosts = ['127.0.0.1', 'localhost'];
+    $alt_ports = [3306, 3307];
+    foreach ($alt_hosts as $h) {
+        foreach ($alt_ports as $p) {
+            $exists = false;
+            foreach ($candidates as $c) {
+                if ($c['host'] === $h && $c['port'] === $p) {
+                    $exists = true;
+                    break;
+                }
+            }
+            if (!$exists) {
+                $candidates[] = ['host' => $h, 'port' => $p];
+            }
+        }
+    }
 }
 
 $last_err_str = "";
+$attempted_targets = [];
 
-foreach ($hosts_to_try as $curr_host) {
+foreach ($candidates as $cand) {
+    $curr_host = $cand['host'];
+    $curr_port = $cand['port'];
+    $attempted_targets[] = "$curr_host:$curr_port";
     $retry_count = 0;
+    
     while ($retry_count < $max_retries) {
         try {
-            $conn = @new mysqli($curr_host, $user, $pass, $dbname, $port);
+            $conn = @new mysqli($curr_host, $user, $pass, $dbname, $curr_port);
         } catch (Throwable $e) {
             $conn = null;
             $last_err_str = $e->getMessage();
@@ -61,17 +117,10 @@ foreach ($hosts_to_try as $curr_host) {
             $conn = null;
         }
 
-        // Auto-retry if max_user_connections or temporary overload
-        if (strpos($err_str, 'max_user_connections') !== false || strpos($err_str, 'Too many connections') !== false) {
-            $retry_count++;
-            usleep(150000); // 150ms backoff
-            continue;
-        }
-
-        // Fallback: If database does not exist on local setup, attempt auto-creation
-        if (($curr_host === 'localhost' || $curr_host === '127.0.0.1') && (strpos($err_str, 'Unknown database') !== false || strpos($err_str, '1049') !== false)) {
+        // Auto-create database if host connected but target DB is missing (Error 1049)
+        if (strpos($err_str, 'Unknown database') !== false || strpos($err_str, '1049') !== false) {
             try {
-                $conn = @new mysqli($curr_host, $user, $pass, "", $port);
+                $conn = @new mysqli($curr_host, $user, $pass, "", $curr_port);
                 if ($conn && !$conn->connect_error) {
                     @$conn->query("CREATE DATABASE IF NOT EXISTS `$dbname` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
                     if (@$conn->select_db($dbname)) {
@@ -79,15 +128,23 @@ foreach ($hosts_to_try as $curr_host) {
                     }
                 }
             } catch (Throwable $e2) {
-                if ($conn) { @$conn->close(); $conn = null; }
+                if ($conn) { try { @$conn->close(); } catch (Throwable $t) {} $conn = null; }
             }
         }
+
+        // Auto-retry if max connections reached or brief server startup delay
+        if (strpos($err_str, 'max_user_connections') !== false || strpos($err_str, 'Too many connections') !== false || strpos($err_str, 'Connection refused') !== false || strpos($err_str, "Can't connect") !== false) {
+            $retry_count++;
+            usleep(200000); // 200ms backoff
+            continue;
+        }
+
         break;
     }
 }
 
 if (!$conn || $conn->connect_error) {
-    $err_msg = ($conn && $conn->connect_error) ? $conn->connect_error : ($last_err_str ?: "Connection failed");
+    $err_msg = ($conn && $conn->connect_error) ? $conn->connect_error : ($last_err_str ?: "Connection refused");
     
     // Detect API / AJAX request
     $is_json_request = (!empty($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) ||
@@ -111,7 +168,39 @@ if (!$conn || $conn->connect_error) {
             <button onclick='location.reload()' style='padding:0.75rem 1.5rem; background:#4a90e2; color:#fff; border:none; border-radius:8px; font-weight:bold; cursor:pointer;'>Retry Now</button>
         </div>");
     }
-    die("Database Connection Error: " . htmlspecialchars($err_msg) . ". Please check database credentials.");
+
+    $attempted_str = htmlspecialchars(implode(', ', $attempted_targets));
+    $safe_err = htmlspecialchars($err_msg);
+
+    die("
+    <div style=\"font-family: 'Inter', system-ui, -apple-system, sans-serif; min-height: 100vh; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; padding: 2rem;\">
+        <div style=\"max-width: 580px; width: 100%; background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(255, 71, 87, 0.3); border-radius: 20px; padding: 2.5rem; box-shadow: 0 20px 40px rgba(0,0,0,0.5); text-align: center;\">
+            <div style=\"width: 64px; height: 64px; background: rgba(255, 71, 87, 0.15); color: #ff4757; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; margin: 0 auto 1.5rem auto;\">
+                ⚠️
+            </div>
+            <h2 style=\"margin: 0 0 0.5rem 0; font-size: 1.5rem; font-weight: 700; color: #ffffff;\">Database Connection Error</h2>
+            <p style=\"color: #94a3b8; font-size: 0.95rem; margin-bottom: 1.5rem;\">Could not establish a connection to the MySQL database server.</p>
+            
+            <div style=\"background: rgba(0, 0, 0, 0.3); border-radius: 12px; padding: 1rem; text-align: left; margin-bottom: 1.5rem; font-family: monospace; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.06);\">
+                <div style=\"color: #ff4757; font-weight: bold; margin-bottom: 0.4rem;\">Error: {$safe_err}</div>
+                <div style=\"color: #94a3b8;\">Attempted Targets: {$attempted_str}</div>
+                <div style=\"color: #94a3b8;\">Database Name: " . htmlspecialchars($dbname) . "</div>
+            </div>
+
+            <div style=\"text-align: left; background: rgba(74, 144, 226, 0.08); border-left: 4px solid #4a90e2; padding: 1rem; border-radius: 8px; margin-bottom: 1.8rem; font-size: 0.88rem; color: #cbd5e1;\">
+                <strong style=\"color: #ffffff; display: block; margin-bottom: 0.4rem;\">💡 How to Fix:</strong>
+                <ul style=\"margin: 0; padding-left: 1.2rem; line-height: 1.5;\">
+                    <li><strong>Local Development (XAMPP/WAMP):</strong> Open XAMPP Control Panel and click <strong>Start</strong> next to MySQL.</li>
+                    <li><strong>Render / Cloud Deployment:</strong> Go to your Render Dashboard → Service → <strong>Environment</strong> and set <code>DB_HOST</code>, <code>DB_USER</code>, <code>DB_PASS</code>, <code>DB_NAME</code>, and <code>DB_PORT</code> (or <code>DATABASE_URL</code>).</li>
+                </ul>
+            </div>
+
+            <button onclick=\"location.reload()\" style=\"background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%); color: #ffffff; border: none; padding: 0.85rem 2rem; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; box-shadow: 0 4px 15px rgba(74, 144, 226, 0.4);\">
+                🔄 Retry Connection
+            </button>
+        </div>
+    </div>
+    ");
 }
 
 // Auto-close MySQL connection immediately when PHP finishes response to free connection slots
