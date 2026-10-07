@@ -51,6 +51,7 @@ if ($action === 'cancel_order') {
     $stmt = $conn->prepare("UPDATE orders SET status = 'cancelled', cancellation_reason = ? WHERE id = ?");
     $stmt->bind_param("si", $reason, $order_id);
     if ($stmt->execute()) {
+        update_order_status_timestamps($conn, $order_id, 'cancelled');
         // Fetch patient_id for notification
         $res = $conn->query("SELECT patient_id FROM orders WHERE id = $order_id");
         if ($res && $row = $res->fetch_assoc()) {
@@ -132,6 +133,7 @@ if ($action === 'update_status') {
     $stmt = $conn->prepare("UPDATE orders SET status = ? WHERE id = ?");
     $stmt->bind_param("si", $status, $order_id);
     if ($stmt->execute()) {
+        update_order_status_timestamps($conn, $order_id, $status);
         require_once 'includes/referral_functions.php';
         sync_pending_referrals();
 

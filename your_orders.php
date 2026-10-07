@@ -81,6 +81,7 @@ $payment_param = isset($_GET['payment']) ? trim($_GET['payment']) : 'all';
 $orders_query = $conn->query("
     SELECT o.id as order_id, o.total_amount, o.status as order_status, o.payment_method, o.payment_status, 
            o.gateway_payment_id, o.gateway_order_id, o.address, o.created_at, o.cancellation_reason, o.estimated_delivery_time,
+           o.payment_confirmed_at, o.packing_at, o.shipped_at, o.out_for_delivery_at, o.delivered_at, o.cancelled_at,
            oi.id as item_id, oi.medicine_id, oi.quantity, oi.price as unit_price,
            m.name as medicine_name, m.image as medicine_image, m.description as medicine_desc
     FROM orders o
@@ -108,6 +109,12 @@ if ($orders_query) {
                 'created_at' => $row['created_at'],
                 'cancellation_reason' => $row['cancellation_reason'] ?? '',
                 'estimated_delivery_time' => $row['estimated_delivery_time'] ?? '',
+                'payment_confirmed_at' => $row['payment_confirmed_at'] ?? null,
+                'packing_at' => $row['packing_at'] ?? null,
+                'shipped_at' => $row['shipped_at'] ?? null,
+                'out_for_delivery_at' => $row['out_for_delivery_at'] ?? null,
+                'delivered_at' => $row['delivered_at'] ?? null,
+                'cancelled_at' => $row['cancelled_at'] ?? null,
                 'items' => []
             ];
         }
@@ -205,6 +212,130 @@ if ($orders_query) {
 .filter-select {
     flex: 1;
     min-width: 150px;
+}
+
+/* Order Tracking Timeline CSS */
+.order-tracking-section {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    padding: 1.1rem 1.25rem;
+    margin-bottom: 1.2rem;
+}
+.order-tracking-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding-bottom: 0.6rem;
+}
+.order-timeline-container {
+    position: relative;
+    padding-left: 0.2rem;
+}
+.timeline-step {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.9rem;
+    padding-bottom: 1.2rem;
+}
+.timeline-step:last-child {
+    padding-bottom: 0;
+}
+.timeline-step:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 11px;
+    top: 22px;
+    bottom: -2px;
+    width: 2px;
+    background: rgba(255, 255, 255, 0.12);
+    z-index: 1;
+}
+.timeline-step.completed:not(:last-child)::before {
+    background: #2ed573;
+}
+.timeline-step.current:not(:last-child)::before {
+    background: linear-gradient(to bottom, var(--primary-color) 0%, rgba(255, 255, 255, 0.12) 100%);
+}
+.timeline-node {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    font-weight: bold;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 2;
+    transition: var(--transition);
+}
+.timeline-step.completed .timeline-node {
+    background: #2ed573;
+    color: #0a0a0a;
+    box-shadow: 0 0 10px rgba(46, 213, 115, 0.3);
+}
+.timeline-step.current .timeline-node {
+    background: var(--primary-color);
+    color: #ffffff;
+    box-shadow: 0 0 0 4px rgba(74, 144, 226, 0.22), 0 0 12px rgba(74, 144, 226, 0.4);
+    animation: trackingPulse 2s infinite;
+}
+@keyframes trackingPulse {
+    0% { box-shadow: 0 0 0 0 rgba(74, 144, 226, 0.5); }
+    70% { box-shadow: 0 0 0 6px rgba(74, 144, 226, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(74, 144, 226, 0); }
+}
+.timeline-step.upcoming .timeline-node {
+    background: transparent;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    color: transparent;
+}
+.timeline-step.cancelled .timeline-node {
+    background: #ff4757;
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(255, 71, 87, 0.3);
+}
+.timeline-content {
+    flex: 1;
+    min-width: 0;
+}
+.timeline-label {
+    font-size: 0.88rem;
+    font-weight: 600;
+    line-height: 1.3;
+}
+.timeline-step.completed .timeline-label {
+    color: var(--text-primary);
+}
+.timeline-step.current .timeline-label {
+    color: var(--primary-color);
+    font-weight: 700;
+}
+.timeline-step.upcoming .timeline-label {
+    color: var(--text-secondary);
+    opacity: 0.65;
+}
+.timeline-step.cancelled .timeline-label {
+    color: #ff4757;
+}
+.timeline-time {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin-top: 0.15rem;
+    line-height: 1.3;
+}
+.timeline-step.current .timeline-time {
+    color: var(--accent);
+    font-weight: 600;
 }
 </style>
 
@@ -595,6 +726,147 @@ document.addEventListener("DOMContentLoaded", function() {
     filterOrders();
 });
 
+function formatTrackingDate(dateStr) {
+    if (!dateStr || dateStr === '0000-00-00 00:00:00' || dateStr === 'null' || dateStr === null) return '';
+    try {
+        var d = new Date(String(dateStr).replace(/-/g, "/"));
+        if (isNaN(d.getTime())) return '';
+        var day = d.getDate();
+        var monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        var month = monthNames[d.getMonth()];
+        var hours = d.getHours();
+        var minutes = d.getMinutes();
+        var ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        hours = hours ? hours : 12;
+        minutes = minutes < 10 ? '0' + minutes : minutes;
+        return day + ' ' + month + ', ' + hours + ':' + minutes + ' ' + ampm;
+    } catch(e) {
+        return '';
+    }
+}
+
+function buildOrderTimelineHtml(order) {
+    var rawStatus = String(order.order_status || 'pending').toLowerCase().trim();
+    var payStatus = String(order.payment_status || '').toLowerCase().trim();
+    var payMethod = String(order.payment_method || 'cod').toLowerCase().trim();
+
+    var isCancelled = (rawStatus === 'cancelled' || rawStatus === 'rejected');
+
+    var createdTime = formatTrackingDate(order.created_at);
+    var payConfirmedTime = formatTrackingDate(order.payment_confirmed_at) || createdTime;
+    var packingTime = formatTrackingDate(order.packing_at) || (inArray(rawStatus, ['shipped', 'out for delivery', 'delivered']) ? createdTime : '');
+    var shippedTime = formatTrackingDate(order.shipped_at) || (inArray(rawStatus, ['out for delivery', 'delivered']) ? createdTime : '');
+    var outDeliveryTime = formatTrackingDate(order.out_for_delivery_at) || (rawStatus === 'delivered' ? createdTime : '');
+    var deliveredTime = formatTrackingDate(order.delivered_at);
+    var cancelledTime = formatTrackingDate(order.cancelled_at) || createdTime;
+
+    var isPayConfirmed = (payStatus === 'paid' || payStatus === 'paid via wallet' || payStatus === 'completed' || payStatus === 'cash on delivery' || payMethod === 'cod');
+
+    if (isCancelled) {
+        var cancelSteps = [
+            { title: 'Order Placed', status: 'completed', icon: '✓', time: createdTime },
+            { title: 'Payment Confirmed', status: isPayConfirmed ? 'completed' : 'upcoming', icon: isPayConfirmed ? '✓' : '○', time: isPayConfirmed ? payConfirmedTime : '' },
+            { title: rawStatus === 'rejected' ? 'Order Rejected' : 'Order Cancelled', status: 'cancelled', icon: '✕', time: cancelledTime }
+        ];
+        return renderTimelineSteps(cancelSteps);
+    }
+
+    var currentStepIdx = 0;
+    if (rawStatus === 'delivered') {
+        currentStepIdx = 5;
+    } else if (rawStatus === 'out for delivery') {
+        currentStepIdx = 4;
+    } else if (rawStatus === 'shipped') {
+        currentStepIdx = 3;
+    } else if (inArray(rawStatus, ['packing', 'packed', 'processing'])) {
+        currentStepIdx = 2;
+    } else if (rawStatus === 'pending') {
+        if (isPayConfirmed) {
+            currentStepIdx = 2;
+        } else {
+            currentStepIdx = 1;
+        }
+    }
+
+    var stepConfigs = [
+        { name: 'Order Placed', time: createdTime },
+        { name: 'Payment Confirmed', time: payConfirmedTime },
+        { name: 'Packing', time: packingTime },
+        { name: 'Shipped', time: shippedTime },
+        { name: 'Out for Delivery', time: outDeliveryTime },
+        { name: 'Delivered', time: deliveredTime }
+    ];
+
+    var steps = stepConfigs.map(function(stepConf, idx) {
+        var state = 'upcoming';
+        var icon = '○';
+        var timeStr = '';
+
+        if (idx < currentStepIdx) {
+            state = 'completed';
+            icon = '✓';
+            timeStr = stepConf.time || createdTime;
+        } else if (idx === currentStepIdx) {
+            if (currentStepIdx === 5 && rawStatus === 'delivered') {
+                state = 'completed';
+                icon = '✓';
+                timeStr = stepConf.time || createdTime;
+            } else {
+                state = 'current';
+                icon = '●';
+                timeStr = 'Waiting';
+            }
+        } else {
+            state = 'upcoming';
+            icon = '○';
+            timeStr = '';
+        }
+
+        return {
+            title: stepConf.name,
+            status: state,
+            icon: icon,
+            time: timeStr
+        };
+    });
+
+    return renderTimelineSteps(steps);
+}
+
+function renderTimelineSteps(steps) {
+    var html = `
+        <div class="order-tracking-section">
+            <div class="order-tracking-title">
+                <span style="font-size: 1.1rem; color: var(--primary-color);">📦</span> ORDER TRACKING
+            </div>
+            <div class="order-timeline-container">
+    `;
+
+    steps.forEach(function(step) {
+        html += `
+            <div class="timeline-step ${step.status}">
+                <div class="timeline-node">${step.icon}</div>
+                <div class="timeline-content">
+                    <div class="timeline-label">${step.title}</div>
+                    ${step.time ? `<div class="timeline-time">${step.time}</div>` : ''}
+                </div>
+            </div>
+        `;
+    });
+
+    html += `
+            </div>
+        </div>
+    `;
+
+    return html;
+}
+
+function inArray(needle, haystack) {
+    return haystack.indexOf(needle) !== -1;
+}
+
 function openOrderDetailsModal(orderId) {
     var order = ordersData[orderId];
     if (!order) return;
@@ -642,6 +914,8 @@ function openOrderDetailsModal(orderId) {
             </div>
             ${txHtml}
         </div>
+
+        ${buildOrderTimelineHtml(order)}
 
         <div style="margin-bottom: 1.2rem;">
             <div style="font-size: 0.85rem; font-weight: bold; color: var(--text-secondary); margin-bottom: 0.6rem;">Ordered Items:</div>

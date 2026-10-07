@@ -43,7 +43,7 @@ while ($retry_count < $max_retries) {
 
     $err_str = ($conn && $conn->connect_error) ? $conn->connect_error : "";
     if ($conn) {
-        @$conn->close();
+        try { @$conn->close(); } catch (Throwable $t) {}
         $conn = null;
     }
 
@@ -175,8 +175,57 @@ function ensure_database_indexes($conn) {
             if (!in_array('is_deleted', $existing_cols)) {
                 @$conn->query("ALTER TABLE orders ADD COLUMN is_deleted TINYINT(1) DEFAULT 0 AFTER estimated_delivery_time");
             }
+            if (!in_array('payment_method', $existing_cols)) {
+                @$conn->query("ALTER TABLE orders ADD COLUMN payment_method VARCHAR(50) DEFAULT 'COD' AFTER is_deleted");
+            }
+            if (!in_array('payment_status', $existing_cols)) {
+                @$conn->query("ALTER TABLE orders ADD COLUMN payment_status VARCHAR(50) DEFAULT 'Cash on Delivery' AFTER payment_method");
+            }
+            if (!in_array('gateway_order_id', $existing_cols)) {
+                @$conn->query("ALTER TABLE orders ADD COLUMN gateway_order_id VARCHAR(100) DEFAULT NULL AFTER payment_status");
+            }
+            if (!in_array('gateway_payment_id', $existing_cols)) {
+                @$conn->query("ALTER TABLE orders ADD COLUMN gateway_payment_id VARCHAR(100) DEFAULT NULL AFTER gateway_order_id");
+            }
+            if (!in_array('payment_confirmed_at', $existing_cols)) {
+                @$conn->query("ALTER TABLE orders ADD COLUMN payment_confirmed_at TIMESTAMP NULL DEFAULT NULL AFTER gateway_payment_id");
+            }
+            if (!in_array('packing_at', $existing_cols)) {
+                @$conn->query("ALTER TABLE orders ADD COLUMN packing_at TIMESTAMP NULL DEFAULT NULL AFTER payment_confirmed_at");
+            }
+            if (!in_array('shipped_at', $existing_cols)) {
+                @$conn->query("ALTER TABLE orders ADD COLUMN shipped_at TIMESTAMP NULL DEFAULT NULL AFTER packing_at");
+            }
+            if (!in_array('out_for_delivery_at', $existing_cols)) {
+                @$conn->query("ALTER TABLE orders ADD COLUMN out_for_delivery_at TIMESTAMP NULL DEFAULT NULL AFTER shipped_at");
+            }
+            if (!in_array('delivered_at', $existing_cols)) {
+                @$conn->query("ALTER TABLE orders ADD COLUMN delivered_at TIMESTAMP NULL DEFAULT NULL AFTER out_for_delivery_at");
+            }
+            if (!in_array('cancelled_at', $existing_cols)) {
+                @$conn->query("ALTER TABLE orders ADD COLUMN cancelled_at TIMESTAMP NULL DEFAULT NULL AFTER delivered_at");
+            }
         }
     }
+
+function update_order_status_timestamps($conn, $order_id, $new_status) {
+    $st = strtolower(trim($new_status ?? ''));
+    $now = date('Y-m-d H:i:s');
+    $order_id = (int)$order_id;
+    if ($order_id <= 0 || !$conn) return;
+
+    if (in_array($st, ['packing', 'packed'])) {
+        @$conn->query("UPDATE orders SET packing_at = IF(packing_at IS NULL, '$now', packing_at), payment_confirmed_at = IF(payment_confirmed_at IS NULL, '$now', payment_confirmed_at) WHERE id = $order_id");
+    } elseif ($st === 'shipped') {
+        @$conn->query("UPDATE orders SET shipped_at = IF(shipped_at IS NULL, '$now', shipped_at), packing_at = IF(packing_at IS NULL, '$now', packing_at), payment_confirmed_at = IF(payment_confirmed_at IS NULL, '$now', payment_confirmed_at) WHERE id = $order_id");
+    } elseif ($st === 'out for delivery') {
+        @$conn->query("UPDATE orders SET out_for_delivery_at = IF(out_for_delivery_at IS NULL, '$now', out_for_delivery_at), shipped_at = IF(shipped_at IS NULL, '$now', shipped_at), packing_at = IF(packing_at IS NULL, '$now', packing_at), payment_confirmed_at = IF(payment_confirmed_at IS NULL, '$now', payment_confirmed_at) WHERE id = $order_id");
+    } elseif ($st === 'delivered') {
+        @$conn->query("UPDATE orders SET delivered_at = IF(delivered_at IS NULL, '$now', delivered_at), out_for_delivery_at = IF(out_for_delivery_at IS NULL, '$now', out_for_delivery_at), shipped_at = IF(shipped_at IS NULL, '$now', shipped_at), packing_at = IF(packing_at IS NULL, '$now', packing_at), payment_confirmed_at = IF(payment_confirmed_at IS NULL, '$now', payment_confirmed_at) WHERE id = $order_id");
+    } elseif (in_array($st, ['cancelled', 'rejected'])) {
+        @$conn->query("UPDATE orders SET cancelled_at = IF(cancelled_at IS NULL, '$now', cancelled_at) WHERE id = $order_id");
+    }
+}
 
     // Auto-Migrate Tables for 39 Features
     $conn->query("CREATE TABLE IF NOT EXISTS refill_reminders (

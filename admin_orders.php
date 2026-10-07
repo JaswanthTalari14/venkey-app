@@ -15,6 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
     $new_status = $conn->real_escape_string($_POST['status']);
     
     if ($conn->query("UPDATE orders SET status='$new_status' WHERE id=$order_id")) {
+        update_order_status_timestamps($conn, $order_id, $new_status);
         $success = "Order #ORD-" . str_pad($order_id, 4, '0', STR_PAD_LEFT) . " status updated to $new_status!";
         require_once 'includes/referral_functions.php';
         sync_pending_referrals();

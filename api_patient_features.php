@@ -396,5 +396,36 @@ if ($action === 'get_queue_tracker') {
     exit;
 }
 
+// 18. Secure Order Tracking Data Endpoint
+if ($action === 'get_order_tracking') {
+    $order_id = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
+    if ($order_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid Order ID']);
+        exit;
+    }
+
+    $stmt = $conn->prepare("
+        SELECT id, patient_id, total_amount, status as order_status, payment_method, payment_status, 
+               gateway_payment_id, gateway_order_id, address, created_at, 
+               payment_confirmed_at, packing_at, shipped_at, out_for_delivery_at, delivered_at, cancelled_at, 
+               cancellation_reason, estimated_delivery_time
+        FROM orders 
+        WHERE id = ? AND patient_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
+    ");
+    $stmt->bind_param("ii", $order_id, $user_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    if (!$res || $res->num_rows === 0) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Unauthorized access or order not found']);
+        exit;
+    }
+
+    $order = $res->fetch_assoc();
+    echo json_encode(['success' => true, 'order' => $order]);
+    exit;
+}
+
 echo json_encode(['success' => false, 'message' => 'Invalid action']);
 ?>
