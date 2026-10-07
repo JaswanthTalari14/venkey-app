@@ -1,6 +1,13 @@
 <?php
 require_once __DIR__ . '/../config.php';
 
+if (!function_exists('sanitize_utf8mb4_text')) {
+    function sanitize_utf8mb4_text($str) {
+        if ($str === null || $str === '') return '';
+        return preg_replace('/[\x{10000}-\x{10FFFF}]/u', '', $str);
+    }
+}
+
 // Auto-initialize Notifications System Table
 function init_notification_tables() {
     global $conn;
@@ -8,6 +15,8 @@ function init_notification_tables() {
         $conn = $GLOBALS['conn'] ?? null;
     }
     if (!$conn || !($conn instanceof mysqli)) return;
+
+    @$conn->set_charset("utf8mb4");
 
     $conn->query("CREATE TABLE IF NOT EXISTS user_notifications (
         id INT PRIMARY KEY AUTO_INCREMENT,
@@ -25,7 +34,12 @@ function init_notification_tables() {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         INDEX idx_user_read (user_id, is_read),
         INDEX idx_user_created (user_id, created_at)
-    )");
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // Ensure utf8mb4 table conversion if created previously with utf8/latin1
+    try {
+        @$conn->query("ALTER TABLE user_notifications CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    } catch (Throwable $t) {}
 
     // Auto-migrate columns if table existed prior
     $col_res = @$conn->query("SHOW COLUMNS FROM user_notifications");
@@ -82,23 +96,65 @@ function create_notification($user_id, $title, $message, $type = 'info', $relate
     $user_id = (int)$user_id;
     if ($user_id <= 0 || empty($title) || empty($message)) return false;
 
+    @$conn->set_charset("utf8mb4");
+
     // Idempotency Check: Prevent duplicate notification within 30 seconds for same title & user
-    $check = $conn->prepare("
-        SELECT id FROM user_notifications 
-        WHERE user_id = ? AND title = ? AND created_at >= NOW() - INTERVAL 30 SECOND
-    ");
-    $check->bind_param("is", $user_id, $title);
-    $check->execute();
-    if ($check->get_result()->num_rows > 0) {
-        return false; // Prevent duplicate emission
+    try {
+        $check = $conn->prepare("
+            SELECT id FROM user_notifications 
+            WHERE user_id = ? AND title = ? AND created_at >= NOW() - INTERVAL 30 SECOND
+        ");
+        if ($check) {
+            $check->bind_param("is", $user_id, $title);
+            $check->execute();
+            $res = $check->get_result();
+            if ($res && $res->num_rows > 0) {
+                return false; // Prevent duplicate emission
+            }
+        }
+    } catch (Throwable $e) {
+        try {
+            $clean_title = sanitize_utf8mb4_text($title);
+            $check = $conn->prepare("
+                SELECT id FROM user_notifications 
+                WHERE user_id = ? AND title = ? AND created_at >= NOW() - INTERVAL 30 SECOND
+            ");
+            if ($check) {
+                $check->bind_param("is", $user_id, $clean_title);
+                $check->execute();
+                $res = $check->get_result();
+                if ($res && $res->num_rows > 0) return false;
+            }
+        } catch (Throwable $e2) {}
     }
 
-    $stmt = $conn->prepare("
-        INSERT INTO user_notifications (user_id, role, title, message, type, related_entity_type, related_entity_id) 
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ");
-    $stmt->bind_param("issssss", $user_id, $role, $title, $message, $type, $related_entity_type, $related_entity_id);
-    return $stmt->execute();
+    try {
+        $stmt = $conn->prepare("
+            INSERT INTO user_notifications (user_id, role, title, message, type, related_entity_type, related_entity_id) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ");
+        if (!$stmt) return false;
+        $stmt->bind_param("issssss", $user_id, $role, $title, $message, $type, $related_entity_type, $related_entity_id);
+        return $stmt->execute();
+    } catch (Throwable $e) {
+        // Fallback: If MySQL rejects 4-byte emojis due to legacy charset limits, insert sanitized text
+        try {
+            $clean_title = sanitize_utf8mb4_text($title);
+            $clean_msg   = sanitize_utf8mb4_text($message);
+            if (empty($clean_title)) $clean_title = "Notification";
+            if (empty($clean_msg)) $clean_msg = "You have a new update.";
+
+            $stmt = $conn->prepare("
+                INSERT INTO user_notifications (user_id, role, title, message, type, related_entity_type, related_entity_id) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ");
+            if (!$stmt) return false;
+            $stmt->bind_param("issssss", $user_id, $role, $clean_title, $clean_msg, $type, $related_entity_type, $related_entity_id);
+            return $stmt->execute();
+        } catch (Throwable $e2) {
+            return false;
+        }
+    }
 }
 
 // Alias for send_user_notification used by doctor/admin modules

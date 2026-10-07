@@ -203,6 +203,10 @@ if (!$conn || $conn->connect_error) {
     ");
 }
 
+if ($conn && $conn instanceof mysqli) {
+    @$conn->set_charset("utf8mb4");
+}
+
 // Auto-close MySQL connection immediately when PHP finishes response to free connection slots
 register_shutdown_function(function() use (&$conn) {
     if ($conn && $conn instanceof mysqli) {
@@ -929,6 +933,17 @@ function update_order_status_timestamps($conn, $order_id, $new_status) {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_str_ticket (ticket_id)
         )");
+    } catch (Throwable $t) {}
+
+    // Ensure utf8mb4 collation for notification and support tables handling emojis
+    try {
+        @$conn->query("ALTER TABLE user_notifications CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    } catch (Throwable $t) {}
+    try {
+        @$conn->query("ALTER TABLE support_tickets CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    } catch (Throwable $t) {}
+    try {
+        @$conn->query("ALTER TABLE support_ticket_replies CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     } catch (Throwable $t) {}
 }
 

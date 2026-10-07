@@ -121,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_ticket_submit'
                         while ($adm = $admin_users->fetch_assoc()) {
                             create_notification(
                                 (int)$adm['id'],
-                                "New Support Ticket #$ticket_num 🎫",
+                                "New Support Ticket #$ticket_num",
                                 "Customer $user_name created support ticket ($category): $subject",
                                 'system',
                                 'ticket',
