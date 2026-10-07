@@ -124,24 +124,33 @@ include 'includes/header.php';
         <h3 class="sidebar-title" style="margin-bottom: 2rem;">Admin Menu</h3>
         <ul class="sidebar-menu">
             <li><a href="admin_dashboard.php" class="active"><i class="fas fa-chart-pie"></i> Overview</a></li>
+            <li><a href="admin_approval_center.php" style="display: flex; justify-content: space-between; align-items: center;">
+                <span><i class="fas fa-check-double"></i> Approval Center</span>
+                <?php
+                    $pending_tot = (int)$conn->query("SELECT (SELECT COUNT(*) FROM digital_medical_cards WHERE status='pending') + (SELECT COUNT(*) FROM users WHERE role='doctor' AND is_verified=0) + (SELECT COUNT(*) FROM users WHERE role='rmp' AND is_verified=0) + (SELECT COUNT(*) FROM wallet_topups WHERE status IN ('pending', 'pending_approval', 'amount_mismatch')) + (SELECT COUNT(*) FROM refund_requests WHERE status='Requested') as cnt")->fetch_assoc()['cnt'];
+                    if ($pending_tot > 0):
+                ?>
+                    <span style="background: #ff4757; color: white; border-radius: 12px; padding: 0.15rem 0.5rem; font-size: 0.75rem; font-weight: bold;"><?php echo $pending_tot; ?></span>
+                <?php endif; ?>
+            </a></li>
             <li><a href="admin_search.php"><i class="fas fa-search"></i> Global Search</a></li>
+            <li><a href="admin_audit.php"><i class="fas fa-history"></i> Audit Timeline</a></li>
+            <li><a href="admin_digital_cards.php"><i class="fas fa-id-card"></i> Medical Cards</a></li>
+            <li><a href="admin_verify.php"><i class="fas fa-user-md"></i> Verify Doctors & RMPs</a></li>
+            <li><a href="admin_wallets.php"><i class="fas fa-wallet"></i> Wallet Management</a></li>
+            <li><a href="admin_refunds.php"><i class="fas fa-undo"></i> Refunds & Disputes</a></li>
+            <li><a href="admin_orders_management.php"><i class="fas fa-boxes"></i> Order Management</a></li>
+            <li><a href="admin_users.php"><i class="fas fa-users-cog"></i> Manage Users</a></li>
             <li><a href="admin_reconciliation.php"><i class="fas fa-calculator"></i> Reconciliation</a></li>
             <li><a href="admin_cases.php"><i class="fas fa-briefcase"></i> Case Management</a></li>
             <li><a href="admin_system_health.php"><i class="fas fa-heartbeat"></i> System Health</a></li>
-            <li><a href="admin_audit.php"><i class="fas fa-clipboard-list"></i> Audit Logs</a></li>
             <li><a href="admin_risk.php"><i class="fas fa-shield-alt"></i> Risk Center</a></li>
             <li><a href="admin_announcements.php"><i class="fas fa-bullhorn"></i> Announcements</a></li>
-            <li><a href="admin_users.php"><i class="fas fa-users-cog"></i> Manage Users</a></li>
-            <li><a href="admin_verify.php"><i class="fas fa-user-md"></i> Verify Doctors & RMPs</a></li>
             <li><a href="admin_bookings.php"><i class="fas fa-calendar-check"></i> All Bookings</a></li>
-            <li><a href="admin_orders_management.php"><i class="fas fa-boxes"></i> Order Management</a></li>
-            <li><a href="admin_refunds.php"><i class="fas fa-undo"></i> Refunds & Disputes</a></li>
             <li><a href="admin_medicines.php"><i class="fas fa-pills"></i> Manage Medicines</a></li>
             <li><a href="admin_referrals.php"><i class="fas fa-gift"></i> Referral Management</a></li>
             <li><a href="admin_referral_settings.php"><i class="fas fa-sliders-h"></i> Referral Settings</a></li>
-            <li><a href="admin_wallets.php"><i class="fas fa-wallet"></i> Wallet Management</a></li>
             <li><a href="payment_history.php"><i class="fas fa-receipt"></i> Payment History</a></li>
-            <li><a href="admin_digital_cards.php"><i class="fas fa-id-card"></i> Medical Card Approvals</a></li>
             <li><a href="admin_feedback.php"><i class="fas fa-comments"></i> Feedback & Complaints</a></li>
         </ul>
     </aside>

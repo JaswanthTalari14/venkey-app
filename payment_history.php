@@ -219,6 +219,7 @@ include 'includes/header.php';
                                 <th style="padding: 1rem; white-space: nowrap;">Method</th>
                                 <th style="padding: 1rem; white-space: nowrap;">Status</th>
                                 <th style="padding: 1rem; white-space: nowrap;">Date & Time</th>
+                                <th style="padding: 1rem; white-space: nowrap;">Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -231,6 +232,13 @@ include 'includes/header.php';
                                         $badge_style = "background: rgba(46, 213, 115, 0.2); color: #2ed573; border: 1px solid #2ed573;";
                                     } elseif ($st_lower === 'failed' || $st_lower === 'cancelled') {
                                         $badge_style = "background: rgba(255, 71, 87, 0.2); color: #ff4757; border: 1px solid #ff4757;";
+                                    }
+                                    
+                                    $rec_type = 'order';
+                                    if (strpos(strtolower($p['item_type']), 'wallet') !== false) {
+                                        $rec_type = 'wallet';
+                                    } elseif (strpos(strtolower($p['item_type']), 'medical card') !== false) {
+                                        $rec_type = 'medical_card';
                                     }
                                 ?>
                                 <tr style="border-bottom: 1px solid var(--glass-border);">
@@ -254,6 +262,11 @@ include 'includes/header.php';
                                     </td>
                                     <td style="padding: 1rem; font-size: 0.85rem; color: var(--text-secondary); white-space: nowrap;">
                                         <?php echo date('M d, Y h:i A', strtotime($p['created_at'])); ?>
+                                    </td>
+                                    <td style="padding: 1rem; white-space: nowrap;">
+                                        <a href="digital_receipt.php?type=<?php echo $rec_type; ?>&id=<?php echo urlencode($p['id']); ?>" class="btn btn-outline" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;" title="View & Download Receipt">
+                                            <i class="fas fa-receipt"></i> Receipt
+                                        </a>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
