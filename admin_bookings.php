@@ -35,6 +35,7 @@ $bookings = $conn->query("
             <li><a href="admin_referral_settings.php"><i class="fas fa-sliders-h"></i> Referral Settings</a></li>
             <li><a href="admin_wallets.php"><i class="fas fa-wallet"></i> Wallet Management</a></li>
             <li><a href="payment_history.php"><i class="fas fa-receipt"></i> Payment History</a></li>
+            <li><a href="admin_digital_cards.php"><i class="fas fa-id-card"></i> Medical Card Approvals</a></li>
             <li><a href="admin_feedback.php"><i class="fas fa-comments"></i> Feedback & Complaints</a></li>
         </ul>
     </aside>

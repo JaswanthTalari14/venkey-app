@@ -689,9 +689,154 @@ function update_order_status_timestamps($conn, $order_id, $new_status) {
             @$conn->query("ALTER TABLE medicines ADD COLUMN category VARCHAR(100) DEFAULT 'General'");
         }
     }
+
+    // Auto-migrate tables for Digital Medical Card feature
+    $conn->query("CREATE TABLE IF NOT EXISTS digital_medical_cards (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        patient_id INT NOT NULL,
+        card_number VARCHAR(50) UNIQUE DEFAULT NULL,
+        amount_paid DECIMAL(10,2) NOT NULL DEFAULT 50.00,
+        payment_method VARCHAR(50) DEFAULT 'Online Payment',
+        payment_status VARCHAR(50) DEFAULT 'Paid',
+        gateway_payment_id VARCHAR(100) DEFAULT NULL,
+        gateway_order_id VARCHAR(100) DEFAULT NULL,
+        status ENUM('pending', 'active', 'rejected', 'expired') DEFAULT 'pending',
+        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        approved_at TIMESTAMP NULL DEFAULT NULL,
+        rejected_at TIMESTAMP NULL DEFAULT NULL,
+        valid_from TIMESTAMP NULL DEFAULT NULL,
+        valid_until TIMESTAMP NULL DEFAULT NULL,
+        admin_notes TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_dmc_patient (patient_id, status),
+        INDEX idx_dmc_card_num (card_number),
+        INDEX idx_dmc_status (status)
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS digital_medical_card_settings (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        card_price DECIMAL(10,2) DEFAULT 50.00,
+        validity_months INT DEFAULT 5,
+        consultation_discount_percent DECIMAL(5,2) DEFAULT 10.00,
+        medicine_discount_percent DECIMAL(5,2) DEFAULT 5.00,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )");
+
+    $chk_sett = @$conn->query("SELECT COUNT(*) as cnt FROM digital_medical_card_settings");
+    if ($chk_sett && (int)$chk_sett->fetch_assoc()['cnt'] === 0) {
+        @$conn->query("INSERT INTO digital_medical_card_settings (id, card_price, validity_months, consultation_discount_percent, medicine_discount_percent) VALUES (1, 50.00, 5, 10.00, 5.00)");
+    }
 }
 
 ensure_database_indexes($conn);
+
+/**
+ * Digital Medical Card System Helper Functions
+ */
+function get_medical_card_settings($conn) {
+    $res = @$conn->query("SELECT * FROM digital_medical_card_settings WHERE id = 1 LIMIT 1");
+    if ($res && $res->num_rows > 0) {
+        $row = $res->fetch_assoc();
+        return [
+            'card_price' => (float)($row['card_price'] ?? 50.00),
+            'validity_months' => (int)($row['validity_months'] ?? 5),
+            'consultation_discount_percent' => (float)($row['consultation_discount_percent'] ?? 10.00),
+            'medicine_discount_percent' => (float)($row['medicine_discount_percent'] ?? 5.00)
+        ];
+    }
+    return [
+        'card_price' => 50.00,
+        'validity_months' => 5,
+        'consultation_discount_percent' => 10.00,
+        'medicine_discount_percent' => 5.00
+    ];
+}
+
+function generate_unique_card_number($conn) {
+    $attempts = 0;
+    while ($attempts < 50) {
+        $seq = rand(100000, 999999);
+        $card_num = 'DMC-' . $seq;
+        $chk = @$conn->query("SELECT id FROM digital_medical_cards WHERE card_number = '$card_num'");
+        if ($chk && $chk->num_rows === 0) {
+            return $card_num;
+        }
+        $attempts++;
+    }
+    return 'DMC-' . time();
+}
+
+function get_patient_active_medical_card($conn, $patient_id) {
+    $patient_id = (int)$patient_id;
+    if ($patient_id <= 0) return null;
+
+    @$conn->query("UPDATE digital_medical_cards SET status = 'expired' WHERE patient_id = $patient_id AND status = 'active' AND valid_until IS NOT NULL AND valid_until < NOW()");
+
+    $res = @$conn->query("
+        SELECT * FROM digital_medical_cards 
+        WHERE patient_id = $patient_id AND status = 'active' AND (valid_until IS NULL OR valid_until >= NOW()) 
+        ORDER BY id DESC LIMIT 1
+    ");
+    if ($res && $res->num_rows > 0) {
+        return $res->fetch_assoc();
+    }
+    return null;
+}
+
+function calculate_doctor_consultation_discount($conn, $patient_id, $original_fee) {
+    $original_fee = (float)$original_fee;
+    $card = get_patient_active_medical_card($conn, $patient_id);
+    if ($card) {
+        $settings = get_medical_card_settings($conn);
+        $disc_pct = $settings['consultation_discount_percent'];
+        $disc_amt = round(($original_fee * $disc_pct) / 100.0, 2);
+        $final_fee = max(0.0, round($original_fee - $disc_amt, 2));
+        return [
+            'has_discount' => true,
+            'card_number' => $card['card_number'],
+            'discount_percent' => $disc_pct,
+            'discount_amount' => $disc_amt,
+            'original_fee' => $original_fee,
+            'final_fee' => $final_fee
+        ];
+    }
+    return [
+        'has_discount' => false,
+        'card_number' => null,
+        'discount_percent' => 0,
+        'discount_amount' => 0.00,
+        'original_fee' => $original_fee,
+        'final_fee' => $original_fee
+    ];
+}
+
+function calculate_medicine_order_discount($conn, $patient_id, $subtotal) {
+    $subtotal = (float)$subtotal;
+    $card = get_patient_active_medical_card($conn, $patient_id);
+    if ($card) {
+        $settings = get_medical_card_settings($conn);
+        $disc_pct = $settings['medicine_discount_percent'];
+        $disc_amt = round(($subtotal * $disc_pct) / 100.0, 2);
+        $final_amt = max(0.0, round($subtotal - $disc_amt, 2));
+        return [
+            'has_discount' => true,
+            'card_number' => $card['card_number'],
+            'discount_percent' => $disc_pct,
+            'discount_amount' => $disc_amt,
+            'subtotal' => $subtotal,
+            'final_amount' => $final_amt
+        ];
+    }
+    return [
+        'has_discount' => false,
+        'card_number' => null,
+        'discount_percent' => 0,
+        'discount_amount' => 0.00,
+        'subtotal' => $subtotal,
+        'final_amount' => $subtotal
+    ];
+}
 
 /**
  * Centralized Profile Image Path & URL Resolver

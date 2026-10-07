@@ -41,6 +41,7 @@ $my_orders = $conn->query("
         <h3 class="sidebar-title" style="margin-bottom: 2rem;">Patient Menu</h3>
         <ul class="sidebar-menu">
             <li><a href="patient_dashboard.php" class="active"><i class="fas fa-home"></i> Overview</a></li>
+            <li><a href="digital_medical_card.php"><i class="fas fa-id-card"></i> Digital Medical Card</a></li>
             <li><a href="health_vault.php"><i class="fas fa-vault"></i> Health Vault</a></li>
             <li><a href="health_journey.php"><i class="fas fa-route"></i> Healthcare Journey</a></li>
             <li><a href="book_consult.php"><i class="fas fa-calendar-check"></i> Consultations</a></li>

@@ -66,6 +66,7 @@ $my_appointments = $conn->query("
         <h3 class="sidebar-title" style="margin-bottom: 2rem;">Patient Menu</h3>
         <ul class="sidebar-menu">
             <li><a href="patient_dashboard.php"><i class="fas fa-home"></i> Overview</a></li>
+            <li><a href="digital_medical_card.php"><i class="fas fa-id-card"></i> Digital Medical Card</a></li>
             <li><a href="book_consult.php" class="active"><i class="fas fa-calendar-check"></i> Consultations</a></li>
             <li><a href="medicines.php"><i class="fas fa-pills"></i> Order Medicines</a></li>
             <li><a href="your_orders.php"><i class="fas fa-boxes"></i> Your Orders</a></li>
@@ -86,6 +87,21 @@ $my_appointments = $conn->query("
         
         <?php if($error): ?><p style="color: #ff4757; margin-bottom: 1rem;"><?php echo $error; ?></p><?php endif; ?>
         <?php if($success): ?><p style="color: #2ed573; margin-bottom: 1rem;"><?php echo $success; ?></p><?php endif; ?>
+
+        <?php
+            $patient_active_card = get_patient_active_medical_card($conn, $_SESSION['user_id']);
+            $card_settings = get_medical_card_settings($conn);
+            if ($patient_active_card):
+                $consult_discount_pct = (float)$card_settings['consultation_discount_percent'];
+        ?>
+        <div class="glass-panel" style="padding: 0.8rem 1.2rem; margin-bottom: 1.5rem; max-width: 600px; border-left: 4px solid #2ed573; background: rgba(46, 213, 115, 0.08); display: flex; align-items: center; gap: 0.8rem; border-radius: 12px;">
+            <i class="fas fa-id-card" style="font-size: 1.5rem; color: #2ed573;"></i>
+            <div>
+                <div style="font-weight: 700; color: #2ed573; font-size: 0.95rem;">Digital Medical Card Active</div>
+                <div style="font-size: 0.82rem; color: var(--text-secondary);">Your <?php echo $consult_discount_pct; ?>% Doctor Consultation Discount is automatically applied! (Card: <?php echo htmlspecialchars($patient_active_card['card_number']); ?>)</div>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <?php
             $pre_doc_id = isset($_GET['doctor_id']) ? (int)$_GET['doctor_id'] : 0;

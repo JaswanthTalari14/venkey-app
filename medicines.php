@@ -12,6 +12,11 @@ $patient_id = (int)$_SESSION['user_id'];
 $avail_ref_balance = get_customer_referral_balance($patient_id);
 $avail_wallet_balance = get_wallet_balance($patient_id);
 
+$active_card = get_patient_active_medical_card($conn, $patient_id);
+$med_card_settings = get_medical_card_settings($conn);
+$has_active_card = ($active_card !== null);
+$card_medicine_discount_percent = $has_active_card ? (float)$med_card_settings['medicine_discount_percent'] : 0.00;
+
 include 'includes/header.php';
 
 $success = '';
@@ -113,7 +118,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['order'])) {
         if ($med_res && $med_res->num_rows > 0) {
             $med = $med_res->fetch_assoc();
             $original_total = $med['price'] * $qty;
-            $total = $original_total;
+            $subtotal_after_card = $original_total;
+
+            // Apply Digital Medical Card Discount if Active
+            $card_disc_info = calculate_medicine_order_discount($conn, $patient_id, $original_total);
+            if ($card_disc_info['has_discount']) {
+                $subtotal_after_card = $card_disc_info['final_amount'];
+            }
+            $total = $subtotal_after_card;
 
             // 1. Handle optional Referral Reward Balance Deduction
             if (isset($_POST['use_referral_balance']) && $_POST['use_referral_balance'] == '1' && $avail_ref_balance > 0) {
@@ -252,6 +264,7 @@ function build_med_link($m_page, $o_page) {
         <h3 class="sidebar-title" style="margin-bottom: 2rem;">Patient Menu</h3>
         <ul class="sidebar-menu">
             <li><a href="patient_dashboard.php"><i class="fas fa-home"></i> Overview</a></li>
+            <li><a href="digital_medical_card.php"><i class="fas fa-id-card"></i> Digital Medical Card</a></li>
             <li><a href="book_consult.php"><i class="fas fa-calendar-check"></i> Consultations</a></li>
             <li><a href="medicines.php" class="active"><i class="fas fa-pills"></i> Order Medicines</a></li>
             <li><a href="your_orders.php"><i class="fas fa-boxes"></i> Your Orders</a></li>
@@ -532,6 +545,13 @@ function build_med_link($m_page, $o_page) {
                     <span style="color: #2ed573; font-weight: bold;">FREE</span>
                 </div>
 
+                <?php if ($has_active_card && $card_medicine_discount_percent > 0): ?>
+                <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: #2ed573; margin-bottom: 0.4rem; font-weight: 600;">
+                    <span><i class="fas fa-id-card"></i> Digital Medical Card Discount (<?php echo $card_medicine_discount_percent; ?>%):</span>
+                    <span>-₹<span id="summary_card_discount">0.00</span></span>
+                </div>
+                <?php endif; ?>
+
                 <!-- Wallet / Referral Balance Checkboxes -->
                 <?php if ($avail_ref_balance > 0): ?>
                 <div style="margin-top: 0.4rem;">
@@ -704,7 +724,15 @@ function recalculateModalTotals() {
     var subtotal = activeMedicine.price * qty;
     document.getElementById('summary_subtotal').innerText = subtotal.toFixed(2);
     
-    var finalAmount = subtotal;
+    var activeCardDiscPercent = <?php echo $card_medicine_discount_percent; ?>;
+    var cardDisc = 0;
+    if (activeCardDiscPercent > 0) {
+        cardDisc = (subtotal * activeCardDiscPercent) / 100;
+        var cardEl = document.getElementById('summary_card_discount');
+        if (cardEl) cardEl.innerText = cardDisc.toFixed(2);
+    }
+
+    var finalAmount = Math.max(0, subtotal - cardDisc);
     
     var useRefCb = document.getElementById('modal_use_ref');
     if (useRefCb && useRefCb.checked && availRefBalance > 0) {

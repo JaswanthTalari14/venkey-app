@@ -138,6 +138,7 @@ include 'includes/header.php';
         <ul class="sidebar-menu">
             <?php if ($role === 'patient'): ?>
                 <li><a href="patient_dashboard.php"><i class="fas fa-home"></i> Overview</a></li>
+                <li><a href="digital_medical_card.php"><i class="fas fa-id-card"></i> Digital Medical Card</a></li>
                 <li><a href="book_consult.php"><i class="fas fa-calendar-check"></i> Consultations</a></li>
                 <li><a href="medicines.php"><i class="fas fa-pills"></i> Order Medicines</a></li>
                 <li><a href="your_orders.php"><i class="fas fa-boxes"></i> Your Orders</a></li>
