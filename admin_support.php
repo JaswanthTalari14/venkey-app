@@ -8,6 +8,52 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 }
 
 $admin_id = (int)$_SESSION['user_id'];
+$msg_success = '';
+$msg_error   = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Action 1: Delete Single Closed or Resolved Ticket
+    if (isset($_POST['delete_single_ticket'])) {
+        $t_id = (int)($_POST['ticket_id'] ?? 0);
+        if ($t_id > 0) {
+            $chk_stmt = $conn->prepare("SELECT ticket_number, status FROM support_tickets WHERE id = ?");
+            $chk_stmt->bind_param("i", $t_id);
+            $chk_stmt->execute();
+            $chk_res = $chk_stmt->get_result()->fetch_assoc();
+
+            if ($chk_res && in_array(strtolower($chk_res['status']), ['closed', 'resolved'])) {
+                $conn->query("DELETE FROM support_ticket_replies WHERE ticket_id = $t_id");
+                $conn->query("DELETE FROM support_tickets WHERE id = $t_id");
+
+                log_admin_activity($conn, $admin_id, "Ticket Deleted", "support_tickets", $t_id, "Deleted support ticket #{$chk_res['ticket_number']}");
+                $msg_success = "Support ticket #{$chk_res['ticket_number']} deleted successfully.";
+            } else {
+                $msg_error = "Only Closed or Resolved tickets can be deleted.";
+            }
+        }
+    }
+
+    // Action 2: Delete All Closed & Resolved Tickets
+    if (isset($_POST['delete_all_closed_resolved'])) {
+        $closed_res = $conn->query("SELECT id FROM support_tickets WHERE status IN ('closed', 'resolved')");
+        if ($closed_res && $closed_res->num_rows > 0) {
+            $ids = [];
+            while ($row = $closed_res->fetch_assoc()) {
+                $ids[] = (int)$row['id'];
+            }
+            $ids_str = implode(',', $ids);
+
+            $conn->query("DELETE FROM support_ticket_replies WHERE ticket_id IN ($ids_str)");
+            $conn->query("DELETE FROM support_tickets WHERE id IN ($ids_str)");
+
+            $cnt_deleted = count($ids);
+            log_admin_activity($conn, $admin_id, "Bulk Tickets Deleted", "support_tickets", 0, "Deleted $cnt_deleted Closed/Resolved support tickets.");
+            $msg_success = "Successfully deleted $cnt_deleted Closed and Resolved support ticket(s).";
+        } else {
+            $msg_error = "No Closed or Resolved support tickets found to delete.";
+        }
+    }
+}
 $status_filter = isset($_GET['status']) ? trim($_GET['status']) : 'all';
 $category_filter = isset($_GET['category']) ? trim($_GET['category']) : 'all';
 $priority_filter = isset($_GET['priority']) ? trim($_GET['priority']) : 'all';
@@ -107,6 +153,18 @@ include 'includes/header.php';
             </div>
         </div>
 
+        <?php if (!empty($msg_success)): ?>
+            <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; color: #34d399; padding: 0.8rem 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.88rem;">
+                <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($msg_success); ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if (!empty($msg_error)): ?>
+            <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #f87171; padding: 0.8rem 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.88rem;">
+                <i class="fas fa-exclamation-triangle"></i> <?php echo htmlspecialchars($msg_error); ?>
+            </div>
+        <?php endif; ?>
+
         <!-- Dashboard Counts Grid -->
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
             <a href="admin_support.php?status=open" style="text-decoration: none;">
@@ -202,6 +260,17 @@ include 'includes/header.php';
 
         <!-- Ticket Listing Table -->
         <div class="glass-panel" style="padding: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; flex-wrap: wrap; gap: 0.8rem;">
+                <h4 style="margin: 0; color: var(--text-primary); font-size: 1rem;"><i class="fas fa-list"></i> Ticket Records</h4>
+                <?php if ($cnt_closed > 0 || $cnt_resolved > 0): ?>
+                    <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to PERMANENTLY delete ALL Closed and Resolved support tickets (Total: <?php echo ($cnt_closed + $cnt_resolved); ?> tickets)? This action cannot be undone.');">
+                        <button type="submit" name="delete_all_closed_resolved" value="1" class="btn btn-outline" style="font-size: 0.78rem; padding: 0.35rem 0.75rem; color: #f87171; border-color: #f87171;">
+                            <i class="fas fa-trash-alt"></i> Delete All Closed & Resolved (<?php echo ($cnt_closed + $cnt_resolved); ?>)
+                        </button>
+                    </form>
+                <?php endif; ?>
+            </div>
+
             <?php if ($tickets && $tickets->num_rows > 0): ?>
                 <div style="overflow-x: auto;">
                     <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
@@ -273,9 +342,19 @@ include 'includes/header.php';
                                         <?php echo date('M d, Y h:i A', strtotime($t['updated_at'])); ?>
                                     </td>
                                     <td style="padding: 0.8rem;">
-                                        <a href="ticket_view.php?id=<?php echo $t['id']; ?>" class="btn btn-primary" style="font-size: 0.78rem; padding: 0.3rem 0.7rem;">
-                                            <i class="fas fa-reply"></i> Open & Reply
-                                        </a>
+                                        <div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;">
+                                            <a href="ticket_view.php?id=<?php echo $t['id']; ?>" class="btn btn-primary" style="font-size: 0.78rem; padding: 0.3rem 0.7rem;">
+                                                <i class="fas fa-reply"></i> Open & Reply
+                                            </a>
+                                            <?php if ($st === 'resolved' || $st === 'closed'): ?>
+                                                <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete ticket #<?php echo htmlspecialchars($t['ticket_number']); ?>?');">
+                                                    <input type="hidden" name="ticket_id" value="<?php echo $t['id']; ?>">
+                                                    <button type="submit" name="delete_single_ticket" value="1" class="btn btn-outline" style="font-size: 0.78rem; padding: 0.3rem 0.65rem; color: #f87171; border-color: #f87171;" title="Delete Ticket">
+                                                        <i class="fas fa-trash-alt"></i> Delete
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
+                                        </div>
                                     </td>
                                 </tr>
                             <?php endwhile; ?>
