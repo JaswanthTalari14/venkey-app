@@ -231,27 +231,37 @@ function ensure_database_indexes($conn) {
         $_SESSION['db_indexes_checked'] = true;
     }
 
-    $conn->query("CREATE TABLE IF NOT EXISTS patient_addresses (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        patient_id INT NOT NULL,
-        full_name VARCHAR(100) NOT NULL,
-        phone VARCHAR(20) NOT NULL,
-        address_line TEXT NOT NULL,
-        city VARCHAR(50) NOT NULL,
-        state VARCHAR(50) NOT NULL,
-        pincode VARCHAR(10) NOT NULL,
-        address_type VARCHAR(20) DEFAULT 'Home',
-        is_default TINYINT(1) DEFAULT 1,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (patient_id) REFERENCES users(id) ON DELETE CASCADE
-    )");
-    @$conn->query("ALTER TABLE patient_addresses ADD COLUMN address_type VARCHAR(20) DEFAULT 'Home'");
+    try {
+        $conn->query("CREATE TABLE IF NOT EXISTS patient_addresses (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            patient_id INT NOT NULL,
+            full_name VARCHAR(100) NOT NULL,
+            phone VARCHAR(20) NOT NULL,
+            address_line TEXT NOT NULL,
+            city VARCHAR(50) NOT NULL,
+            state VARCHAR(50) NOT NULL,
+            pincode VARCHAR(10) NOT NULL,
+            address_type VARCHAR(20) DEFAULT 'Home',
+            is_default TINYINT(1) DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (patient_id) REFERENCES users(id) ON DELETE CASCADE
+        )");
+    } catch (Throwable $t) {}
+
+    try {
+        $pa_col_res = @$conn->query("SHOW COLUMNS FROM patient_addresses LIKE 'address_type'");
+        if (!$pa_col_res || $pa_col_res->num_rows === 0) {
+            @$conn->query("ALTER TABLE patient_addresses ADD COLUMN address_type VARCHAR(20) DEFAULT 'Home'");
+        }
+    } catch (Throwable $t) {}
 
     $add_index_if_missing = function($table, $index_name, $columns) use ($conn) {
-        $check = @$conn->query("SHOW INDEX FROM `$table` WHERE Key_name = '$index_name'");
-        if ($check && $check->num_rows === 0) {
-            @$conn->query("CREATE INDEX `$index_name` ON `$table` ($columns)");
-        }
+        try {
+            $check = @$conn->query("SHOW INDEX FROM `$table` WHERE Key_name = '$index_name'");
+            if ($check && $check->num_rows === 0) {
+                @$conn->query("CREATE INDEX `$index_name` ON `$table` ($columns)");
+            }
+        } catch (Throwable $t) {}
     };
 
     $add_index_if_missing('users', 'idx_users_role', 'role');
@@ -279,53 +289,56 @@ function ensure_database_indexes($conn) {
     $add_index_if_missing('patient_addresses', 'idx_pa_patient', 'patient_id');
 
     // Auto-migrate columns for orders table
-    @$conn->query("ALTER TABLE orders MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
-    $col_res = @$conn->query("SHOW COLUMNS FROM orders");
+    try { @$conn->query("ALTER TABLE orders MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'"); } catch (Throwable $t) {}
+    $col_res = null;
+    try { $col_res = @$conn->query("SHOW COLUMNS FROM orders"); } catch (Throwable $t) {}
     if ($col_res) {
         $existing_cols = [];
         while ($col_row = $col_res->fetch_assoc()) {
             $existing_cols[] = strtolower($col_row['Field']);
         }
         if (!empty($existing_cols)) {
-            if (!in_array('cancellation_reason', $existing_cols)) {
-                @$conn->query("ALTER TABLE orders ADD COLUMN cancellation_reason TEXT DEFAULT NULL AFTER status");
-            }
-            if (!in_array('estimated_delivery_time', $existing_cols)) {
-                @$conn->query("ALTER TABLE orders ADD COLUMN estimated_delivery_time VARCHAR(100) DEFAULT NULL AFTER cancellation_reason");
-            }
-            if (!in_array('is_deleted', $existing_cols)) {
-                @$conn->query("ALTER TABLE orders ADD COLUMN is_deleted TINYINT(1) DEFAULT 0 AFTER estimated_delivery_time");
-            }
-            if (!in_array('payment_method', $existing_cols)) {
-                @$conn->query("ALTER TABLE orders ADD COLUMN payment_method VARCHAR(50) DEFAULT 'COD' AFTER is_deleted");
-            }
-            if (!in_array('payment_status', $existing_cols)) {
-                @$conn->query("ALTER TABLE orders ADD COLUMN payment_status VARCHAR(50) DEFAULT 'Cash on Delivery' AFTER payment_method");
-            }
-            if (!in_array('gateway_order_id', $existing_cols)) {
-                @$conn->query("ALTER TABLE orders ADD COLUMN gateway_order_id VARCHAR(100) DEFAULT NULL AFTER payment_status");
-            }
-            if (!in_array('gateway_payment_id', $existing_cols)) {
-                @$conn->query("ALTER TABLE orders ADD COLUMN gateway_payment_id VARCHAR(100) DEFAULT NULL AFTER gateway_order_id");
-            }
-            if (!in_array('payment_confirmed_at', $existing_cols)) {
-                @$conn->query("ALTER TABLE orders ADD COLUMN payment_confirmed_at TIMESTAMP NULL DEFAULT NULL AFTER gateway_payment_id");
-            }
-            if (!in_array('packing_at', $existing_cols)) {
-                @$conn->query("ALTER TABLE orders ADD COLUMN packing_at TIMESTAMP NULL DEFAULT NULL AFTER payment_confirmed_at");
-            }
-            if (!in_array('shipped_at', $existing_cols)) {
-                @$conn->query("ALTER TABLE orders ADD COLUMN shipped_at TIMESTAMP NULL DEFAULT NULL AFTER packing_at");
-            }
-            if (!in_array('out_for_delivery_at', $existing_cols)) {
-                @$conn->query("ALTER TABLE orders ADD COLUMN out_for_delivery_at TIMESTAMP NULL DEFAULT NULL AFTER shipped_at");
-            }
-            if (!in_array('delivered_at', $existing_cols)) {
-                @$conn->query("ALTER TABLE orders ADD COLUMN delivered_at TIMESTAMP NULL DEFAULT NULL AFTER out_for_delivery_at");
-            }
-            if (!in_array('cancelled_at', $existing_cols)) {
-                @$conn->query("ALTER TABLE orders ADD COLUMN cancelled_at TIMESTAMP NULL DEFAULT NULL AFTER delivered_at");
-            }
+            try {
+                if (!in_array('cancellation_reason', $existing_cols)) {
+                    @$conn->query("ALTER TABLE orders ADD COLUMN cancellation_reason TEXT DEFAULT NULL AFTER status");
+                }
+                if (!in_array('estimated_delivery_time', $existing_cols)) {
+                    @$conn->query("ALTER TABLE orders ADD COLUMN estimated_delivery_time VARCHAR(100) DEFAULT NULL AFTER cancellation_reason");
+                }
+                if (!in_array('is_deleted', $existing_cols)) {
+                    @$conn->query("ALTER TABLE orders ADD COLUMN is_deleted TINYINT(1) DEFAULT 0 AFTER estimated_delivery_time");
+                }
+                if (!in_array('payment_method', $existing_cols)) {
+                    @$conn->query("ALTER TABLE orders ADD COLUMN payment_method VARCHAR(50) DEFAULT 'COD' AFTER is_deleted");
+                }
+                if (!in_array('payment_status', $existing_cols)) {
+                    @$conn->query("ALTER TABLE orders ADD COLUMN payment_status VARCHAR(50) DEFAULT 'Cash on Delivery' AFTER payment_method");
+                }
+                if (!in_array('gateway_order_id', $existing_cols)) {
+                    @$conn->query("ALTER TABLE orders ADD COLUMN gateway_order_id VARCHAR(100) DEFAULT NULL AFTER payment_status");
+                }
+                if (!in_array('gateway_payment_id', $existing_cols)) {
+                    @$conn->query("ALTER TABLE orders ADD COLUMN gateway_payment_id VARCHAR(100) DEFAULT NULL AFTER gateway_order_id");
+                }
+                if (!in_array('payment_confirmed_at', $existing_cols)) {
+                    @$conn->query("ALTER TABLE orders ADD COLUMN payment_confirmed_at TIMESTAMP NULL DEFAULT NULL AFTER gateway_payment_id");
+                }
+                if (!in_array('packing_at', $existing_cols)) {
+                    @$conn->query("ALTER TABLE orders ADD COLUMN packing_at TIMESTAMP NULL DEFAULT NULL AFTER payment_confirmed_at");
+                }
+                if (!in_array('shipped_at', $existing_cols)) {
+                    @$conn->query("ALTER TABLE orders ADD COLUMN shipped_at TIMESTAMP NULL DEFAULT NULL AFTER packing_at");
+                }
+                if (!in_array('out_for_delivery_at', $existing_cols)) {
+                    @$conn->query("ALTER TABLE orders ADD COLUMN out_for_delivery_at TIMESTAMP NULL DEFAULT NULL AFTER shipped_at");
+                }
+                if (!in_array('delivered_at', $existing_cols)) {
+                    @$conn->query("ALTER TABLE orders ADD COLUMN delivered_at TIMESTAMP NULL DEFAULT NULL AFTER out_for_delivery_at");
+                }
+                if (!in_array('cancelled_at', $existing_cols)) {
+                    @$conn->query("ALTER TABLE orders ADD COLUMN cancelled_at TIMESTAMP NULL DEFAULT NULL AFTER delivered_at");
+                }
+            } catch (Throwable $t) {}
         }
     }
 
@@ -711,105 +724,113 @@ function update_order_status_timestamps($conn, $order_id, $new_status) {
     )");
 
     // Auto-migrate columns for appointments table
-    @$conn->query("ALTER TABLE appointments MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
-    $app_col_res = @$conn->query("SHOW COLUMNS FROM appointments");
-    if ($app_col_res) {
-        $app_cols = [];
-        while ($acol_row = $app_col_res->fetch_assoc()) {
-            $app_cols[] = strtolower($acol_row['Field']);
+    try {
+        @$conn->query("ALTER TABLE appointments MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+        $app_col_res = @$conn->query("SHOW COLUMNS FROM appointments");
+        if ($app_col_res) {
+            $app_cols = [];
+            while ($acol_row = $app_col_res->fetch_assoc()) {
+                $app_cols[] = strtolower($acol_row['Field']);
+            }
+            if (!in_array('token_no', $app_cols)) {
+                @$conn->query("ALTER TABLE appointments ADD COLUMN token_no VARCHAR(20) DEFAULT NULL");
+            }
+            if (!in_array('chief_complaint', $app_cols)) {
+                @$conn->query("ALTER TABLE appointments ADD COLUMN chief_complaint TEXT DEFAULT NULL");
+            }
+            if (!in_array('clinical_notes', $app_cols)) {
+                @$conn->query("ALTER TABLE appointments ADD COLUMN clinical_notes TEXT DEFAULT NULL");
+            }
+            if (!in_array('diagnosis', $app_cols)) {
+                @$conn->query("ALTER TABLE appointments ADD COLUMN diagnosis TEXT DEFAULT NULL");
+            }
+            if (!in_array('followup_date', $app_cols)) {
+                @$conn->query("ALTER TABLE appointments ADD COLUMN followup_date DATE DEFAULT NULL");
+            }
         }
-        if (!in_array('token_no', $app_cols)) {
-            @$conn->query("ALTER TABLE appointments ADD COLUMN token_no VARCHAR(20) DEFAULT NULL");
-        }
-        if (!in_array('chief_complaint', $app_cols)) {
-            @$conn->query("ALTER TABLE appointments ADD COLUMN chief_complaint TEXT DEFAULT NULL");
-        }
-        if (!in_array('clinical_notes', $app_cols)) {
-            @$conn->query("ALTER TABLE appointments ADD COLUMN clinical_notes TEXT DEFAULT NULL");
-        }
-        if (!in_array('diagnosis', $app_cols)) {
-            @$conn->query("ALTER TABLE appointments ADD COLUMN diagnosis TEXT DEFAULT NULL");
-        }
-        if (!in_array('followup_date', $app_cols)) {
-            @$conn->query("ALTER TABLE appointments ADD COLUMN followup_date DATE DEFAULT NULL");
-        }
-    }
+    } catch (Throwable $t) {}
 
     // Auto-migrate columns for users table
-    $ucol_res = @$conn->query("SHOW COLUMNS FROM users");
-    if ($ucol_res) {
-        $u_cols = [];
-        while ($ucol_row = $ucol_res->fetch_assoc()) {
-            $u_cols[] = strtolower($ucol_row['Field']);
-        }
-        if (!in_array('health_id', $u_cols)) {
-            @$conn->query("ALTER TABLE users ADD COLUMN health_id VARCHAR(50) DEFAULT NULL");
-            @$conn->query("CREATE UNIQUE INDEX idx_u_health_id ON users (health_id)");
-        }
-        if (!in_array('profile_image', $u_cols) && !in_array('image', $u_cols) && !in_array('avatar', $u_cols)) {
-            @$conn->query("ALTER TABLE users ADD COLUMN profile_image VARCHAR(255) DEFAULT NULL");
-        }
-        if (!in_array('is_verified', $u_cols)) {
-            @$conn->query("ALTER TABLE users ADD COLUMN is_verified TINYINT(1) DEFAULT 0");
-        }
-        if (!in_array('verification_document', $u_cols) && !in_array('license_document', $u_cols) && !in_array('document_path', $u_cols)) {
-            @$conn->query("ALTER TABLE users ADD COLUMN verification_document VARCHAR(255) DEFAULT NULL");
-        }
-        if (!in_array('qualification', $u_cols)) {
-            @$conn->query("ALTER TABLE users ADD COLUMN qualification VARCHAR(100) DEFAULT NULL");
-        }
-        if (!in_array('experience', $u_cols)) {
-            @$conn->query("ALTER TABLE users ADD COLUMN experience VARCHAR(50) DEFAULT NULL");
-        }
-        if (!in_array('is_online_available', $u_cols)) {
-            @$conn->query("ALTER TABLE users ADD COLUMN is_online_available TINYINT(1) DEFAULT 1");
-        }
-        if (!in_array('blood_group', $u_cols)) {
-            @$conn->query("ALTER TABLE users ADD COLUMN blood_group VARCHAR(10) DEFAULT NULL");
-        }
-        if (!in_array('allergies', $u_cols)) {
-            @$conn->query("ALTER TABLE users ADD COLUMN allergies TEXT DEFAULT NULL");
-        }
-        if (!in_array('emergency_contact', $u_cols)) {
-            @$conn->query("ALTER TABLE users ADD COLUMN emergency_contact VARCHAR(20) DEFAULT NULL");
-        }
-        if (!in_array('last_login', $u_cols)) {
-            @$conn->query("ALTER TABLE users ADD COLUMN last_login TIMESTAMP NULL DEFAULT NULL");
-        }
+    try {
+        $ucol_res = @$conn->query("SHOW COLUMNS FROM users");
+        if ($ucol_res) {
+            $u_cols = [];
+            while ($ucol_row = $ucol_res->fetch_assoc()) {
+                $u_cols[] = strtolower($ucol_row['Field']);
+            }
+            if (!in_array('health_id', $u_cols)) {
+                @$conn->query("ALTER TABLE users ADD COLUMN health_id VARCHAR(50) DEFAULT NULL");
+                @$conn->query("CREATE UNIQUE INDEX idx_u_health_id ON users (health_id)");
+            }
+            if (!in_array('profile_image', $u_cols) && !in_array('image', $u_cols) && !in_array('avatar', $u_cols)) {
+                @$conn->query("ALTER TABLE users ADD COLUMN profile_image VARCHAR(255) DEFAULT NULL");
+            }
+            if (!in_array('is_verified', $u_cols)) {
+                @$conn->query("ALTER TABLE users ADD COLUMN is_verified TINYINT(1) DEFAULT 0");
+            }
+            if (!in_array('verification_document', $u_cols) && !in_array('license_document', $u_cols) && !in_array('document_path', $u_cols)) {
+                @$conn->query("ALTER TABLE users ADD COLUMN verification_document VARCHAR(255) DEFAULT NULL");
+            }
+            if (!in_array('qualification', $u_cols)) {
+                @$conn->query("ALTER TABLE users ADD COLUMN qualification VARCHAR(100) DEFAULT NULL");
+            }
+            if (!in_array('experience', $u_cols)) {
+                @$conn->query("ALTER TABLE users ADD COLUMN experience VARCHAR(50) DEFAULT NULL");
+            }
+            if (!in_array('is_online_available', $u_cols)) {
+                @$conn->query("ALTER TABLE users ADD COLUMN is_online_available TINYINT(1) DEFAULT 1");
+            }
+            if (!in_array('blood_group', $u_cols)) {
+                @$conn->query("ALTER TABLE users ADD COLUMN blood_group VARCHAR(10) DEFAULT NULL");
+            }
+            if (!in_array('allergies', $u_cols)) {
+                @$conn->query("ALTER TABLE users ADD COLUMN allergies TEXT DEFAULT NULL");
+            }
+            if (!in_array('emergency_contact', $u_cols)) {
+                @$conn->query("ALTER TABLE users ADD COLUMN emergency_contact VARCHAR(20) DEFAULT NULL");
+            }
+            if (!in_array('last_login', $u_cols)) {
+                @$conn->query("ALTER TABLE users ADD COLUMN last_login TIMESTAMP NULL DEFAULT NULL");
+            }
 
-        // Backfill Health IDs for patients missing health_id
-        @$conn->query("UPDATE users SET health_id = CONCAT('MAK-', LPAD(id, 6, '0')) WHERE (health_id IS NULL OR health_id = '') AND role = 'patient'");
-    }
+            // Backfill Health IDs for patients missing health_id
+            @$conn->query("UPDATE users SET health_id = CONCAT('MAK-', LPAD(id, 6, '0')) WHERE (health_id IS NULL OR health_id = '') AND role = 'patient'");
+        }
+    } catch (Throwable $t) {}
 
     // Auto-migrate columns for user_notifications table
-    $un_col_res = @$conn->query("SHOW COLUMNS FROM user_notifications");
-    if ($un_col_res) {
-        $un_cols = [];
-        while ($un_col_row = $un_col_res->fetch_assoc()) {
-            $un_cols[] = strtolower($un_col_row['Field']);
+    try {
+        $un_col_res = @$conn->query("SHOW COLUMNS FROM user_notifications");
+        if ($un_col_res) {
+            $un_cols = [];
+            while ($un_col_row = $un_col_res->fetch_assoc()) {
+                $un_cols[] = strtolower($un_col_row['Field']);
+            }
+            if (!in_array('is_pinned', $un_cols)) {
+                @$conn->query("ALTER TABLE user_notifications ADD COLUMN is_pinned TINYINT(1) DEFAULT 0");
+            }
         }
-        if (!in_array('is_pinned', $un_cols)) {
-            @$conn->query("ALTER TABLE user_notifications ADD COLUMN is_pinned TINYINT(1) DEFAULT 0");
-        }
-    }
+    } catch (Throwable $t) {}
 
     // Auto-migrate columns for medicines table
-    $m_col_res = @$conn->query("SHOW COLUMNS FROM medicines");
-    if ($m_col_res) {
-        $m_cols = [];
-        while ($m_col_row = $m_col_res->fetch_assoc()) {
-            $m_cols[] = strtolower($m_col_row['Field']);
+    try {
+        $m_col_res = @$conn->query("SHOW COLUMNS FROM medicines");
+        if ($m_col_res) {
+            $m_cols = [];
+            while ($m_col_row = $m_col_res->fetch_assoc()) {
+                $m_cols[] = strtolower($m_col_row['Field']);
+            }
+            if (!in_array('generic_name', $m_cols)) {
+                @$conn->query("ALTER TABLE medicines ADD COLUMN generic_name VARCHAR(255) DEFAULT NULL");
+            }
+            if (!in_array('brand', $m_cols)) {
+                @$conn->query("ALTER TABLE medicines ADD COLUMN brand VARCHAR(255) DEFAULT NULL");
+            }
+            if (!in_array('category', $m_cols)) {
+                @$conn->query("ALTER TABLE medicines ADD COLUMN category VARCHAR(100) DEFAULT 'General'");
+            }
         }
-        if (!in_array('generic_name', $m_cols)) {
-            @$conn->query("ALTER TABLE medicines ADD COLUMN generic_name VARCHAR(255) DEFAULT NULL");
-        }
-        if (!in_array('brand', $m_cols)) {
-            @$conn->query("ALTER TABLE medicines ADD COLUMN brand VARCHAR(255) DEFAULT NULL");
-        }
-        if (!in_array('category', $m_cols)) {
-            @$conn->query("ALTER TABLE medicines ADD COLUMN category VARCHAR(100) DEFAULT 'General'");
-        }
-    }
+    } catch (Throwable $t) {}
 
     // Auto-migrate tables for Digital Medical Card feature
     $conn->query("CREATE TABLE IF NOT EXISTS digital_medical_cards (
