@@ -370,7 +370,7 @@ function toggleWaOfflinePopup() {
             window.addEventListener('offline', function() { showNetworkToast(false); });
         })();
 
-        // Instant Link Hover & Touch Prefetching for Sub-50ms Navigation
+        // Instant Link Hover, Touch Prefetching & Visual Tap Feedback
         (function() {
             const prefetched = new Set();
             function prefetchUrl(url) {
@@ -381,18 +381,41 @@ function toggleWaOfflinePopup() {
                 link.href = url;
                 document.head.appendChild(link);
             }
+
+            // Sub-50ms Tap & Hover Prefetching
             document.addEventListener('mouseover', function(e) {
                 const anchor = e.target.closest('a');
                 if (anchor && anchor.href && anchor.origin === window.location.origin) {
                     prefetchUrl(anchor.href);
                 }
             }, { passive: true });
+
             document.addEventListener('touchstart', function(e) {
-                const anchor = e.target.closest('a');
-                if (anchor && anchor.href && anchor.origin === window.location.origin) {
-                    prefetchUrl(anchor.href);
+                const anchor = e.target.closest('a, button, .mobile-nav-item');
+                if (anchor) {
+                    anchor.classList.add('tap-active');
+                    setTimeout(() => anchor.classList.remove('tap-active'), 150);
+                    if (anchor.tagName === 'A' && anchor.href && anchor.origin === window.location.origin) {
+                        prefetchUrl(anchor.href);
+                    }
                 }
             }, { passive: true });
+
+            // Global Form Double-Submit Protection (Prevents duplicate orders/payments/tickets)
+            document.addEventListener('submit', function(e) {
+                const form = e.target;
+                if (!form || form.dataset.submitting === 'true') return;
+                
+                const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
+                if (submitBtn) {
+                    form.dataset.submitting = 'true';
+                    submitBtn.classList.add('tap-active');
+                    setTimeout(() => {
+                        delete form.dataset.submitting;
+                        submitBtn.classList.remove('tap-active');
+                    }, 2500);
+                }
+            });
         })();
     });
     </script>

@@ -281,7 +281,24 @@ nav a:hover {
 }
 
 .btn-primary:active {
-  transform: translateY(0);
+  transform: translateY(0) scale(0.97);
+}
+
+/* Instant Tap & Touch Visual Feedback System */
+.btn:active, 
+button:active, 
+.mobile-nav-item:active, 
+.sidebar-menu a:active, 
+.nav-toggle:active, 
+.theme-toggle:active, 
+.card:active, 
+.feature-card:active,
+.dashboard-card:active,
+a.btn:active,
+.tap-active {
+  transform: scale(0.97) !important;
+  opacity: 0.88 !important;
+  transition: transform 0.04s ease-out, opacity 0.04s ease-out !important;
 }
 
 .btn-secondary {
