@@ -269,12 +269,19 @@ include 'includes/header.php';
     background: var(--primary-color, #059669);
 }
 
+#messagesList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    width: 100%;
+}
+
 /* Date Separators */
 .chat-date-separator {
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 0.8rem 0;
+    margin: 0.6rem 0;
     position: relative;
 }
 
@@ -290,9 +297,9 @@ include 'includes/header.php';
     position: relative;
     background: rgba(30, 41, 59, 0.9);
     color: #94a3b8;
-    padding: 0.25rem 0.9rem;
-    border-radius: 14px;
-    font-size: 0.74rem;
+    padding: 0.2rem 0.8rem;
+    border-radius: 12px;
+    font-size: 0.72rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -303,41 +310,51 @@ include 'includes/header.php';
 .chat-bubble-row {
     display: flex;
     flex-direction: column;
-    max-width: 75%;
+    max-width: 78%;
+    width: fit-content;
+    height: auto !important;
+    min-height: 0 !important;
     position: relative;
-    animation: fadeInBubble 0.25s ease-out forwards;
+    animation: fadeInBubble 0.2s ease-out forwards;
 }
 
 @keyframes fadeInBubble {
-    from { opacity: 0; transform: translateY(6px); }
+    from { opacity: 0; transform: translateY(4px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
 .chat-bubble-row.mine {
     align-self: flex-end;
     align-items: flex-end;
+    margin-left: auto;
 }
 
 .chat-bubble-row.other {
     align-self: flex-start;
     align-items: flex-start;
+    margin-right: auto;
 }
 
 .chat-bubble-row.internal {
     align-self: center;
     max-width: 90%;
     align-items: center;
+    margin: 0 auto;
 }
 
 .chat-bubble-card {
-    padding: 0.9rem 1.2rem;
-    border-radius: 18px;
-    font-size: 0.93rem;
-    line-height: 1.55;
+    padding: 0.55rem 0.9rem;
+    border-radius: 14px;
+    font-size: 0.9rem;
+    line-height: 1.4;
     position: relative;
     word-break: break-word;
     white-space: pre-wrap;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+    height: auto !important;
+    min-height: 0 !important;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
+    display: inline-block;
+    max-width: 100%;
 }
 
 /* Mine (User's own messages) */
@@ -366,12 +383,12 @@ include 'includes/header.php';
 }
 
 .chat-sender-info {
-    font-size: 0.76rem;
+    font-size: 0.72rem;
     font-weight: 700;
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.2rem;
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.3rem;
 }
 
 .chat-bubble-row.mine .chat-sender-info {
@@ -382,12 +399,12 @@ include 'includes/header.php';
 }
 
 .chat-timestamp {
-    font-size: 0.71rem;
-    opacity: 0.75;
-    margin-top: 0.4rem;
+    font-size: 0.68rem;
+    opacity: 0.8;
+    margin-top: 0.25rem;
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.25rem;
 }
 
 .chat-bubble-row.mine .chat-timestamp {
