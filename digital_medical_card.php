@@ -17,8 +17,12 @@ $card_price = $card_settings['card_price']; // ₹50.00
 $wallet_balance = get_wallet_balance($patient_id);
 
 // Check if patient profile info is available
-$pat_q = $conn->query("SELECT name, email, phone, created_at FROM users WHERE id = $patient_id");
-$patient_info = $pat_q ? $pat_q->fetch_assoc() : ['name' => 'Patient', 'email' => '', 'phone' => ''];
+$pat_q = $conn->query("SELECT name, email, phone, profile_image, created_at FROM users WHERE id = $patient_id");
+$patient_info = $pat_q ? $pat_q->fetch_assoc() : ['name' => 'Patient', 'email' => '', 'phone' => '', 'profile_image' => ''];
+$profile_img_src = get_profile_image_url($patient_info);
+if (empty($profile_img_src)) {
+    $profile_img_src = 'https://ui-avatars.com/api/?name=' . urlencode($patient_info['name']) . '&background=4a90e2&color=fff&size=128';
+}
 
 // Auto-expire invalid active cards if valid_until has passed
 @$conn->query("UPDATE digital_medical_cards SET status = 'expired' WHERE patient_id = $patient_id AND status = 'active' AND valid_until IS NOT NULL AND valid_until < NOW()");
@@ -148,6 +152,7 @@ include 'includes/header.php';
                 $now_ts = time();
                 $diff_sec = max(0, $valid_until_ts - $now_ts);
                 $remaining_days = ceil($diff_sec / 86400);
+                $qr_code_url = "https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=" . urlencode($current_card['card_number']);
             ?>
 
             <div style="max-width: 580px; margin: 0 auto 2rem auto;">
@@ -173,9 +178,12 @@ include 'includes/header.php';
                     <!-- Card Body -->
                     <div style="display: flex; flex-direction: column; gap: 1rem;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.5rem;">
-                            <div>
-                                <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Patient Name</div>
-                                <div style="font-size: 1.2rem; font-weight: 800; color: #ffffff; margin-top: 0.15rem;"><?php echo htmlspecialchars($patient_info['name']); ?></div>
+                            <div style="display: flex; align-items: center; gap: 0.8rem;">
+                                <img src="<?php echo htmlspecialchars($profile_img_src); ?>" alt="<?php echo htmlspecialchars($patient_info['name']); ?>" style="width: 52px; height: 52px; border-radius: 50%; object-fit: cover; border: 2px solid var(--secondary-color); background: rgba(0,0,0,0.3);">
+                                <div>
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Patient Name</div>
+                                    <div style="font-size: 1.2rem; font-weight: 800; color: #ffffff; margin-top: 0.15rem;"><?php echo htmlspecialchars($patient_info['name']); ?></div>
+                                </div>
                             </div>
                             <div style="text-align: right;">
                                 <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Card Number</div>
@@ -206,18 +214,24 @@ include 'includes/header.php';
                             <i class="fas fa-clock"></i> Valid for <?php echo $remaining_days; ?> days remaining
                         </div>
 
-                        <!-- Benefits List -->
-                        <div style="border-top: 1px dashed rgba(255, 255, 255, 0.15); padding-top: 0.9rem; margin-top: 0.2rem;">
-                            <div style="font-size: 0.78rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 0.5rem;">Card Member Benefits</div>
-                            <div style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.88rem; color: #ffffff;">
-                                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                    <i class="fas fa-check-circle" style="color: #2ed573;"></i>
-                                    <span><strong><?php echo (float)$card_settings['consultation_discount_percent']; ?>% Discount</strong> on Doctor Consultations (Auto Applied)</span>
+                        <!-- Benefits & QR Code Row -->
+                        <div style="border-top: 1px dashed rgba(255, 255, 255, 0.15); padding-top: 0.9rem; margin-top: 0.2rem; display: flex; justify-content: space-between; align-items: flex-end; gap: 0.5rem;">
+                            <div>
+                                <div style="font-size: 0.78rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 0.5rem;">Card Member Benefits</div>
+                                <div style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.88rem; color: #ffffff;">
+                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                        <i class="fas fa-check-circle" style="color: #2ed573;"></i>
+                                        <span><strong><?php echo (float)$card_settings['consultation_discount_percent']; ?>% Discount</strong> on Doctor Consultations (Auto Applied)</span>
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                        <i class="fas fa-check-circle" style="color: #2ed573;"></i>
+                                        <span><strong><?php echo (float)$card_settings['medicine_discount_percent']; ?>% Discount</strong> on All Medicine Purchases (Auto Applied)</span>
+                                    </div>
                                 </div>
-                                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                    <i class="fas fa-check-circle" style="color: #2ed573;"></i>
-                                    <span><strong><?php echo (float)$card_settings['medicine_discount_percent']; ?>% Discount</strong> on All Medicine Purchases (Auto Applied)</span>
-                                </div>
+                            </div>
+                            <div style="text-align: center; background: #ffffff; padding: 6px; border-radius: 10px; border: 1px solid var(--secondary-color); flex-shrink: 0;">
+                                <img src="<?php echo $qr_code_url; ?>" alt="QR Code" style="width: 70px; height: 70px; display: block;">
+                                <div style="font-size: 0.55rem; color: #0f172a; font-weight: 800; margin-top: 2px;">VERIFIED CARD</div>
                             </div>
                         </div>
                     </div>
@@ -452,6 +466,34 @@ function showCardDownloadToast(message, isError) {
     }, 3200);
 }
 
+function urlToBase64(url) {
+    return new Promise(function(resolve) {
+        if (!url || url.indexOf('data:image') === 0) {
+            resolve(url);
+            return;
+        }
+        var img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = function() {
+            try {
+                var canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth || img.width || 128;
+                canvas.height = img.naturalHeight || img.height || 128;
+                var ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                var dataURL = canvas.toDataURL('image/png');
+                resolve(dataURL);
+            } catch (e) {
+                resolve(url);
+            }
+        };
+        img.onerror = function() {
+            resolve(url);
+        };
+        img.src = url;
+    });
+}
+
 function downloadMedicalCardPDF() {
     var btn = document.getElementById('btnDownloadCard');
     var btnText = document.getElementById('downloadBtnText');
@@ -463,31 +505,122 @@ function downloadMedicalCardPDF() {
 
     showCardDownloadToast('Generating your Digital Medical Card PDF...');
 
-    var element = document.getElementById('digitalMedicalCardBox');
     var cardNumber = "<?php echo htmlspecialchars($current_card['card_number'] ?? 'DMC-CARD'); ?>";
     var cleanCardNum = cardNumber.replace(/[^A-Za-z0-9\-]/g, '');
     var filename = 'Digital-Medical-Card-' + cleanCardNum + '.pdf';
+    var patientName = "<?php echo htmlspecialchars($patient_info['name'] ?? 'Patient'); ?>";
+    var profileImg = "<?php echo htmlspecialchars($profile_img_src ?? ''); ?>";
+    var qrUrl = "<?php echo htmlspecialchars($qr_code_url ?? ''); ?>";
+    var validFrom = "<?php echo date('d M Y', strtotime($current_card['valid_from'] ?? 'now')); ?>";
+    var validUntil = "<?php echo date('d M Y', strtotime($current_card['valid_until'] ?? '+5 months')); ?>";
+    var consultDisc = "<?php echo (float)($card_settings['consultation_discount_percent'] ?? 20); ?>";
+    var medDisc = "<?php echo (float)($card_settings['medicine_discount_percent'] ?? 15); ?>";
 
-    if (typeof html2pdf !== 'undefined' && element) {
-        var opt = {
-            margin:       [0.3, 0.3, 0.3, 0.3],
-            filename:     filename,
-            image:        { type: 'jpeg', quality: 0.98 },
-            html2canvas:  { scale: 2, useCORS: true, logging: false, backgroundColor: '#0f172a' },
-            jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
-        };
+    Promise.all([urlToBase64(profileImg), urlToBase64(qrUrl)]).then(function(images) {
+        var base64Profile = images[0];
+        var base64Qr = images[1];
 
-        html2pdf().set(opt).from(element).save().then(function() {
-            btn.disabled = false;
-            btnText.innerHTML = originalHtml;
-            showCardDownloadToast('Medical Card Downloaded Successfully ✅', false);
-        }).catch(function(err) {
-            console.warn("Client PDF generation fallback:", err);
+        var offscreen = document.createElement('div');
+        offscreen.style.cssText = 'position: fixed; left: -9999px; top: -9999px; width: 620px; z-index: -9999;';
+
+        var cardHtml = `
+        <div style="width: 620px; background: #0f172a; border: 3px solid #50e3c2; border-radius: 20px; padding: 26px; font-family: 'Inter', system-ui, -apple-system, sans-serif; color: #ffffff; box-sizing: border-box; background-image: radial-gradient(circle at top right, rgba(80, 227, 194, 0.15) 0%, transparent 60%);">
+            <!-- Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed rgba(255, 255, 255, 0.2); padding-bottom: 16px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 44px; height: 44px; background: rgba(80, 227, 194, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #50e3c2; font-size: 24px; font-weight: bold;">✚</div>
+                    <div>
+                        <div style="color: #ffffff; font-size: 24px; font-weight: 800; letter-spacing: 0.5px; line-height: 1.2;">MedicalAk</div>
+                        <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700;">Digital Medical Card</div>
+                    </div>
+                </div>
+                <div style="background: rgba(46, 213, 115, 0.2); color: #2ed573; border: 1.5px solid #2ed573; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 800; display: inline-flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 12px;">●</span> ACTIVE
+                </div>
+            </div>
+
+            <!-- Body Details -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px;">
+                <div style="display: flex; align-items: center; gap: 14px;">
+                    <img src="${base64Profile}" alt="Patient Photo" style="width: 62px; height: 62px; border-radius: 50%; object-fit: cover; border: 2.5px solid #50e3c2; background: #1e293b;">
+                    <div>
+                        <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">Patient Name</div>
+                        <div style="font-size: 20px; font-weight: 800; color: #ffffff; margin-top: 2px;">${patientName}</div>
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">Card Number</div>
+                    <div style="font-size: 19px; font-weight: 800; color: #4a90e2; letter-spacing: 1px; margin-top: 2px; font-family: monospace;">
+                        ${cardNumber}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dates Row -->
+            <div style="display: flex; justify-content: space-between; background: #1e293b; padding: 14px 20px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 18px;">
+                <div>
+                    <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; font-weight: 700;">Valid From</div>
+                    <div style="font-size: 14px; font-weight: 800; color: #ffffff; margin-top: 3px;">${validFrom}</div>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; font-weight: 700;">Valid Until</div>
+                    <div style="font-size: 14px; font-weight: 800; color: #50e3c2; margin-top: 3px;">${validUntil}</div>
+                </div>
+            </div>
+
+            <!-- Benefits & QR Code Row -->
+            <div style="border-top: 1px dashed rgba(255, 255, 255, 0.2); padding-top: 16px; display: flex; justify-content: space-between; align-items: flex-end;">
+                <div>
+                    <div style="font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px;">Card Member Benefits</div>
+                    <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #ffffff;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="color: #2ed573; font-weight: bold; font-size: 14px;">✔</span>
+                            <span><strong>${consultDisc}% Discount</strong> on Doctor Consultations</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="color: #2ed573; font-weight: bold; font-size: 14px;">✔</span>
+                            <span><strong>${medDisc}% Discount</strong> on All Medicine Purchases</span>
+                        </div>
+                    </div>
+                </div>
+                <div style="text-align: center; background: #ffffff; padding: 6px; border-radius: 10px; border: 1.5px solid #50e3c2;">
+                    <img src="${base64Qr}" alt="QR Code" style="width: 75px; height: 75px; display: block;">
+                    <div style="font-size: 8px; color: #0f172a; font-weight: 800; margin-top: 3px; letter-spacing: 0.5px;">VERIFIED CARD</div>
+                </div>
+            </div>
+        </div>
+        `;
+
+        offscreen.innerHTML = cardHtml;
+        document.body.appendChild(offscreen);
+
+        if (typeof html2pdf !== 'undefined') {
+            var opt = {
+                margin:       [0.3, 0.3, 0.3, 0.3],
+                filename:     filename,
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#0b0f19' },
+                jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+            };
+
+            html2pdf().set(opt).from(offscreen.children[0]).save().then(function() {
+                if (offscreen.parentNode) document.body.removeChild(offscreen);
+                btn.disabled = false;
+                btnText.innerHTML = originalHtml;
+                showCardDownloadToast('Medical Card Downloaded Successfully ✅', false);
+            }).catch(function(err) {
+                console.warn("Client PDF generation error:", err);
+                if (offscreen.parentNode) document.body.removeChild(offscreen);
+                triggerServerDownloadPDF(filename);
+            });
+        } else {
+            if (offscreen.parentNode) document.body.removeChild(offscreen);
             triggerServerDownloadPDF(filename);
-        });
-    } else {
+        }
+    }).catch(function(err) {
+        console.warn("Image preloading error:", err);
         triggerServerDownloadPDF(filename);
-    }
+    });
 }
 
 function triggerServerDownloadPDF(filename) {
