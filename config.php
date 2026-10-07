@@ -18,43 +18,7 @@ if (session_status() === PHP_SESSION_NONE) {
 @ini_set('zlib.output_compression', 'On');
 ob_start();
 
-define('SECURITY_GATE_KEY', getenv('SECURITY_GATE_KEY') ?: '539539');
 
-// Security Key Gate Middleware Guard
-if (empty($_SESSION['security_gate_verified'])) {
-    $curr_script = strtolower(basename($_SERVER['SCRIPT_NAME'] ?? $_SERVER['PHP_SELF'] ?? ''));
-    $whitelisted_scripts = [
-        'security_gate.php',
-        'api_security_gate.php',
-        'sw.js',
-        'manifest.json',
-        'api_payment_webhook.php',
-        'verify_phonepe.php'
-    ];
-
-    if (!defined('IS_SECURITY_GATE_PAGE') && !in_array($curr_script, $whitelisted_scripts)) {
-        $is_json_req = (!empty($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) ||
-                       (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && stristr($_SERVER['HTTP_X_REQUESTED_WITH'], 'xmlhttprequest')) ||
-                       (!empty($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false);
-
-        if ($is_json_req) {
-            header('Content-Type: application/json; charset=utf-8');
-            echo json_encode([
-                'status' => 'error',
-                'security_gate_required' => true,
-                'message' => 'Security key verification required.'
-            ]);
-            exit;
-        }
-
-        if (!empty($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], 'security_gate.php') === false) {
-            $_SESSION['security_gate_redirect'] = $_SERVER['REQUEST_URI'];
-        }
-
-        header("Location: security_gate.php");
-        exit;
-    }
-}
 
 if (!function_exists('get_custom_env')) {
     function get_custom_env($keys, $default = '') {
