@@ -152,7 +152,7 @@ include 'includes/header.php';
 
             <div style="max-width: 580px; margin: 0 auto 2rem auto;">
                 <!-- Digital Card Wrapper -->
-                <div class="glass-panel" style="background: linear-gradient(135deg, rgba(16, 26, 43, 0.95), rgba(24, 38, 64, 0.95)); border: 2px solid var(--secondary-color); border-radius: 20px; padding: 1.8rem; box-shadow: 0 15px 40px rgba(0, 0, 0, 0.5); position: relative; overflow: hidden;">
+                <div class="glass-panel" id="digitalMedicalCardBox" style="background: linear-gradient(135deg, rgba(16, 26, 43, 0.95), rgba(24, 38, 64, 0.95)); border: 2px solid var(--secondary-color); border-radius: 20px; padding: 1.8rem; box-shadow: 0 15px 40px rgba(0, 0, 0, 0.5); position: relative; overflow: hidden;">
                     <!-- Background Glow Overlay -->
                     <div style="position: absolute; top: -50px; right: -50px; width: 180px; height: 180px; background: radial-gradient(circle, rgba(80, 227, 194, 0.25) 0%, transparent 70%); pointer-events: none;"></div>
 
@@ -221,6 +221,14 @@ include 'includes/header.php';
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- DOWNLOAD MEDICAL CARD BUTTON -->
+                <div style="margin-top: 1.25rem; text-align: center;">
+                    <button type="button" id="btnDownloadCard" onclick="downloadMedicalCardPDF()" class="btn btn-primary" style="width: 100%; padding: 0.85rem 1.5rem; font-size: 1rem; font-weight: 700; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 0.6rem; background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); border: none; cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);">
+                        <i class="fas fa-file-pdf" style="font-size: 1.2rem;"></i>
+                        <span id="downloadBtnText">Download Medical Card</span>
+                    </button>
                 </div>
             </div>
 
@@ -421,6 +429,78 @@ function submitCardPaymentVerification(paymentId, razorpayOrderId) {
     .catch(err => {
         alert('Network connection error. Please refresh.');
     });
+}
+</script>
+
+<!-- html2pdf.js CDN for PDF Download generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<script>
+function showCardDownloadToast(message, isError) {
+    var existing = document.getElementById('cardDownloadToast');
+    if (existing) existing.remove();
+
+    var toast = document.createElement('div');
+    toast.id = 'cardDownloadToast';
+    toast.style.cssText = 'position: fixed; bottom: 25px; right: 25px; z-index: 999999; background: rgba(18, 18, 18, 0.94); color: ' + (isError ? '#ff4757' : '#2ed573') + '; padding: 0.85rem 1.4rem; border-radius: 12px; border: 1px solid ' + (isError ? 'rgba(255, 71, 87, 0.4)' : 'rgba(46, 213, 115, 0.4)') + '; font-weight: 600; font-size: 0.9rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(10px); display: flex; align-items: center; gap: 0.6rem; transition: opacity 0.4s ease;';
+    toast.innerHTML = (isError ? '<i class="fas fa-exclamation-circle"></i> ' : '<i class="fas fa-check-circle"></i> ') + message;
+    document.body.appendChild(toast);
+
+    setTimeout(function() {
+        toast.style.opacity = '0';
+        setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 400);
+    }, 3200);
+}
+
+function downloadMedicalCardPDF() {
+    var btn = document.getElementById('btnDownloadCard');
+    var btnText = document.getElementById('downloadBtnText');
+    if (!btn || btn.disabled) return;
+
+    btn.disabled = true;
+    var originalHtml = btnText.innerHTML;
+    btnText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating Medical Card...';
+
+    showCardDownloadToast('Generating your Digital Medical Card PDF...');
+
+    var element = document.getElementById('digitalMedicalCardBox');
+    var cardNumber = "<?php echo htmlspecialchars($current_card['card_number'] ?? 'DMC-CARD'); ?>";
+    var cleanCardNum = cardNumber.replace(/[^A-Za-z0-9\-]/g, '');
+    var filename = 'Digital-Medical-Card-' + cleanCardNum + '.pdf';
+
+    if (typeof html2pdf !== 'undefined' && element) {
+        var opt = {
+            margin:       [0.3, 0.3, 0.3, 0.3],
+            filename:     filename,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true, logging: false, backgroundColor: '#0f172a' },
+            jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+        };
+
+        html2pdf().set(opt).from(element).save().then(function() {
+            btn.disabled = false;
+            btnText.innerHTML = originalHtml;
+            showCardDownloadToast('Medical Card Downloaded Successfully ✅', false);
+        }).catch(function(err) {
+            console.warn("Client PDF generation fallback:", err);
+            triggerServerDownloadPDF(filename);
+        });
+    } else {
+        triggerServerDownloadPDF(filename);
+    }
+}
+
+function triggerServerDownloadPDF(filename) {
+    var btn = document.getElementById('btnDownloadCard');
+    var btnText = document.getElementById('downloadBtnText');
+    
+    window.location.href = 'download_medical_card.php?print=1';
+    
+    setTimeout(function() {
+        if (btn) btn.disabled = false;
+        if (btnText) btnText.innerHTML = '<i class="fas fa-file-pdf" style="font-size: 1.2rem;"></i> Download Medical Card';
+        showCardDownloadToast('Medical Card Downloaded Successfully ✅', false);
+    }, 2000);
 }
 </script>
 
