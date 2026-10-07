@@ -155,11 +155,11 @@ $filename = "Digital-Medical-Card-" . preg_replace('/[^A-Za-z0-9\-]/', '', $card
             if (btn) btn.disabled = true;
 
             var opt = {
-                margin:       [0.3, 0.3, 0.3, 0.3],
+                margin:       [0.1, 0.1, 0.1, 0.1],
                 filename:     '<?php echo $filename; ?>',
-                image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#0b0f19' },
-                jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+                image:        { type: 'jpeg', quality: 0.99 },
+                html2canvas:  { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#0f172a', scrollX: 0, scrollY: 0 },
+                jsPDF:        { unit: 'in', format: [7.2, 4.5], orientation: 'landscape' }
             };
 
             html2pdf().set(opt).from(element).save().then(function() {

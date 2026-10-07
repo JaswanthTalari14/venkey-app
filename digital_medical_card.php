@@ -237,12 +237,18 @@ include 'includes/header.php';
                     </div>
                 </div>
 
-                <!-- DOWNLOAD MEDICAL CARD BUTTON -->
-                <div style="margin-top: 1.25rem; text-align: center;">
+                <!-- DOWNLOAD MEDICAL CARD BUTTON & VIEW MEDICAL CARD BUTTON -->
+                <div style="margin-top: 1.25rem; text-align: center; display: flex; flex-direction: column; gap: 0.75rem;">
                     <button type="button" id="btnDownloadCard" onclick="downloadMedicalCardPDF()" class="btn btn-primary" style="width: 100%; padding: 0.85rem 1.5rem; font-size: 1rem; font-weight: 700; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 0.6rem; background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); border: none; cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);">
                         <i class="fas fa-file-pdf" style="font-size: 1.2rem;"></i>
                         <span id="downloadBtnText">Download Medical Card</span>
                     </button>
+
+                    <!-- VIEW MEDICAL CARD BUTTON -->
+                    <a href="download_medical_card.php" target="_blank" class="btn btn-outline" style="width: 100%; padding: 0.85rem 1.5rem; font-size: 1rem; font-weight: 700; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 0.6rem; background: rgba(80, 227, 194, 0.1); border: 1px solid var(--secondary-color); color: var(--secondary-color); text-decoration: none;">
+                        <i class="fas fa-eye" style="font-size: 1.1rem;"></i>
+                        <span>View Medical Card</span>
+                    </a>
                 </div>
             </div>
 
@@ -520,8 +526,10 @@ function downloadMedicalCardPDF() {
         var base64Profile = images[0];
         var base64Qr = images[1];
 
-        var offscreen = document.createElement('div');
-        offscreen.style.cssText = 'position: fixed; left: -9999px; top: -9999px; width: 620px; z-index: -9999;';
+        // Position temporary render box inside document viewport so Chromium/WebKit fully rasterizes all text glyphs and layout bitmaps
+        var tempDiv = document.createElement('div');
+        tempDiv.id = 'tempMedicalCardRenderBox';
+        tempDiv.style.cssText = 'position: absolute; top: 0; left: 0; width: 620px; z-index: -1; opacity: 0.999; pointer-events: none; background: #0f172a; border-radius: 20px; overflow: hidden;';
 
         var cardHtml = `
         <div style="width: 620px; background: #0f172a; border: 3px solid #50e3c2; border-radius: 20px; padding: 26px; font-family: 'Inter', system-ui, -apple-system, sans-serif; color: #ffffff; box-sizing: border-box; background-image: radial-gradient(circle at top right, rgba(80, 227, 194, 0.15) 0%, transparent 60%);">
@@ -591,30 +599,38 @@ function downloadMedicalCardPDF() {
         </div>
         `;
 
-        offscreen.innerHTML = cardHtml;
-        document.body.appendChild(offscreen);
+        tempDiv.innerHTML = cardHtml;
+        document.body.appendChild(tempDiv);
 
         if (typeof html2pdf !== 'undefined') {
             var opt = {
-                margin:       [0.3, 0.3, 0.3, 0.3],
+                margin:       [0.1, 0.1, 0.1, 0.1],
                 filename:     filename,
-                image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#0b0f19' },
-                jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+                image:        { type: 'jpeg', quality: 0.99 },
+                html2canvas:  { 
+                    scale: 2, 
+                    useCORS: true, 
+                    allowTaint: true, 
+                    logging: false, 
+                    backgroundColor: '#0f172a',
+                    scrollX: 0,
+                    scrollY: 0
+                },
+                jsPDF:        { unit: 'in', format: [7.2, 4.5], orientation: 'landscape' }
             };
 
-            html2pdf().set(opt).from(offscreen.children[0]).save().then(function() {
-                if (offscreen.parentNode) document.body.removeChild(offscreen);
+            html2pdf().set(opt).from(tempDiv.children[0]).save().then(function() {
+                if (tempDiv.parentNode) document.body.removeChild(tempDiv);
                 btn.disabled = false;
                 btnText.innerHTML = originalHtml;
                 showCardDownloadToast('Medical Card Downloaded Successfully ✅', false);
             }).catch(function(err) {
                 console.warn("Client PDF generation error:", err);
-                if (offscreen.parentNode) document.body.removeChild(offscreen);
+                if (tempDiv.parentNode) document.body.removeChild(tempDiv);
                 triggerServerDownloadPDF(filename);
             });
         } else {
-            if (offscreen.parentNode) document.body.removeChild(offscreen);
+            if (tempDiv.parentNode) document.body.removeChild(tempDiv);
             triggerServerDownloadPDF(filename);
         }
     }).catch(function(err) {
@@ -627,7 +643,7 @@ function triggerServerDownloadPDF(filename) {
     var btn = document.getElementById('btnDownloadCard');
     var btnText = document.getElementById('downloadBtnText');
     
-    window.location.href = 'download_medical_card.php?print=1';
+    window.location.href = 'download_medical_card.php?download=1';
     
     setTimeout(function() {
         if (btn) btn.disabled = false;
