@@ -8,13 +8,13 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$user_id = (int)$_SESSION['user_id'];
+$user_id   = (int)$_SESSION['user_id'];
 $user_role = $_SESSION['role'] ?? 'patient';
 $user_name = $_SESSION['name'] ?? 'User';
 
-$ticket_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$ticket_id   = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $msg_success = '';
-$msg_error = '';
+$msg_error   = '';
 
 if ($ticket_id <= 0) {
     die("Invalid Ticket ID.");
@@ -35,10 +35,10 @@ if (!$ticket_res || $ticket_res->num_rows === 0) {
     die("Support ticket not found or access denied.");
 }
 
-$ticket = $ticket_res->fetch_assoc();
+$ticket   = $ticket_res->fetch_assoc();
 $is_admin = ($user_role === 'admin');
 
-// Handle Customer / Admin Ticket Actions
+// Handle Form Posts (Fallback if JS disabled or Status Updates)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // 1. Close Ticket Action (Customer or Admin)
@@ -55,41 +55,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // 2. Admin Status / Priority Update
     if ($is_admin && isset($_POST['update_status_priority'])) {
-        $new_st = trim($_POST['status'] ?? $ticket['status']);
+        $new_st   = trim($_POST['status'] ?? $ticket['status']);
         $new_prio = trim($_POST['priority'] ?? $ticket['priority']);
-        $prev_st = $ticket['status'];
+        $prev_st  = $ticket['status'];
 
         $resolved_sql = ($new_st === 'resolved' && $prev_st !== 'resolved') ? ", resolved_at = NOW()" : "";
-        $closed_sql = ($new_st === 'closed' && $prev_st !== 'closed') ? ", closed_at = NOW()" : "";
+        $closed_sql   = ($new_st === 'closed' && $prev_st !== 'closed') ? ", closed_at = NOW()" : "";
 
         $stmt_upd = $conn->prepare("UPDATE support_tickets SET status = ?, priority = ? $resolved_sql $closed_sql WHERE id = ?");
         $stmt_upd->bind_param("ssi", $new_st, $new_prio, $ticket_id);
         if ($stmt_upd->execute()) {
-            $ticket['status'] = $new_st;
+            $ticket['status']   = $new_st;
             $ticket['priority'] = $new_prio;
             
             log_admin_activity($conn, $user_id, "Ticket Status Updated", "support_tickets", $ticket_id, "Admin updated ticket #{$ticket['ticket_number']} status to '$new_st' (Priority: $new_prio)");
 
             $st_label = ucfirst(str_replace('_', ' ', $new_st));
-            create_notification((int)$ticket['customer_id'], "Support Ticket Status: $st_label 🔄", "Your support ticket #{$ticket['ticket_number']} status is now $st_label.", 'system', 'ticket', (string)$ticket_id);
+            create_notification((int)$ticket['customer_id'], "Support Ticket Status: $st_label", "Your support ticket #{$ticket['ticket_number']} status is now $st_label.", 'system', 'ticket', (string)$ticket_id);
 
             $msg_success = "Ticket status updated to '$st_label'.";
         }
     }
 
-    // 3. Post Reply Message
+    // 3. Post Reply Message (Standard HTTP fallback)
     if (isset($_POST['post_reply'])) {
-        $reply_msg = trim($_POST['reply_message'] ?? '');
+        $reply_msg   = trim($_POST['reply_message'] ?? '');
         $is_internal = ($is_admin && isset($_POST['is_internal_note'])) ? 1 : 0;
 
         if (empty($reply_msg)) {
             $msg_error = "Please enter a message reply.";
         } else {
-            // File Attachment
             $attachment_path = null;
             if (isset($_FILES['reply_attachment']) && $_FILES['reply_attachment']['error'] === UPLOAD_ERR_OK) {
                 $file = $_FILES['reply_attachment'];
-                $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                $ext  = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
                 $allowed = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
 
                 if (in_array($ext, $allowed) && $file['size'] <= 5 * 1024 * 1024) {
@@ -112,19 +111,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt_rep->bind_param("iissis", $ticket_id, $user_id, $sender_role, $reply_msg, $is_internal, $attachment_path);
 
             if ($stmt_rep->execute()) {
-                // Update Ticket status and timestamp
                 if ($is_admin && !$is_internal) {
                     $new_st = 'waiting_customer';
                     $conn->query("UPDATE support_tickets SET status = '$new_st', updated_at = NOW() WHERE id = $ticket_id");
                     $ticket['status'] = $new_st;
 
-                    create_notification((int)$ticket['customer_id'], "Support Team Replied 💬", "Support team replied to your ticket #{$ticket['ticket_number']}.", 'system', 'ticket', (string)$ticket_id);
+                    create_notification((int)$ticket['customer_id'], "Support Team Replied", "Support team replied to your ticket #{$ticket['ticket_number']}.", 'system', 'ticket', (string)$ticket_id);
                 } elseif (!$is_admin) {
                     $new_st = ($ticket['status'] === 'waiting_customer') ? 'in_progress' : $ticket['status'];
                     $conn->query("UPDATE support_tickets SET status = '$new_st', updated_at = NOW() WHERE id = $ticket_id");
                     $ticket['status'] = $new_st;
 
-                    // Notify Admins
                     $admins_q = $conn->query("SELECT id FROM users WHERE role = 'admin'");
                     if ($admins_q) {
                         while ($adm = $admins_q->fetch_assoc()) {
@@ -141,7 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Fetch Conversation Replies
+// Fetch Initial Conversation Replies
 $replies_where = $is_admin ? "1=1" : "is_internal_note = 0";
 $replies_stmt = $conn->prepare("
     SELECT r.*, u.name as sender_name 
@@ -154,8 +151,481 @@ $replies_stmt->bind_param("i", $ticket_id);
 $replies_stmt->execute();
 $replies_res = $replies_stmt->get_result();
 
+$initial_replies = [];
+$max_reply_id = 0;
+if ($replies_res) {
+    while ($row = $replies_res->fetch_assoc()) {
+        $initial_replies[] = $row;
+        if ((int)$row['id'] > $max_reply_id) {
+            $max_reply_id = (int)$row['id'];
+        }
+    }
+}
+
 include 'includes/header.php';
 ?>
+
+<style>
+/* Custom Support Chat Workspace Styling (Emerald + Deep Navy) */
+.support-chat-workspace {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 180px);
+    min-height: 560px;
+    max-height: 850px;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+    margin-bottom: 1.5rem;
+}
+
+/* Chat Header */
+.chat-top-header {
+    background: rgba(15, 23, 42, 0.95);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1rem 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.chat-top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+}
+
+.ticket-meta-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.ticket-ref-badge {
+    font-family: monospace;
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #f8fafc;
+    letter-spacing: 0.5px;
+}
+
+.ticket-status-pill {
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.ticket-details-drawer {
+    background: rgba(30, 41, 59, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 0.9rem 1.2rem;
+    font-size: 0.86rem;
+    color: #94a3b8;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.8rem;
+    transition: all 0.3s ease;
+}
+
+.ticket-details-drawer.collapsed {
+    display: none;
+}
+
+/* Scrollable Chat Stream Container */
+.chat-messages-stream {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    scroll-behavior: smooth;
+    background: radial-gradient(circle at top right, rgba(5, 150, 105, 0.05), transparent 40%),
+                radial-gradient(circle at bottom left, rgba(15, 23, 42, 0.4), transparent 40%);
+}
+
+.chat-messages-stream::-webkit-scrollbar {
+    width: 6px;
+}
+.chat-messages-stream::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.1);
+}
+.chat-messages-stream::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+.chat-messages-stream::-webkit-scrollbar-thumb:hover {
+    background: var(--primary-color, #059669);
+}
+
+/* Date Separators */
+.chat-date-separator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0.8rem 0;
+    position: relative;
+}
+
+.chat-date-separator::before {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.chat-date-separator span {
+    position: relative;
+    background: rgba(30, 41, 59, 0.9);
+    color: #94a3b8;
+    padding: 0.25rem 0.9rem;
+    border-radius: 14px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Message Bubble Architecture */
+.chat-bubble-row {
+    display: flex;
+    flex-direction: column;
+    max-width: 75%;
+    position: relative;
+    animation: fadeInBubble 0.25s ease-out forwards;
+}
+
+@keyframes fadeInBubble {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.chat-bubble-row.mine {
+    align-self: flex-end;
+    align-items: flex-end;
+}
+
+.chat-bubble-row.other {
+    align-self: flex-start;
+    align-items: flex-start;
+}
+
+.chat-bubble-row.internal {
+    align-self: center;
+    max-width: 90%;
+    align-items: center;
+}
+
+.chat-bubble-card {
+    padding: 0.9rem 1.2rem;
+    border-radius: 18px;
+    font-size: 0.93rem;
+    line-height: 1.55;
+    position: relative;
+    word-break: break-word;
+    white-space: pre-wrap;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
+
+/* Mine (User's own messages) */
+.chat-bubble-row.mine .chat-bubble-card {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    color: #ffffff;
+    border-bottom-right-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Other (Support Team / Customer depending on perspective) */
+.chat-bubble-row.other .chat-bubble-card {
+    background: rgba(30, 41, 59, 0.85);
+    color: #f1f5f9;
+    border-bottom-left-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Internal Note */
+.chat-bubble-row.internal .chat-bubble-card {
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px dashed #f59e0b;
+    color: #fbbf24;
+    border-radius: 14px;
+    width: 100%;
+}
+
+.chat-sender-info {
+    font-size: 0.76rem;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.chat-bubble-row.mine .chat-sender-info {
+    color: rgba(255, 255, 255, 0.9);
+}
+.chat-bubble-row.other .chat-sender-info {
+    color: #10b981;
+}
+
+.chat-timestamp {
+    font-size: 0.71rem;
+    opacity: 0.75;
+    margin-top: 0.4rem;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.chat-bubble-row.mine .chat-timestamp {
+    justify-content: flex-end;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.chat-bubble-row.other .chat-timestamp {
+    justify-content: flex-start;
+    color: #94a3b8;
+}
+
+/* Image / Attachment Previews */
+.chat-attachment-box {
+    margin-top: 0.6rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.chat-attachment-img {
+    max-width: 220px;
+    max-height: 180px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    margin-top: 0.3rem;
+}
+
+.chat-attachment-img:hover {
+    transform: scale(1.03);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+/* Sticky Bottom Message Composer */
+.chat-bottom-composer {
+    background: rgba(15, 23, 42, 0.98);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.9rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    position: relative;
+    z-index: 10;
+}
+
+.composer-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.7rem;
+    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    padding: 0.5rem 0.8rem;
+    transition: border-color 0.2s;
+}
+
+.composer-input-row:focus-within {
+    border-color: #059669;
+    box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2);
+}
+
+.chat-textarea {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #f8fafc;
+    font-size: 0.95rem;
+    font-family: inherit;
+    resize: none;
+    max-height: 120px;
+    min-height: 38px;
+    padding: 0.4rem 0.2rem;
+    line-height: 1.4;
+}
+
+.chat-textarea::placeholder {
+    color: #64748b;
+}
+
+.attach-btn-icon {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 1.25rem;
+    cursor: pointer;
+    padding: 0.4rem;
+    border-radius: 50%;
+    transition: color 0.2s, background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.attach-btn-icon:hover {
+    color: #10b981;
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.send-msg-btn {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 12px;
+    padding: 0.6rem 1.2rem;
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 4px 14px rgba(5, 150, 105, 0.35);
+    transition: transform 0.15s, opacity 0.15s;
+    min-height: 38px;
+}
+
+.send-msg-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    opacity: 0.95;
+}
+
+.send-msg-btn:disabled {
+    background: #475569;
+    box-shadow: none;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* Floating New Message Scroll Indicator */
+.scroll-new-msg-pill {
+    position: absolute;
+    bottom: 80px;
+    right: 20px;
+    background: #059669;
+    color: #ffffff;
+    padding: 0.45rem 1rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    z-index: 20;
+    transition: transform 0.2s, opacity 0.2s;
+    animation: bouncePill 1s infinite alternate;
+}
+
+@keyframes bouncePill {
+    from { transform: translateY(0); }
+    to { transform: translateY(-4px); }
+}
+
+/* File Selected Chip */
+.file-selected-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(5, 150, 105, 0.15);
+    border: 1px solid rgba(5, 150, 105, 0.3);
+    color: #34d399;
+    font-size: 0.78rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    margin-bottom: 0.3rem;
+}
+
+.file-selected-chip .remove-file-btn {
+    cursor: pointer;
+    color: #ef4444;
+    font-weight: bold;
+    margin-left: 0.2rem;
+}
+
+/* Lightbox Modal */
+.image-lightbox-modal {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15, 23, 42, 0.92);
+    backdrop-filter: blur(10px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.image-lightbox-modal.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.image-lightbox-modal img {
+    max-width: 90vw;
+    max-height: 85vh;
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+}
+
+.lightbox-close-btn {
+    position: absolute;
+    top: 20px;
+    right: 25px;
+    color: #ffffff;
+    font-size: 2rem;
+    cursor: pointer;
+    background: rgba(255,255,255,0.1);
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Mobile Adjustments */
+@media (max-width: 768px) {
+    .support-chat-workspace {
+        height: calc(100vh - 120px);
+        min-height: 460px;
+        border-radius: 12px;
+    }
+    .chat-bubble-row {
+        max-width: 88%;
+    }
+    .chat-top-header {
+        padding: 0.8rem 1rem;
+    }
+    .chat-messages-stream {
+        padding: 1rem;
+    }
+}
+</style>
 
 <div class="dashboard-layout">
     <aside class="sidebar glass-panel">
@@ -181,209 +651,477 @@ include 'includes/header.php';
     </aside>
 
     <main class="dashboard-content">
-        <!-- Ticket Header Card -->
-        <div class="glass-panel" style="padding: 1.8rem; margin-bottom: 1.5rem; border-top: 5px solid var(--primary-color);">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 1rem; margin-bottom: 1rem;">
-                <div>
-                    <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
-                        <h2 style="margin: 0; color: var(--text-primary); font-size: 1.4rem; font-family: monospace;">
-                            <?php echo htmlspecialchars($ticket['ticket_number']); ?>
-                        </h2>
-                        <span style="background: rgba(80, 227, 194, 0.15); color: #50e3c2; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.78rem; font-weight: bold;">
-                            <?php echo htmlspecialchars($ticket['category']); ?>
-                        </span>
-                        <?php
-                            $st = strtolower($ticket['status']);
-                            $badge_bg = 'rgba(255, 171, 0, 0.2)';
-                            $badge_color = '#ffab00';
-                            $st_label = 'Open';
-                            if ($st === 'in_progress') {
-                                $badge_bg = 'rgba(112, 161, 255, 0.2)';
-                                $badge_color = '#70a1ff';
-                                $st_label = 'In Progress';
-                            } elseif ($st === 'waiting_customer') {
-                                $badge_bg = 'rgba(245, 166, 35, 0.2)';
-                                $badge_color = '#f5a623';
-                                $st_label = 'Waiting for Customer';
-                            } elseif ($st === 'resolved') {
-                                $badge_bg = 'rgba(46, 213, 115, 0.2)';
-                                $badge_color = '#2ed573';
-                                $st_label = 'Resolved';
-                            } elseif ($st === 'closed') {
-                                $badge_bg = 'rgba(255,255,255,0.1)';
-                                $badge_color = 'var(--text-secondary)';
-                                $st_label = 'Closed';
-                            }
-                        ?>
-                        <span style="display: inline-block; padding: 0.25rem 0.7rem; border-radius: 12px; font-size: 0.8rem; font-weight: bold; background: <?php echo $badge_bg; ?>; color: <?php echo $badge_color; ?>; border: 1px solid <?php echo $badge_color; ?>;">
-                            <?php echo $st_label; ?>
-                        </span>
-                    </div>
-                    <h3 style="margin: 0.5rem 0 0 0; color: var(--text-primary); font-size: 1.15rem;">
-                        <?php echo htmlspecialchars($ticket['subject']); ?>
-                    </h3>
-                </div>
-
-                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                    <a href="<?php echo $is_admin ? 'admin_support.php' : 'my_tickets.php'; ?>" class="btn btn-outline" style="font-size: 0.82rem;"><i class="fas fa-arrow-left"></i> Back</a>
-
-                    <?php if ($st !== 'closed'): ?>
-                        <form method="POST" style="display: inline;" onsubmit="return confirm('Close this ticket? You can reopen or post a new message anytime.');">
-                            <button type="submit" name="close_ticket" value="1" class="btn btn-outline" style="font-size: 0.82rem; color: #ff4757; border-color: #ff4757;">
-                                <i class="fas fa-lock"></i> Close Ticket
-                            </button>
-                        </form>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <!-- Meta & Customer Info -->
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; font-size: 0.88rem; color: var(--text-secondary);">
-                <div><strong>Customer Name:</strong> <span style="color: var(--text-primary);"><?php echo htmlspecialchars($ticket['customer_name']); ?></span></div>
-                <div><strong>Contact:</strong> <?php echo htmlspecialchars($ticket['customer_phone'] . ' | ' . $ticket['customer_email']); ?></div>
-                <div><strong>Created On:</strong> <?php echo date('M d, Y h:i A', strtotime($ticket['created_at'])); ?></div>
-                
-                <?php if (!empty($ticket['related_entity_type']) && !empty($ticket['related_entity_id'])): ?>
-                    <div>
-                        <strong>Related Record:</strong> 
-                        <span style="color: #50e3c2; font-weight: bold; text-transform: uppercase;">
-                            <?php echo htmlspecialchars($ticket['related_entity_type']); ?> #<?php echo htmlspecialchars($ticket['related_entity_id']); ?>
-                        </span>
-                    </div>
-                <?php endif; ?>
-            </div>
-
-            <!-- Admin Controls Box -->
-            <?php if ($is_admin): ?>
-                <div style="margin-top: 1.2rem; padding-top: 1rem; border-top: 1px dashed var(--glass-border); background: rgba(80, 227, 194, 0.05); padding: 1rem; border-radius: 8px;">
-                    <form method="POST" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
-                        <span style="font-weight: bold; font-size: 0.85rem; color: var(--primary-color);">ADMIN TICKET STATUS:</span>
-                        <select name="status" class="form-control" style="max-width: 180px; font-size: 0.85rem; padding: 0.35rem 0.6rem;">
-                            <option value="open" <?php echo $ticket['status'] === 'open' ? 'selected' : ''; ?>>🟡 Open</option>
-                            <option value="in_progress" <?php echo $ticket['status'] === 'in_progress' ? 'selected' : ''; ?>>🔵 In Progress</option>
-                            <option value="waiting_customer" <?php echo $ticket['status'] === 'waiting_customer' ? 'selected' : ''; ?>>🟠 Waiting Customer</option>
-                            <option value="resolved" <?php echo $ticket['status'] === 'resolved' ? 'selected' : ''; ?>>🟢 Resolved</option>
-                            <option value="closed" <?php echo $ticket['status'] === 'closed' ? 'selected' : ''; ?>>⚫ Closed</option>
-                        </select>
-
-                        <select name="priority" class="form-control" style="max-width: 140px; font-size: 0.85rem; padding: 0.35rem 0.6rem;">
-                            <option value="low" <?php echo $ticket['priority'] === 'low' ? 'selected' : ''; ?>>Low</option>
-                            <option value="normal" <?php echo $ticket['priority'] === 'normal' ? 'selected' : ''; ?>>Normal</option>
-                            <option value="high" <?php echo $ticket['priority'] === 'high' ? 'selected' : ''; ?>>High</option>
-                            <option value="urgent" <?php echo $ticket['priority'] === 'urgent' ? 'selected' : ''; ?>>Urgent</option>
-                        </select>
-
-                        <button type="submit" name="update_status_priority" value="1" class="btn btn-primary" style="font-size: 0.82rem; padding: 0.35rem 0.9rem;">
-                            <i class="fas fa-save"></i> Save Status
-                        </button>
-                    </form>
-                </div>
-            <?php endif; ?>
-        </div>
-
         <?php if ($msg_success): ?>
-            <div style="background: rgba(46, 213, 115, 0.15); border: 1px solid #2ed573; color: #2ed573; padding: 0.9rem; border-radius: 8px; margin-bottom: 1.5rem;">
+            <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; color: #10b981; padding: 0.8rem 1.2rem; border-radius: 12px; margin-bottom: 1rem; font-size: 0.9rem;">
                 <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($msg_success); ?>
             </div>
         <?php endif; ?>
 
         <?php if ($msg_error): ?>
-            <div style="background: rgba(255, 71, 87, 0.15); border: 1px solid #ff4757; color: #ff4757; padding: 0.9rem; border-radius: 8px; margin-bottom: 1.5rem;">
+            <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #ef4444; padding: 0.8rem 1.2rem; border-radius: 12px; margin-bottom: 1rem; font-size: 0.9rem;">
                 <i class="fas fa-exclamation-triangle"></i> <?php echo htmlspecialchars($msg_error); ?>
             </div>
         <?php endif; ?>
 
-        <!-- Conversation Chat Stream -->
-        <div class="glass-panel" style="padding: 1.8rem; margin-bottom: 1.5rem;">
-            <h4 style="margin-top: 0; margin-bottom: 1.5rem; color: var(--text-primary); border-bottom: 1px solid var(--glass-border); padding-bottom: 0.5rem;"><i class="fas fa-comments" style="color: var(--primary-color);"></i> Ticket Conversation</h4>
+        <!-- Full Support Ticket Conversation Workspace -->
+        <div class="support-chat-workspace">
+            <!-- Header Bar -->
+            <div class="chat-top-header">
+                <div class="chat-top-bar">
+                    <div class="ticket-meta-title">
+                        <a href="<?php echo $is_admin ? 'admin_support.php' : 'my_tickets.php'; ?>" class="btn btn-outline" style="font-size: 0.8rem; padding: 0.3rem 0.7rem; border-radius: 8px;">
+                            <i class="fas fa-arrow-left"></i> Back
+                        </a>
 
-            <div id="chatStream" style="display: flex; flex-direction: column; gap: 1.2rem; max-height: 500px; overflow-y: auto; padding-right: 0.5rem; margin-bottom: 1.5rem;">
-                <?php if ($replies_res && $replies_res->num_rows > 0): ?>
-                    <?php while ($r = $replies_res->fetch_assoc()): ?>
+                        <span class="ticket-ref-badge"><?php echo htmlspecialchars($ticket['ticket_number']); ?></span>
+
                         <?php
-                            $is_my_msg = ($r['sender_id'] == $user_id);
-                            $is_support_msg = ($r['sender_role'] === 'admin');
-                            $is_internal_note = (bool)$r['is_internal_note'];
-
-                            $box_align = $is_support_msg ? 'flex-start' : 'flex-end';
-                            $bg_style = $is_support_msg ? 'background: rgba(74, 144, 226, 0.12); border: 1px solid rgba(74, 144, 226, 0.3);' : 'background: rgba(80, 227, 194, 0.12); border: 1px solid rgba(80, 227, 194, 0.3);';
-                            $sender_label = $is_support_msg ? '🎧 Support Team (' . htmlspecialchars($r['sender_name']) . ')' : '👤 ' . htmlspecialchars($r['sender_name']);
-
-                            if ($is_internal_note) {
-                                $bg_style = 'background: rgba(255, 171, 0, 0.12); border: 1px dashed #ffab00;';
-                                $sender_label = '🔒 Internal Admin Note (' . htmlspecialchars($r['sender_name']) . ')';
+                            $st = strtolower($ticket['status']);
+                            $badge_bg = 'rgba(245, 158, 11, 0.18)';
+                            $badge_color = '#f59e0b';
+                            $st_label = 'Open';
+                            if ($st === 'in_progress') {
+                                $badge_bg = 'rgba(59, 130, 246, 0.18)';
+                                $badge_color = '#60a5fa';
+                                $st_label = 'In Progress';
+                            } elseif ($st === 'waiting_customer') {
+                                $badge_bg = 'rgba(245, 158, 11, 0.18)';
+                                $badge_color = '#fbbf24';
+                                $st_label = 'Waiting Customer';
+                            } elseif ($st === 'resolved') {
+                                $badge_bg = 'rgba(16, 185, 129, 0.18)';
+                                $badge_color = '#34d399';
+                                $st_label = 'Resolved';
+                            } elseif ($st === 'closed') {
+                                $badge_bg = 'rgba(148, 163, 184, 0.15)';
+                                $badge_color = '#94a3b8';
+                                $st_label = 'Closed';
                             }
                         ?>
+                        <span class="ticket-status-pill" style="background: <?php echo $badge_bg; ?>; color: <?php echo $badge_color; ?>; border: 1px solid <?php echo $badge_color; ?>;">
+                            <i class="fas fa-circle" style="font-size: 0.5rem;"></i> <?php echo $st_label; ?>
+                        </span>
 
-                        <div style="align-self: <?php echo $box_align; ?>; max-width: 80%; border-radius: 12px; padding: 1rem 1.2rem; <?php echo $bg_style; ?>">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; gap: 1rem;">
-                                <strong style="font-size: 0.85rem; color: <?php echo $is_internal_note ? '#ffab00' : ($is_support_msg ? '#70a1ff' : '#50e3c2'); ?>;">
-                                    <?php echo $sender_label; ?>
-                                </strong>
-                                <span style="font-size: 0.75rem; color: var(--text-secondary);">
-                                    <?php echo date('M d, Y h:i A', strtotime($r['created_at'])); ?>
-                                </span>
-                            </div>
+                        <span style="background: rgba(16, 185, 129, 0.12); color: #34d399; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.76rem; font-weight: 700;">
+                            <?php echo htmlspecialchars($ticket['category']); ?>
+                        </span>
+                    </div>
 
-                            <div style="font-size: 0.92rem; color: var(--text-primary); line-height: 1.5; white-space: pre-line;">
-                                <?php echo htmlspecialchars($r['message']); ?>
-                            </div>
+                    <div style="display: flex; gap: 0.6rem; align-items: center;">
+                        <button id="toggleDetailsBtn" type="button" class="btn btn-outline" style="font-size: 0.78rem; padding: 0.3rem 0.7rem;" onclick="toggleTicketDrawer()">
+                            <i class="fas fa-info-circle"></i> Ticket Details <i class="fas fa-chevron-down" id="drawerChevron"></i>
+                        </button>
 
-                            <?php if (!empty($r['attachment_path']) && file_exists($r['attachment_path'])): ?>
-                                <div style="margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px solid rgba(255,255,255,0.1);">
-                                    <a href="<?php echo htmlspecialchars($r['attachment_path']); ?>" target="_blank" class="btn btn-outline" style="font-size: 0.78rem; padding: 0.25rem 0.6rem; color: #50e3c2; border-color: #50e3c2;">
-                                        <i class="fas fa-paperclip"></i> View Attachment
-                                    </a>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    <?php endwhile; ?>
-                <?php else: ?>
-                    <p style="text-align: center; color: var(--text-secondary);">No messages recorded yet.</p>
+                        <?php if ($st !== 'closed'): ?>
+                            <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to close this ticket?');">
+                                <button type="submit" name="close_ticket" value="1" class="btn btn-outline" style="font-size: 0.78rem; padding: 0.3rem 0.7rem; color: #f87171; border-color: #f87171;">
+                                    <i class="fas fa-lock"></i> Close
+                                </button>
+                            </form>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Collapsible Ticket Details Drawer -->
+                <div id="ticketDetailsDrawer" class="ticket-details-drawer collapsed">
+                    <div><strong>Subject:</strong> <span style="color: #f8fafc;"><?php echo htmlspecialchars($ticket['subject']); ?></span></div>
+                    <div><strong>Customer:</strong> <span style="color: #f8fafc;"><?php echo htmlspecialchars($ticket['customer_name']); ?></span></div>
+                    <div><strong>Contact:</strong> <?php echo htmlspecialchars($ticket['customer_phone']); ?></div>
+                    <div><strong>Created:</strong> <?php echo date('M d, Y h:i A', strtotime($ticket['created_at'])); ?></div>
+                    <?php if (!empty($ticket['related_entity_type']) && !empty($ticket['related_entity_id'])): ?>
+                        <div><strong>Related Record:</strong> <span style="color: #34d399; font-weight: bold; text-transform: uppercase;"><?php echo htmlspecialchars($ticket['related_entity_type']); ?> #<?php echo htmlspecialchars($ticket['related_entity_id']); ?></span></div>
+                    <?php endif; ?>
+                </div>
+
+                <!-- Admin Status Manager -->
+                <?php if ($is_admin): ?>
+                    <div style="padding-top: 0.6rem; border-top: 1px dashed rgba(255,255,255,0.08);">
+                        <form method="POST" style="display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap;">
+                            <span style="font-weight: 700; font-size: 0.8rem; color: #10b981;">ADMIN CONTROLS:</span>
+                            <select name="status" class="form-control" style="max-width: 170px; font-size: 0.82rem; padding: 0.3rem 0.6rem;">
+                                <option value="open" <?php echo $ticket['status'] === 'open' ? 'selected' : ''; ?>>🟡 Open</option>
+                                <option value="in_progress" <?php echo $ticket['status'] === 'in_progress' ? 'selected' : ''; ?>>🔵 In Progress</option>
+                                <option value="waiting_customer" <?php echo $ticket['status'] === 'waiting_customer' ? 'selected' : ''; ?>>🟠 Waiting Customer</option>
+                                <option value="resolved" <?php echo $ticket['status'] === 'resolved' ? 'selected' : ''; ?>>🟢 Resolved</option>
+                                <option value="closed" <?php echo $ticket['status'] === 'closed' ? 'selected' : ''; ?>>⚫ Closed</option>
+                            </select>
+
+                            <select name="priority" class="form-control" style="max-width: 130px; font-size: 0.82rem; padding: 0.3rem 0.6rem;">
+                                <option value="low" <?php echo $ticket['priority'] === 'low' ? 'selected' : ''; ?>>Low</option>
+                                <option value="normal" <?php echo $ticket['priority'] === 'normal' ? 'selected' : ''; ?>>Normal</option>
+                                <option value="high" <?php echo $ticket['priority'] === 'high' ? 'selected' : ''; ?>>High</option>
+                                <option value="urgent" <?php echo $ticket['priority'] === 'urgent' ? 'selected' : ''; ?>>Urgent</option>
+                            </select>
+
+                            <button type="submit" name="update_status_priority" value="1" class="btn btn-primary" style="font-size: 0.8rem; padding: 0.3rem 0.8rem;">
+                                Save Status
+                            </button>
+                        </form>
+                    </div>
                 <?php endif; ?>
             </div>
 
-            <!-- Reply Composer -->
+            <!-- Scrollable Messages Stream -->
+            <div id="chatMessageContainer" class="chat-messages-stream">
+                <div style="text-align: center; font-size: 0.75rem; color: #64748b; margin-bottom: 0.5rem;">
+                    <i class="fas fa-shield-alt" style="color: #059669;"></i> End-to-End Encrypted Support Channel &bull; Live Connected
+                </div>
+
+                <!-- Messages Rendered Dynamically via JS & Initial Payload -->
+                <div id="messagesList"></div>
+            </div>
+
+            <!-- Floating New Message Alert -->
+            <div id="scrollPill" class="scroll-new-msg-pill" style="display: none;" onclick="scrollToBottom(true)">
+                <i class="fas fa-arrow-down"></i> New Message Below
+            </div>
+
+            <!-- Sticky Bottom Composer -->
             <?php if ($st !== 'closed'): ?>
-                <form method="POST" enctype="multipart/form-data" style="border-top: 1px solid var(--glass-border); padding-top: 1.2rem;">
+                <div class="chat-bottom-composer">
+                    <!-- Selected File Chip -->
+                    <div id="fileSelectedChip" class="file-selected-chip" style="display: none;">
+                        <i class="fas fa-paperclip"></i> <span id="fileNameText">filename.jpg</span>
+                        <span class="remove-file-btn" onclick="clearSelectedFile()">&times;</span>
+                    </div>
+
                     <?php if ($is_admin): ?>
-                        <div style="margin-bottom: 0.6rem;">
-                            <label style="font-size: 0.85rem; color: #ffab00; font-weight: bold; cursor: pointer;">
-                                <input type="checkbox" name="is_internal_note" value="1"> 🔒 Add as Internal Admin Note (Hidden from Customer)
+                        <div style="font-size: 0.8rem; color: #fbbf24; display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                            <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; user-select: none;">
+                                <input type="checkbox" id="isInternalNote" value="1"> 🔒 Internal Admin Note (Hidden from Customer)
                             </label>
                         </div>
                     <?php endif; ?>
 
-                    <div style="margin-bottom: 1rem;">
-                        <textarea name="reply_message" class="form-control" rows="3" required placeholder="Write your reply message here..." style="font-size: 0.95rem; padding: 0.8rem; border-radius: 10px;"></textarea>
-                    </div>
+                    <form id="chatComposerForm" onsubmit="handleSendReply(event)">
+                        <div class="composer-input-row">
+                            <!-- Hidden File Input -->
+                            <input type="file" id="replyAttachment" accept=".jpg,.jpeg,.png,.webp,.pdf" style="display: none;" onchange="handleFileSelected(this)">
 
-                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-                        <div>
-                            <input type="file" name="reply_attachment" class="form-control" accept=".jpg,.jpeg,.png,.webp,.pdf" style="font-size: 0.8rem; max-width: 250px;">
+                            <!-- File Attach Icon Button -->
+                            <button type="button" class="attach-btn-icon" title="Attach file or screenshot" onclick="document.getElementById('replyAttachment').click()">
+                                <i class="fas fa-paperclip"></i>
+                            </button>
+
+                            <!-- Multi-line Auto-expanding Textarea -->
+                            <textarea id="replyMessage" class="chat-textarea" placeholder="Type your message..." rows="1" onkeydown="handleKeyDown(event)" oninput="autoGrowTextarea(this)" required></textarea>
+
+                            <!-- Submit Button -->
+                            <button type="submit" id="sendBtn" class="send-msg-btn">
+                                <span>Send</span> <i class="fas fa-paper-plane"></i>
+                            </button>
                         </div>
-
-                        <button type="submit" name="post_reply" value="1" class="btn btn-primary" style="padding: 0.6rem 1.8rem; font-weight: bold;">
-                            <i class="fas fa-paper-plane"></i> Send Reply
-                        </button>
-                    </div>
-                </form>
+                    </form>
+                </div>
             <?php else: ?>
-                <div style="background: rgba(255,255,255,0.05); padding: 1rem; text-align: center; border-radius: 8px; color: var(--text-secondary); font-size: 0.9rem;">
-                    <i class="fas fa-lock" style="margin-right: 0.4rem;"></i> This ticket is closed. Reopen or create a new support ticket if you require further assistance.
+                <div style="background: rgba(15, 23, 42, 0.95); padding: 1.2rem; text-align: center; border-top: 1px solid rgba(255, 255, 255, 0.08); color: #94a3b8; font-size: 0.9rem;">
+                    <i class="fas fa-lock" style="color: #64748b; margin-right: 0.4rem;"></i> This support ticket is closed.
                 </div>
             <?php endif; ?>
         </div>
     </main>
 </div>
 
+<!-- Image Lightbox Modal -->
+<div id="imageLightbox" class="image-lightbox-modal" onclick="closeLightbox()">
+    <span class="lightbox-close-btn" onclick="closeLightbox()">&times;</span>
+    <img id="lightboxImg" src="" alt="Enlarged Screenshot">
+</div>
+
 <script>
+const TICKET_ID = <?php echo $ticket_id; ?>;
+const CURRENT_USER_ID = <?php echo $user_id; ?>;
+const IS_ADMIN = <?php echo $is_admin ? 'true' : 'false'; ?>;
+
+let lastReplyId = 0;
+let isUserScrolledUp = false;
+let pollingInterval = null;
+let initialPayload = <?php echo json_encode($initial_replies); ?>;
+
 document.addEventListener('DOMContentLoaded', function() {
-    const stream = document.getElementById('chatStream');
-    if (stream) {
-        stream.scrollTop = stream.scrollHeight;
+    const container = document.getElementById('chatMessageContainer');
+    
+    // Process Initial Messages
+    if (initialPayload && initialPayload.length > 0) {
+        renderMessagesBatch(initialPayload, true);
+    } else {
+        document.getElementById('messagesList').innerHTML = `
+            <div style="text-align: center; padding: 3rem 1rem; color: #64748b;" id="emptyMsgState">
+                <i class="fas fa-comments" style="font-size: 2.5rem; opacity: 0.4; margin-bottom: 0.8rem; display: block;"></i>
+                No messages yet. Send a message below to start the conversation.
+            </div>
+        `;
     }
+
+    scrollToBottom(false);
+
+    // Scroll listener to detect if user scrolls up
+    if (container) {
+        container.addEventListener('scroll', function() {
+            const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+            if (distanceFromBottom > 120) {
+                isUserScrolledUp = true;
+            } else {
+                isUserScrolledUp = false;
+                hideScrollPill();
+            }
+        });
+    }
+
+    // Start Live Polling every 3 seconds
+    pollingInterval = setInterval(fetchLiveMessages, 3000);
 });
+
+// Toggle Header Drawer
+function toggleTicketDrawer() {
+    const drawer = document.getElementById('ticketDetailsDrawer');
+    const chevron = document.getElementById('drawerChevron');
+    if (drawer) {
+        drawer.classList.toggle('collapsed');
+        if (chevron) {
+            chevron.className = drawer.classList.contains('collapsed') ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
+        }
+    }
+}
+
+// Auto Grow Textarea
+function autoGrowTextarea(element) {
+    element.style.height = 'auto';
+    element.style.height = Math.min(element.scrollHeight, 120) + 'px';
+}
+
+// Keydown handler (Enter to send on desktop)
+function handleKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey && window.innerWidth > 768) {
+        e.preventDefault();
+        document.getElementById('chatComposerForm').dispatchEvent(new Event('submit'));
+    }
+}
+
+// File Input Handler
+function handleFileSelected(input) {
+    const chip = document.getElementById('fileSelectedChip');
+    const text = document.getElementById('fileNameText');
+    if (input.files && input.files[0]) {
+        text.textContent = input.files[0].name;
+        chip.style.display = 'inline-flex';
+    } else {
+        chip.style.display = 'none';
+    }
+}
+
+function clearSelectedFile() {
+    const input = document.getElementById('replyAttachment');
+    const chip = document.getElementById('fileSelectedChip');
+    if (input) input.value = '';
+    if (chip) chip.style.display = 'none';
+}
+
+// Scroll to bottom helper
+function scrollToBottom(smooth = true) {
+    const container = document.getElementById('chatMessageContainer');
+    if (container) {
+        container.scrollTo({
+            top: container.scrollHeight,
+            behavior: smooth ? 'smooth' : 'auto'
+        });
+    }
+    hideScrollPill();
+}
+
+function showScrollPill() {
+    const pill = document.getElementById('scrollPill');
+    if (pill) pill.style.display = 'flex';
+}
+
+function hideScrollPill() {
+    const pill = document.getElementById('scrollPill');
+    if (pill) pill.style.display = 'none';
+}
+
+// Lightbox Modal
+function openLightbox(src) {
+    const modal = document.getElementById('imageLightbox');
+    const img = document.getElementById('lightboxImg');
+    if (modal && img) {
+        img.src = src;
+        modal.classList.add('active');
+    }
+}
+
+function closeLightbox() {
+    const modal = document.getElementById('imageLightbox');
+    if (modal) modal.classList.remove('active');
+}
+
+// Render Batch of Messages
+function renderMessagesBatch(rawList, isInitial = false) {
+    const listContainer = document.getElementById('messagesList');
+    if (!listContainer) return;
+
+    const emptyState = document.getElementById('emptyMsgState');
+    if (emptyState && rawList.length > 0) {
+        emptyState.remove();
+    }
+
+    let lastDateStr = '';
+
+    rawList.forEach(m => {
+        const msgId = parseInt(m.id || 0);
+        if (msgId > lastReplyId) {
+            lastReplyId = msgId;
+        }
+
+        const msgDateStr = m.created_at ? m.created_at.split(' ')[0] : '';
+        if (msgDateStr && msgDateStr !== lastDateStr) {
+            lastDateStr = msgDateStr;
+            const dateDivider = document.createElement('div');
+            dateDivider.className = 'chat-date-separator';
+
+            const todayStr = new Date().toISOString().split('T')[0];
+            let label = m.formatted_date || msgDateStr;
+            if (msgDateStr === todayStr) label = 'Today';
+
+            dateDivider.innerHTML = `<span>${label}</span>`;
+            listContainer.appendChild(dateDivider);
+        }
+
+        const isMine = (parseInt(m.sender_id) === CURRENT_USER_ID);
+        const isInternal = Boolean(m.is_internal_note == 1);
+        const isSupport = (m.sender_role === 'admin');
+
+        let rowClass = isMine ? 'mine' : 'other';
+        if (isInternal) rowClass = 'internal';
+
+        const bubbleRow = document.createElement('div');
+        bubbleRow.className = `chat-bubble-row ${rowClass}`;
+        bubbleRow.setAttribute('data-id', msgId);
+
+        let senderTitle = isSupport ? `🎧 Support Team (${escapeHtml(m.sender_name)})` : `👤 ${escapeHtml(m.sender_name)}`;
+        if (isInternal) senderTitle = `🔒 Internal Admin Note (${escapeHtml(m.sender_name)})`;
+
+        let attachmentHtml = '';
+        if (m.attachment_path) {
+            const ext = m.attachment_path.split('.').pop().toLowerCase();
+            if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
+                attachmentHtml = `
+                    <div class="chat-attachment-box">
+                        <img src="${escapeHtml(m.attachment_path)}" class="chat-attachment-img" alt="Attachment" onclick="openLightbox('${escapeHtml(m.attachment_path)}')">
+                    </div>
+                `;
+            } else {
+                attachmentHtml = `
+                    <div class="chat-attachment-box">
+                        <a href="${escapeHtml(m.attachment_path)}" target="_blank" style="color: #34d399; font-size: 0.8rem; font-weight: bold; text-decoration: underline;">
+                            📄 View Attachment (${ext.toUpperCase()})
+                        </a>
+                    </div>
+                `;
+            }
+        }
+
+        const formattedTime = m.formatted_time || (m.created_at ? m.created_at.split(' ')[1] : '');
+
+        bubbleRow.innerHTML = `
+            <div class="chat-bubble-card">
+                <div class="chat-sender-info">${senderTitle}</div>
+                <div>${nl2br(escapeHtml(m.message || ''))}</div>
+                ${attachmentHtml}
+                <div class="chat-timestamp">
+                    <span>${formattedTime}</span>
+                    ${isMine ? '<i class="fas fa-check" style="font-size: 0.65rem;"></i>' : ''}
+                </div>
+            </div>
+        `;
+
+        listContainer.appendChild(bubbleRow);
+    });
+
+    if (isUserScrolledUp && !isInitial) {
+        showScrollPill();
+    } else {
+        scrollToBottom(true);
+    }
+}
+
+// Fetch Live Messages via AJAX
+function fetchLiveMessages() {
+    fetch(`api_support_chat.php?action=fetch_messages&ticket_id=${TICKET_ID}&last_id=${lastReplyId}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && data.messages && data.messages.length > 0) {
+                renderMessagesBatch(data.messages, false);
+            }
+        })
+        .catch(err => console.log('Polling notice:', err));
+}
+
+// Handle Form Submission via AJAX
+function handleSendReply(e) {
+    e.preventDefault();
+
+    const textarea = document.getElementById('replyMessage');
+    const sendBtn = document.getElementById('sendBtn');
+    const fileInput = document.getElementById('replyAttachment');
+    const internalCheckbox = document.getElementById('isInternalNote');
+
+    const messageText = textarea ? textarea.value.trim() : '';
+    if (!messageText && (!fileInput || !fileInput.files[0])) return;
+
+    // Loading State
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>Sending...</span>`;
+
+    const formData = new FormData();
+    formData.append('action', 'send_reply');
+    formData.append('ticket_id', TICKET_ID);
+    formData.append('reply_message', messageText);
+    if (internalCheckbox && internalCheckbox.checked) {
+        formData.append('is_internal_note', '1');
+    }
+    if (fileInput && fileInput.files[0]) {
+        formData.append('reply_attachment', fileInput.files[0]);
+    }
+
+    fetch('api_support_chat.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = `<span>Send</span> <i class="fas fa-paper-plane"></i>`;
+
+        if (data.success && data.reply) {
+            textarea.value = '';
+            textarea.style.height = 'auto';
+            clearSelectedFile();
+
+            if (internalCheckbox) internalCheckbox.checked = false;
+
+            renderMessagesBatch([data.reply], false);
+            scrollToBottom(true);
+        } else {
+            alert('⚠️ Message Error: ' + (data.message || 'Could not send reply.'));
+        }
+    })
+    .catch(err => {
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = `<span>Send</span> <i class="fas fa-paper-plane"></i>`;
+        alert('⚠️ Network Interrupted. Message was not sent. Please try again.');
+    });
+}
+
+// Utility Helpers
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+function nl2br(str) {
+    if (!str) return '';
+    return str.replace(/\r\n|\r|\n/g, '<br>');
+}
 </script>
 
 <?php include 'includes/footer.php'; ?>
