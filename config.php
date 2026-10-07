@@ -871,59 +871,65 @@ function update_order_status_timestamps($conn, $order_id, $new_status) {
     }
 
     // WhatsApp Support & Business Settings Table
-    $conn->query("CREATE TABLE IF NOT EXISTS whatsapp_settings (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        is_enabled TINYINT(1) DEFAULT 1,
-        whatsapp_number VARCHAR(50) DEFAULT '919876543210',
-        display_name VARCHAR(100) DEFAULT 'MedicalAk Support',
-        availability_type VARCHAR(20) DEFAULT 'auto',
-        start_time TIME DEFAULT '09:00:00',
-        end_time TIME DEFAULT '21:00:00',
-        working_days VARCHAR(100) DEFAULT 'Mon,Tue,Wed,Thu,Fri,Sat,Sun',
-        offline_message TEXT DEFAULT 'Our WhatsApp support team is currently unavailable. Support hours: 9:00 AM – 9:00 PM.',
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    )");
+    try {
+        $conn->query("CREATE TABLE IF NOT EXISTS whatsapp_settings (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            is_enabled TINYINT(1) DEFAULT 1,
+            whatsapp_number VARCHAR(50) DEFAULT '919876543210',
+            display_name VARCHAR(100) DEFAULT 'MedicalAk Support',
+            availability_type VARCHAR(20) DEFAULT 'auto',
+            start_time TIME DEFAULT '09:00:00',
+            end_time TIME DEFAULT '21:00:00',
+            working_days VARCHAR(100) DEFAULT 'Mon,Tue,Wed,Thu,Fri,Sat,Sun',
+            offline_message VARCHAR(500) DEFAULT 'Our WhatsApp support team is currently unavailable. Support hours: 9:00 AM – 9:00 PM.',
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )");
 
-    $chk_wa = @$conn->query("SELECT COUNT(*) as cnt FROM whatsapp_settings");
-    if ($chk_wa && (int)$chk_wa->fetch_assoc()['cnt'] === 0) {
-        @$conn->query("INSERT INTO whatsapp_settings (id, is_enabled, whatsapp_number, display_name, availability_type, start_time, end_time, working_days) VALUES (1, 1, '919876543210', 'MedicalAk Support', 'auto', '09:00:00', '21:00:00', 'Mon,Tue,Wed,Thu,Fri,Sat,Sun')");
-    }
+        $chk_wa = @$conn->query("SELECT COUNT(*) as cnt FROM whatsapp_settings");
+        if ($chk_wa && (int)$chk_wa->fetch_assoc()['cnt'] === 0) {
+            @$conn->query("INSERT INTO whatsapp_settings (id, is_enabled, whatsapp_number, display_name, availability_type, start_time, end_time, working_days) VALUES (1, 1, '919876543210', 'MedicalAk Support', 'auto', '09:00:00', '21:00:00', 'Mon,Tue,Wed,Thu,Fri,Sat,Sun')");
+        }
+    } catch (Throwable $t) {}
 
     // Customer Support Tickets Table
-    $conn->query("CREATE TABLE IF NOT EXISTS support_tickets (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        ticket_number VARCHAR(50) UNIQUE NOT NULL,
-        customer_id INT NOT NULL,
-        category VARCHAR(50) NOT NULL,
-        subject VARCHAR(255) NOT NULL,
-        description TEXT NOT NULL,
-        priority VARCHAR(20) DEFAULT 'normal',
-        status VARCHAR(30) DEFAULT 'open',
-        related_entity_type VARCHAR(50) DEFAULT NULL,
-        related_entity_id VARCHAR(100) DEFAULT NULL,
-        attachment_path VARCHAR(255) DEFAULT NULL,
-        assigned_admin_id INT DEFAULT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        resolved_at TIMESTAMP NULL DEFAULT NULL,
-        closed_at TIMESTAMP NULL DEFAULT NULL,
-        INDEX idx_st_cust (customer_id),
-        INDEX idx_st_status (status),
-        INDEX idx_st_num (ticket_number)
-    )");
+    try {
+        $conn->query("CREATE TABLE IF NOT EXISTS support_tickets (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            ticket_number VARCHAR(50) UNIQUE NOT NULL,
+            customer_id INT NOT NULL,
+            category VARCHAR(50) NOT NULL,
+            subject VARCHAR(255) NOT NULL,
+            description TEXT NOT NULL,
+            priority VARCHAR(20) DEFAULT 'normal',
+            status VARCHAR(30) DEFAULT 'open',
+            related_entity_type VARCHAR(50) DEFAULT NULL,
+            related_entity_id VARCHAR(100) DEFAULT NULL,
+            attachment_path VARCHAR(255) DEFAULT NULL,
+            assigned_admin_id INT DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            resolved_at TIMESTAMP NULL DEFAULT NULL,
+            closed_at TIMESTAMP NULL DEFAULT NULL,
+            INDEX idx_st_cust (customer_id),
+            INDEX idx_st_status (status),
+            INDEX idx_st_num (ticket_number)
+        )");
+    } catch (Throwable $t) {}
 
     // Support Ticket Replies & Conversation Table
-    $conn->query("CREATE TABLE IF NOT EXISTS support_ticket_replies (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        ticket_id INT NOT NULL,
-        sender_id INT NOT NULL,
-        sender_role VARCHAR(20) NOT NULL,
-        message TEXT NOT NULL,
-        is_internal_note TINYINT(1) DEFAULT 0,
-        attachment_path VARCHAR(255) DEFAULT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_str_ticket (ticket_id)
-    )");
+    try {
+        $conn->query("CREATE TABLE IF NOT EXISTS support_ticket_replies (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            ticket_id INT NOT NULL,
+            sender_id INT NOT NULL,
+            sender_role VARCHAR(20) NOT NULL,
+            message TEXT NOT NULL,
+            is_internal_note TINYINT(1) DEFAULT 0,
+            attachment_path VARCHAR(255) DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_str_ticket (ticket_id)
+        )");
+    } catch (Throwable $t) {}
 }
 
 ensure_database_indexes($conn);
