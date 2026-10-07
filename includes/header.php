@@ -20,7 +20,7 @@ if (session_status() === PHP_SESSION_NONE) {
     <!-- PWA Manifest & Icons -->
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="images/icons/apple-touch-icon.png">
-    <meta name="theme-color" content="#121212">
+    <meta name="theme-color" content="#0F172A">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="application-name" content="MedicalAk">
     <meta name="apple-mobile-web-app-capable" content="yes">
