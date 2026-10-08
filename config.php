@@ -63,7 +63,7 @@ $port_raw = get_custom_env(['DB_PORT', 'MYSQLPORT', 'MYSQL_PORT']);
 $port   = !empty($parsed_url_port) ? $parsed_url_port : ($port_raw ? intval($port_raw) : 3306);
 
 $conn = null;
-$max_retries = 3;
+$max_retries = 10;
 
 // 3. Build candidate target connections
 $candidates = [];
@@ -134,10 +134,11 @@ foreach ($candidates as $cand) {
             }
         }
 
-        // Auto-retry if max connections reached or brief server startup delay
+        // Auto-retry with progressive backoff if max connections reached or brief server startup delay
         if (strpos($err_str, 'max_user_connections') !== false || strpos($err_str, 'Too many connections') !== false || strpos($err_str, 'Connection refused') !== false || strpos($err_str, "Can't connect") !== false) {
             $retry_count++;
-            usleep(200000); // 200ms backoff
+            $sleep_us = min(1000000, 200000 * $retry_count); // 200ms, 400ms, 600ms... up to 1s
+            usleep($sleep_us);
             continue;
         }
 
@@ -154,20 +155,31 @@ if (!$conn || $conn->connect_error) {
                        (!empty($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false);
 
     if ($is_json_request) {
+        http_response_code(503);
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode([
             'status' => 'error',
             'success' => false,
-            'message' => "Database Connection Error: " . $err_msg . ". Please check database credentials."
+            'retry' => true,
+            'message' => "Database Connection Busy: " . $err_msg . ". Retrying..."
         ]);
         exit;
     }
 
     if (strpos($err_msg, 'max_user_connections') !== false || strpos($err_msg, 'Too many connections') !== false) {
-        die("<div style='font-family:sans-serif; text-align:center; padding:3rem; color:#fff; background:#121826; min-height:100vh;'>
-            <h2 style='color:#ff4757;'>Server Busy (Database Connection Limit)</h2>
-            <p style='color:#94a3b8;'>The database server is currently experiencing high demand. Please refresh the page in a few seconds.</p>
-            <button onclick='location.reload()' style='padding:0.75rem 1.5rem; background:#4a90e2; color:#fff; border:none; border-radius:8px; font-weight:bold; cursor:pointer;'>Retry Now</button>
+        die("<div style='font-family:sans-serif; text-align:center; padding:3rem; color:#fff; background:#121826; min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;'>
+            <h2 style='color:#ff4757; margin-bottom:0.5rem;'>Server Busy (Database Connection Limit)</h2>
+            <p style='color:#94a3b8; max-width:500px;'>The database server is currently experiencing high demand. Auto-retrying in <span id='db-cnt'>3</span> seconds...</p>
+            <button onclick='location.reload()' style='margin-top:1rem; padding:0.75rem 1.5rem; background:#4a90e2; color:#fff; border:none; border-radius:8px; font-weight:bold; cursor:pointer;'>Retry Now</button>
+            <script>
+                let c = 3;
+                setInterval(() => {
+                    c--;
+                    const el = document.getElementById('db-cnt');
+                    if (el) el.innerText = c;
+                    if (c <= 0) location.reload();
+                }, 1000);
+            </script>
         </div>");
     }
 
