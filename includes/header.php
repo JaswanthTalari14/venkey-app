@@ -177,6 +177,9 @@ if (isset($_SESSION['user_id'])) {
                 <li><a href="index.php#features">Features</a></li>
                 <li><a href="index.php#about">About</a></li>
                 <?php if(isset($_SESSION['user_id'])): ?>
+                    <?php if($_SESSION['role'] !== 'admin'): ?>
+                        <li><a href="guidelines.php" style="color: #10B981; font-weight: 600;"><i class="fas fa-book-open"></i> Guideline</a></li>
+                    <?php endif; ?>
                     <?php if($_SESSION['role'] == 'patient'): ?>
                         <li><a href="patient_dashboard.php">Dashboard</a></li>
                         <li><a href="customer_support.php"><i class="fas fa-headset"></i> Support Center</a></li>
