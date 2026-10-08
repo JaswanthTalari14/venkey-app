@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     } elseif (is_login_locked($conn, $ip, $email)) {
         $error = "Too many failed login attempts. Please try again in 15 minutes for security.";
     } else {
-        $stmt = $conn->prepare("SELECT id, name, email, password, role, profile_image, image, avatar, photo FROM users WHERE email = ? LIMIT 1");
+        $stmt = $conn->prepare("SELECT * FROM users WHERE email = ? LIMIT 1");
         $stmt->bind_param("s", $email);
         $stmt->execute();
         $result = $stmt->get_result();
