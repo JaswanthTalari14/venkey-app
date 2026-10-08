@@ -1,4 +1,4 @@
-const CACHE_NAME = 'medicalak-pwa-v28';
+const CACHE_NAME = 'medicalak-pwa-v29';
 
 const STATIC_ASSETS = [
     './',

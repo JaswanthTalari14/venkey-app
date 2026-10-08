@@ -256,7 +256,105 @@ include 'includes/header.php';
 <!-- html2pdf.js CDN for reliable PDF downloads -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-<div style="max-width: 750px; margin: 2rem auto; padding: 0 1rem;">
+<style>
+/* Single-Page Printable & PDF Receipt Optimization */
+@page {
+    size: A4 portrait;
+    margin: 8mm 10mm;
+}
+
+@media print {
+    *, *::before, *::after {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+    }
+
+    html, body {
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        min-height: 0 !important;
+    }
+
+    /* Hide header, navigation, toolbar, footer, WhatsApp float, toast notifications */
+    header, 
+    footer, 
+    nav, 
+    main > header,
+    .navbar, 
+    .mobile-bottom-nav, 
+    #waFloatingContainer, 
+    #waOfflinePopup, 
+    #pwaToast, 
+    #networkToast, 
+    #notifToastContainer,
+    #clearNotifModal,
+    .receipt-action-toolbar, 
+    .no-print {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        width: 0 !important;
+        overflow: hidden !important;
+        opacity: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    main {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .receipt-page-wrapper {
+        margin: 0 !important;
+        padding: 0 !important;
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+
+    #receiptContainer, .receipt-print-container {
+        display: block !important;
+        visibility: visible !important;
+        position: relative !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 auto !important;
+        padding: 1.5rem !important;
+        box-shadow: none !important;
+        border-radius: 12px !important;
+        background: #121826 !important;
+        color: #ffffff !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        page-break-before: avoid !important;
+        page-break-after: avoid !important;
+    }
+
+    /* Prevent content splitting across pages */
+    #receiptContainer *, 
+    .receipt-print-container * {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
+
+    table, tr, td, th {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
+}
+</style>
+
+<div class="receipt-page-wrapper" style="max-width: 750px; margin: 2rem auto; padding: 0 1rem;">
     <?php if (!empty($error_msg)): ?>
         <div class="glass-panel" style="padding: 2.5rem; text-align: center;">
             <i class="fas fa-exclamation-triangle" style="font-size: 3rem; color: #ff4757; margin-bottom: 1rem;"></i>
@@ -266,7 +364,7 @@ include 'includes/header.php';
         </div>
     <?php else: ?>
         <!-- Action Toolbar -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.8rem;">
+        <div class="receipt-action-toolbar no-print" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.8rem;">
             <a href="javascript:history.back()" class="btn btn-outline" style="font-size: 0.85rem;"><i class="fas fa-arrow-left"></i> Back</a>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
                 <button onclick="shareReceipt()" class="btn btn-outline" style="font-size: 0.85rem;" title="Share Receipt"><i class="fas fa-share-alt"></i> Share</button>
@@ -276,7 +374,7 @@ include 'includes/header.php';
         </div>
 
         <!-- Receipt Card Container -->
-        <div id="receiptContainer" class="glass-panel" style="padding: 2.5rem; background: #121826; border-top: 5px solid var(--primary-color); color: #ffffff; border-radius: 16px; box-shadow: 0 15px 35px rgba(0,0,0,0.4);">
+        <div id="receiptContainer" class="glass-panel receipt-print-container" style="padding: 2.5rem; background: #121826; border-top: 5px solid var(--primary-color); color: #ffffff; border-radius: 16px; box-shadow: 0 15px 35px rgba(0,0,0,0.4);">
             
             <!-- Receipt Header -->
             <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px dashed rgba(255,255,255,0.12); padding-bottom: 1.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
@@ -429,21 +527,50 @@ function downloadReceiptPDF() {
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating PDF...';
 
+    // Clone element to guarantee a standard fixed A4 desktop layout regardless of mobile viewport
+    var clone = element.cloneNode(true);
+    clone.id = 'receiptContainerPdfClone';
+    clone.style.width = '750px';
+    clone.style.maxWidth = '750px';
+    clone.style.margin = '0 auto';
+    clone.style.padding = '1.8rem';
+    clone.style.boxSizing = 'border-box';
+    clone.style.borderRadius = '12px';
+    clone.style.background = '#121826';
+    clone.style.color = '#ffffff';
+    clone.style.position = 'absolute';
+    clone.style.left = '-9999px';
+    clone.style.top = '0';
+    document.body.appendChild(clone);
+
     var filename = 'Receipt_<?php echo preg_replace('/[^A-Za-z0-9\-]/', '', $receipt_data['transaction_id'] ?? 'Payment'); ?>.pdf';
 
     var opt = {
-        margin:       [0.2, 0.2, 0.2, 0.2],
+        margin:       [8, 8, 8, 8],
         filename:     filename,
         image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true, logging: false, backgroundColor: '#121826' },
-        jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+        html2canvas:  { 
+            scale: 2, 
+            useCORS: true, 
+            logging: false, 
+            backgroundColor: '#121826',
+            windowWidth: 800
+        },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
     };
 
-    html2pdf().set(opt).from(element).save().then(function() {
+    html2pdf().set(opt).from(clone).save().then(function() {
+        if (clone && clone.parentNode) {
+            clone.parentNode.removeChild(clone);
+        }
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-file-pdf"></i> Download PDF';
     }).catch(function(err) {
         console.error('PDF Generation error:', err);
+        if (clone && clone.parentNode) {
+            clone.parentNode.removeChild(clone);
+        }
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-file-pdf"></i> Download PDF';
         window.print();
