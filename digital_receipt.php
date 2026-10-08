@@ -284,12 +284,12 @@ include 'includes/header.php';
                     <h2 style="margin: 0; color: #50e3c2; font-weight: 800; font-size: 1.8rem; display: flex; align-items: center; gap: 0.5rem;">
                         <i class="fas fa-notes-medical" style="color: var(--primary-color);"></i> MedicalAk
                     </h2>
-                    <p style="margin: 0.3rem 0 0; color: var(--text-secondary); font-size: 0.88rem;">Smart Healthcare Solutions & Pharmacy</p>
-                    <p style="margin: 0.2rem 0 0; color: var(--text-secondary); font-size: 0.8rem; opacity: 0.8;">Verified Official Payment Receipt</p>
+                    <p style="margin: 0.3rem 0 0; color: #cbd5e1; font-size: 0.88rem;">Smart Healthcare Solutions & Pharmacy</p>
+                    <p style="margin: 0.2rem 0 0; color: #94a3b8; font-size: 0.8rem;">Verified Official Payment Receipt</p>
                 </div>
 
                 <div style="text-align: right;">
-                    <div style="font-size: 0.82rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Payment Status</div>
+                    <div style="font-size: 0.82rem; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.5px;">Payment Status</div>
                     <div style="margin-top: 0.3rem;">
                         <?php 
                             $st_lower = strtolower($receipt_data['status']);
@@ -316,41 +316,41 @@ include 'includes/header.php';
             <!-- Receipt Meta Info Grid -->
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.2rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1.2rem; margin-bottom: 1.5rem;">
                 <div>
-                    <span style="font-size: 0.78rem; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 0.2rem;">Transaction Ref ID</span>
+                    <span style="font-size: 0.78rem; color: #cbd5e1; text-transform: uppercase; display: block; margin-bottom: 0.2rem; font-weight: 600;">Transaction Ref ID</span>
                     <strong style="color: #ffffff; font-family: monospace; font-size: 0.95rem; text-break: break-all;"><?php echo htmlspecialchars($receipt_data['transaction_id']); ?></strong>
                 </div>
 
                 <?php if (!empty($receipt_data['payment_id']) && $receipt_data['payment_id'] !== $receipt_data['transaction_id']): ?>
                 <div>
-                    <span style="font-size: 0.78rem; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 0.2rem;">Payment / Gateway ID</span>
+                    <span style="font-size: 0.78rem; color: #cbd5e1; text-transform: uppercase; display: block; margin-bottom: 0.2rem; font-weight: 600;">Payment / Gateway ID</span>
                     <strong style="color: #50e3c2; font-family: monospace; font-size: 0.9rem;"><?php echo htmlspecialchars($receipt_data['payment_id']); ?></strong>
                 </div>
                 <?php endif; ?>
 
                 <div>
-                    <span style="font-size: 0.78rem; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 0.2rem;">Order / Reference</span>
+                    <span style="font-size: 0.78rem; color: #cbd5e1; text-transform: uppercase; display: block; margin-bottom: 0.2rem; font-weight: 600;">Order / Reference</span>
                     <strong style="color: #ffffff; font-size: 0.95rem;"><?php echo htmlspecialchars($receipt_data['reference_id']); ?></strong>
                 </div>
 
                 <div>
-                    <span style="font-size: 0.78rem; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 0.2rem;">Payment Date & Time</span>
+                    <span style="font-size: 0.78rem; color: #cbd5e1; text-transform: uppercase; display: block; margin-bottom: 0.2rem; font-weight: 600;">Payment Date & Time</span>
                     <strong style="color: #ffffff; font-size: 0.9rem;"><?php echo htmlspecialchars($receipt_data['date_time']); ?></strong>
                 </div>
 
                 <div>
-                    <span style="font-size: 0.78rem; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 0.2rem;">Payment Method</span>
+                    <span style="font-size: 0.78rem; color: #cbd5e1; text-transform: uppercase; display: block; margin-bottom: 0.2rem; font-weight: 600;">Payment Method</span>
                     <strong style="color: #ffffff; font-size: 0.9rem; text-transform: uppercase;"><?php echo htmlspecialchars($receipt_data['payment_method']); ?></strong>
                 </div>
             </div>
 
             <!-- Customer Details -->
-            <div style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.08);">
-                <h4 style="margin: 0 0 0.5rem; color: #50e3c2; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.5px;"><i class="fas fa-user"></i> Customer Details</h4>
-                <div style="font-size: 0.92rem; color: var(--text-primary); line-height: 1.5;">
-                    <div><strong>Name:</strong> <?php echo htmlspecialchars($receipt_data['customer_name']); ?></div>
-                    <div><strong>Contact:</strong> <?php echo htmlspecialchars($receipt_data['customer_phone'] . ' | ' . $receipt_data['customer_email']); ?></div>
+            <div style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1.2rem;">
+                <h4 style="margin: 0 0 0.6rem; color: #50e3c2; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;"><i class="fas fa-user" style="margin-right: 0.4rem;"></i> Customer Details</h4>
+                <div style="font-size: 0.95rem; color: #ffffff; line-height: 1.6;">
+                    <div style="margin-bottom: 0.2rem;"><strong style="color: #50e3c2;">Name:</strong> <span style="color: #ffffff; font-weight: 600;"><?php echo htmlspecialchars($receipt_data['customer_name']); ?></span></div>
+                    <div style="margin-bottom: 0.2rem;"><strong style="color: #50e3c2;">Contact:</strong> <span style="color: #ffffff; font-weight: 500;"><?php echo htmlspecialchars($receipt_data['customer_phone'] . ' | ' . $receipt_data['customer_email']); ?></span></div>
                     <?php if (!empty($receipt_data['shipping_address'])): ?>
-                        <div><strong>Address:</strong> <?php echo htmlspecialchars($receipt_data['shipping_address']); ?></div>
+                        <div><strong style="color: #50e3c2;">Address:</strong> <span style="color: #ffffff; font-weight: 500;"><?php echo htmlspecialchars($receipt_data['shipping_address']); ?></span></div>
                     <?php endif; ?>
                 </div>
             </div>
@@ -359,23 +359,23 @@ include 'includes/header.php';
             <div style="margin-bottom: 1.5rem; overflow-x: auto;">
                 <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
                     <thead>
-                        <tr style="border-bottom: 2px solid rgba(255,255,255,0.15); color: var(--text-secondary);">
-                            <th style="padding: 0.75rem 0.5rem;">Item Description</th>
-                            <th style="padding: 0.75rem 0.5rem; text-align: center;">Qty</th>
-                            <th style="padding: 0.75rem 0.5rem; text-align: right;">Unit Price</th>
-                            <th style="padding: 0.75rem 0.5rem; text-align: right;">Total</th>
+                        <tr style="border-bottom: 2px solid rgba(255,255,255,0.15); color: #cbd5e1;">
+                            <th style="padding: 0.75rem 0.5rem; color: #50e3c2; font-weight: 700;">Item Description</th>
+                            <th style="padding: 0.75rem 0.5rem; text-align: center; color: #50e3c2; font-weight: 700;">Qty</th>
+                            <th style="padding: 0.75rem 0.5rem; text-align: right; color: #50e3c2; font-weight: 700;">Unit Price</th>
+                            <th style="padding: 0.75rem 0.5rem; text-align: right; color: #50e3c2; font-weight: 700;">Total</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach($receipt_data['items'] as $item): ?>
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
                                 <td style="padding: 0.75rem 0.5rem;">
-                                    <strong style="color: #ffffff; display: block;"><?php echo htmlspecialchars($item['name']); ?></strong>
-                                    <span style="font-size: 0.8rem; color: var(--text-secondary);"><?php echo htmlspecialchars($item['desc']); ?></span>
+                                    <strong style="color: #ffffff; display: block; font-size: 0.95rem;"><?php echo htmlspecialchars($item['name']); ?></strong>
+                                    <span style="font-size: 0.82rem; color: #94a3b8;"><?php echo htmlspecialchars($item['desc']); ?></span>
                                 </td>
-                                <td style="padding: 0.75rem 0.5rem; text-align: center; color: var(--text-secondary);"><?php echo $item['qty']; ?></td>
-                                <td style="padding: 0.75rem 0.5rem; text-align: right; color: var(--text-secondary);">₹<?php echo number_format($item['unit_price'], 2); ?></td>
-                                <td style="padding: 0.75rem 0.5rem; text-align: right; font-weight: bold; color: #ffffff;">₹<?php echo number_format($item['total'], 2); ?></td>
+                                <td style="padding: 0.75rem 0.5rem; text-align: center; color: #ffffff; font-weight: 600;"><?php echo $item['qty']; ?></td>
+                                <td style="padding: 0.75rem 0.5rem; text-align: right; color: #ffffff; font-weight: 600;">₹<?php echo number_format($item['unit_price'], 2); ?></td>
+                                <td style="padding: 0.75rem 0.5rem; text-align: right; font-weight: 700; color: #ffffff;">₹<?php echo number_format($item['total'], 2); ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -384,15 +384,15 @@ include 'includes/header.php';
 
             <!-- Amount Breakdown -->
             <div style="margin-left: auto; max-width: 320px; border-top: 1px solid rgba(255,255,255,0.12); padding-top: 1rem; margin-bottom: 1.5rem;">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem; font-size: 0.9rem; color: var(--text-secondary);">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem; font-size: 0.9rem; color: #cbd5e1;">
                     <span>Subtotal:</span>
-                    <span>₹<?php echo number_format($receipt_data['subtotal'], 2); ?></span>
+                    <span style="color: #ffffff; font-weight: 600;">₹<?php echo number_format($receipt_data['subtotal'], 2); ?></span>
                 </div>
 
                 <?php if ($receipt_data['discount'] > 0): ?>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem; font-size: 0.9rem; color: #2ed573;">
                         <span>Discount / Savings:</span>
-                        <span>-₹<?php echo number_format($receipt_data['discount'], 2); ?></span>
+                        <span style="font-weight: 600;">-₹<?php echo number_format($receipt_data['discount'], 2); ?></span>
                     </div>
                 <?php endif; ?>
 
@@ -403,13 +403,13 @@ include 'includes/header.php';
             </div>
 
             <?php if (!empty($receipt_data['notes'])): ?>
-                <div style="background: rgba(80, 227, 194, 0.08); border-left: 4px solid #50e3c2; padding: 0.8rem 1rem; border-radius: 4px; font-size: 0.85rem; color: var(--text-secondary);">
+                <div style="background: rgba(80, 227, 194, 0.08); border-left: 4px solid #50e3c2; padding: 0.8rem 1rem; border-radius: 6px; font-size: 0.88rem; color: #ffffff;">
                     <i class="fas fa-info-circle" style="color: #50e3c2;"></i> <?php echo htmlspecialchars($receipt_data['notes']); ?>
                 </div>
             <?php endif; ?>
 
             <!-- Footer Sign Off -->
-            <div style="margin-top: 2rem; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 1rem; text-align: center; font-size: 0.78rem; color: var(--text-secondary);">
+            <div style="margin-top: 2rem; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 1rem; text-align: center; font-size: 0.8rem; color: #94a3b8;">
                 Thank you for choosing MedicalAk. For any payment inquiries, contact support at support@medicalak.com
             </div>
         </div>
