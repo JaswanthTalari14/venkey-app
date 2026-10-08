@@ -774,7 +774,9 @@ function update_order_status_timestamps($conn, $order_id, $new_status) {
                 @$conn->query("CREATE UNIQUE INDEX idx_u_health_id ON users (health_id)");
             }
             if (!in_array('profile_image', $u_cols) && !in_array('image', $u_cols) && !in_array('avatar', $u_cols)) {
-                @$conn->query("ALTER TABLE users ADD COLUMN profile_image VARCHAR(255) DEFAULT NULL");
+                @$conn->query("ALTER TABLE users ADD COLUMN profile_image LONGTEXT DEFAULT NULL");
+            } else {
+                @$conn->query("ALTER TABLE users MODIFY COLUMN profile_image LONGTEXT DEFAULT NULL");
             }
             if (!in_array('is_verified', $u_cols)) {
                 @$conn->query("ALTER TABLE users ADD COLUMN is_verified TINYINT(1) DEFAULT 0");
@@ -1124,10 +1126,63 @@ function calculate_medicine_order_discount($conn, $patient_id, $subtotal) {
 }
 
 /**
+ * Helper to convert uploaded profile photo into a lightweight, persistent Data URI
+ */
+function create_persistent_profile_image_data($file_path, $ext = 'jpeg') {
+    if (!file_exists($file_path)) return '';
+    $raw_bytes = @file_get_contents($file_path);
+    if (empty($raw_bytes)) return '';
+
+    $ext = strtolower($ext);
+    $mime = 'image/jpeg';
+    if ($ext === 'png') $mime = 'image/png';
+    elseif ($ext === 'webp') $mime = 'image/webp';
+    elseif ($ext === 'gif') $mime = 'image/gif';
+
+    if (function_exists('imagecreatefromstring') && function_exists('imagescale')) {
+        @$src_img = imagecreatefromstring($raw_bytes);
+        if ($src_img !== false) {
+            $w = imagesx($src_img);
+            $h = imagesy($src_img);
+            $max_dim = 600;
+            if ($w > $max_dim || $h > $max_dim) {
+                if ($w >= $h) {
+                    $new_w = $max_dim;
+                    $new_h = (int)round(($h / $w) * $max_dim);
+                } else {
+                    $new_h = $max_dim;
+                    $new_w = (int)round(($w / $h) * $max_dim);
+                }
+                @$resized_img = imagescale($src_img, $new_w, $new_h);
+                if ($resized_img !== false) {
+                    imagedestroy($src_img);
+                    $src_img = $resized_img;
+                }
+            }
+            ob_start();
+            if ($mime === 'image/png') {
+                @imagepng($src_img, null, 6);
+            } elseif ($mime === 'image/webp' && function_exists('imagewebp')) {
+                @imagewebp($src_img, null, 80);
+            } else {
+                @imagejpeg($src_img, null, 80);
+                $mime = 'image/jpeg';
+            }
+            $compressed_bytes = ob_get_clean();
+            imagedestroy($src_img);
+
+            if (!empty($compressed_bytes)) {
+                return 'data:' . $mime . ';base64,' . base64_encode($compressed_bytes);
+            }
+        }
+    }
+
+    return 'data:' . $mime . ';base64,' . base64_encode($raw_bytes);
+}
+
+/**
  * Centralized Profile Image Path & URL Resolver
- * Resolves a profile image from a database user array or path string,
- * checks file existence on disk using absolute base directory,
- * and appends cache-busting timestamp URL parameter when valid.
+ * Resolves a profile image from a database user array, Data URI, or path string.
  */
 function get_profile_image_url($input) {
     $path = '';
@@ -1147,6 +1202,11 @@ function get_profile_image_url($input) {
     $path = trim($path);
     if (empty($path)) {
         return '';
+    }
+
+    // Direct return for Data URIs and full HTTP/HTTPS URLs
+    if (strpos($path, 'data:image/') === 0 || strpos($path, 'http://') === 0 || strpos($path, 'https://') === 0) {
+        return $path;
     }
 
     // Normalize slashes and strip leading slashes/dots
@@ -1169,7 +1229,8 @@ function get_profile_image_url($input) {
         return htmlspecialchars($clean_path) . '?v=' . $version;
     }
 
-    return '';
+    // Return clean_path fallback so existing path strings aren't lost
+    return htmlspecialchars($clean_path);
 }
 
 /**

@@ -82,11 +82,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && (isset($_POST['update_profile']) || 
                 $target_file = $upload_dir . $new_filename;
 
                 if (move_uploaded_file($file_tmp, $target_file)) {
-                    // Remove old profile photo if present
+                    // Remove old profile photo file if present locally
                     $old_photo_q = $conn->query("SELECT profile_image FROM users WHERE id = $user_id");
                     if ($old_photo_q && $old_row = $old_photo_q->fetch_assoc()) {
                         $old_img = $old_row['profile_image'] ?? '';
-                        if (!empty($old_img)) {
+                        if (!empty($old_img) && strpos($old_img, 'data:image/') !== 0) {
                             $clean_old = ltrim(str_replace('\\', '/', $old_img), '/.');
                             $clean_old = ltrim($clean_old, '/');
                             $old_abs = __DIR__ . '/' . $clean_old;
@@ -95,8 +95,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && (isset($_POST['update_profile']) || 
                             }
                         }
                     }
-                    $query .= ", profile_image='$target_file'";
-                    $_SESSION['profile_image'] = $target_file;
+
+                    // Generate persistent Data URI for database storage
+                    $persistent_img = create_persistent_profile_image_data($target_file, $ext);
+                    if (empty($persistent_img)) {
+                        $persistent_img = $target_file;
+                    }
+
+                    $escaped_img = $conn->real_escape_string($persistent_img);
+                    $query .= ", profile_image='$escaped_img'";
+                    $_SESSION['profile_image'] = $persistent_img;
                 } else {
                     $error = "Failed to save profile photo upload.";
                 }
