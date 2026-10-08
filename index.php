@@ -21,30 +21,23 @@
 </section>
 
 <?php if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin'): ?>
-<!-- Highlighted Green Gradient Guideline Card -->
-<section style="max-width: 1200px; margin: 3rem auto 1rem auto; padding: 0 1rem;">
-    <div style="background: linear-gradient(135deg, #059669 0%, #10B981 50%, #047857 100%); border-radius: 20px; color: #ffffff; padding: 2rem 2.2rem; box-shadow: 0 12px 35px -5px rgba(16, 185, 129, 0.45); position: relative; overflow: hidden; transition: transform 0.3s ease;">
-        <div style="position: absolute; right: -25px; bottom: -25px; font-size: 10rem; color: rgba(255, 255, 255, 0.08); pointer-events: none;">
-            <i class="fas fa-book-medical"></i>
-        </div>
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1.5rem; position: relative; z-index: 2;">
-            <div style="max-width: 700px;">
-                <div style="display: inline-flex; align-items: center; gap: 0.5rem; background: rgba(255, 255, 255, 0.22); backdrop-filter: blur(8px); padding: 0.4rem 1rem; border-radius: 50px; font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.75rem; border: 1px solid rgba(255, 255, 255, 0.35);">
-                    <span>📖</span> <span>How to Use MedicalAk</span>
+<!-- Sleek & Small Green Gradient Guideline Card -->
+<section style="max-width: 1200px; margin: 1.5rem auto 0 auto; padding: 0 1rem;">
+    <div style="background: linear-gradient(135deg, #059669 0%, #10B981 50%, #047857 100%); border-radius: 14px; color: #ffffff; padding: 0.85rem 1.25rem; box-shadow: 0 6px 20px -3px rgba(16, 185, 129, 0.4); position: relative; overflow: hidden;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; position: relative; z-index: 2; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <div style="width: 38px; height: 38px; border-radius: 10px; background: rgba(255, 255, 255, 0.2); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0;">
+                    📖
                 </div>
-                <h2 style="font-size: 1.8rem; font-weight: 800; margin: 0 0 0.5rem 0; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.15);">
-                    Complete Website Guideline
-                </h2>
-                <p style="margin: 0; font-size: 1.05rem; color: rgba(255, 255, 255, 0.95); line-height: 1.5;">
-                    Learn how to use every MedicalAk feature step by step with interactive role-specific instructions.
-                </p>
+                <div>
+                    <h3 style="font-size: 1rem; font-weight: 800; margin: 0; color: #ffffff; line-height: 1.2;">How to Use MedicalAk</h3>
+                    <p style="margin: 0.15rem 0 0 0; font-size: 0.8rem; color: rgba(255, 255, 255, 0.9); line-height: 1.2;">Complete Website Guideline — Learn every feature step by step</p>
+                </div>
             </div>
-            <div>
-                <a href="guidelines.php" class="btn" style="background: #ffffff; color: #047857; font-weight: 800; font-size: 1.05rem; padding: 0.9rem 1.8rem; border-radius: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 0.6rem; box-shadow: 0 4px 18px rgba(0,0,0,0.25); transition: all 0.2s ease;">
-                    <span>View Guideline</span>
-                    <i class="fas fa-arrow-right"></i>
-                </a>
-            </div>
+            <a href="guidelines.php" class="btn" style="background: #ffffff; color: #047857; font-weight: 700; font-size: 0.82rem; padding: 0.45rem 0.9rem; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.15); flex-shrink: 0;">
+                <span>View Guideline</span>
+                <i class="fas fa-arrow-right"></i>
+            </a>
         </div>
     </div>
 </section>
