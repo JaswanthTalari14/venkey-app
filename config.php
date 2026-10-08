@@ -1389,5 +1389,32 @@ function getPatientQueueData($conn, $patient_id, $appointment_id = null) {
         'appointment_time' => date('h:i A', strtotime($appt['appointment_time'])),
         'type' => strtoupper($appt['type'] ?: 'OFFLINE')
     ];
+// Auto-generate notification sound asset if missing
+if (!file_exists(__DIR__ . '/sounds/notification.wav')) {
+    $snd_dir = __DIR__ . '/sounds';
+    if (!is_dir($snd_dir)) @mkdir($snd_dir, 0755, true);
+    $sampleRate = 44100;
+    $duration = 0.5;
+    $numSamples = (int)($sampleRate * $duration);
+    $pcmData = '';
+    for ($i = 0; $i < $numSamples; $i++) {
+        $t = $i / $sampleRate;
+        $vol = exp(-5 * $t);
+        $freq1 = 587.33 + ($t < 0.15 ? $t * 1950 : 292.67);
+        $val1 = sin(2 * M_PI * $freq1 * $t);
+        $val2 = 0;
+        if ($t >= 0.12) {
+            $t2 = $t - 0.12;
+            $freq2 = 1174.66 + $t2 * 1950;
+            $val2 = sin(2 * M_PI * $freq2 * $t2);
+        }
+        $mixed = ($val1 * 0.6 + $val2 * 0.4) * $vol * 32000;
+        $mixed = max(-32767, min(32767, (int)$mixed));
+        $pcmData .= pack('v', $mixed);
+    }
+    $dataLen = strlen($pcmData);
+    $header = 'RIFF' . pack('V', 36 + $dataLen) . 'WAVEfmt ' . pack('V', 16) . pack('v', 1) . pack('v', 1) . pack('V', 44100) . pack('V', 88200) . pack('v', 2) . pack('v', 16) . 'data' . pack('V', $dataLen);
+    @file_put_contents($snd_dir . '/notification.wav', $header . $pcmData);
+    @file_put_contents($snd_dir . '/notification.mp3', $header . $pcmData);
 }
 ?>

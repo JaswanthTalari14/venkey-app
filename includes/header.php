@@ -408,6 +408,98 @@ if (isset($_SESSION['user_id'])) {
             return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + d.toLocaleDateString();
         }
 
+        let isInitialBaselineLoaded = false;
+        let lastNotificationSoundTime = 0;
+        let audioContext = null;
+
+        function unlockNotificationAudio() {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (AudioCtx) {
+                    if (!audioContext) audioContext = new AudioCtx();
+                    if (audioContext.state === 'suspended') {
+                        audioContext.resume();
+                    }
+                }
+            } catch(e) {}
+        }
+        document.addEventListener('click', unlockNotificationAudio, { passive: true });
+        document.addEventListener('touchstart', unlockNotificationAudio, { passive: true });
+        document.addEventListener('keydown', unlockNotificationAudio, { passive: true });
+
+        function playLoudNotificationSound() {
+            const now = Date.now();
+            if (now - lastNotificationSoundTime < 800) return;
+            lastNotificationSoundTime = now;
+
+            unlockNotificationAudio();
+            let played = false;
+
+            try {
+                const audio = new Audio('sounds/notification.wav');
+                audio.volume = 1.0;
+                const p = audio.play();
+                if (p !== undefined) {
+                    p.then(() => { played = true; }).catch(() => {
+                        playWebAudioChime();
+                    });
+                }
+            } catch(e) {
+                playWebAudioChime();
+            }
+
+            if (!played) {
+                setTimeout(playWebAudioChime, 50);
+            }
+        }
+
+        function playWebAudioChime() {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!audioContext) audioContext = new AudioCtx();
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+
+                const t = audioContext.currentTime;
+                const masterGain = audioContext.createGain();
+                masterGain.gain.setValueAtTime(0.95, t);
+                masterGain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+                masterGain.connect(audioContext.destination);
+
+                const osc1 = audioContext.createOscillator();
+                osc1.type = 'sine';
+                osc1.frequency.setValueAtTime(587.33, t);
+                osc1.frequency.exponentialRampToValueAtTime(880, t + 0.18);
+                osc1.connect(masterGain);
+
+                const osc2 = audioContext.createOscillator();
+                osc2.type = 'triangle';
+                osc2.frequency.setValueAtTime(1174.66, t + 0.15);
+                osc2.frequency.exponentialRampToValueAtTime(1760, t + 0.4);
+                osc2.connect(masterGain);
+
+                osc1.start(t);
+                osc1.stop(t + 0.35);
+                osc2.start(t + 0.15);
+                osc2.stop(t + 0.55);
+            } catch (err) {}
+        }
+
+        function populateBaselineNotifs() {
+            fetch('api_notifications.php?action=fetch')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && Array.isArray(data.notifications)) {
+                        data.notifications.forEach(n => knownNotifIds.add(n.id));
+                    }
+                    isInitialBaselineLoaded = true;
+                })
+                .catch(() => { isInitialBaselineLoaded = true; });
+        }
+        populateBaselineNotifs();
+
         function showToast(title, msg) {
             const container = document.getElementById('notifToastContainer');
             if (container) {
@@ -433,23 +525,30 @@ if (isset($_SESSION['user_id'])) {
                 try {
                     const data = JSON.parse(e.data);
                     if (data.unread_count !== undefined) {
-                        if (data.unread_count > currentUnread && data.notifications && data.notifications.length > 0) {
-                            const latest = data.notifications[0];
-                            if (!knownNotifIds.has(latest.id)) {
-                                knownNotifIds.add(latest.id);
-                                showToast(latest.title, latest.message);
-                            }
-                        }
                         updateBadge(data.unread_count);
-                        if (panel && panel.style.display === 'block') {
-                            renderList(data.notifications);
+                        if (Array.isArray(data.notifications) && data.notifications.length > 0) {
+                            let hasGenuinelyNewNotif = false;
+                            data.notifications.forEach(n => {
+                                if (!knownNotifIds.has(n.id)) {
+                                    knownNotifIds.add(n.id);
+                                    if (isInitialBaselineLoaded) {
+                                        hasGenuinelyNewNotif = true;
+                                        showToast(n.title, n.message);
+                                    }
+                                }
+                            });
+                            if (hasGenuinelyNewNotif && isInitialBaselineLoaded) {
+                                playLoudNotificationSound();
+                            }
+                            if (panel && panel.style.display === 'block') {
+                                renderList(data.notifications);
+                            }
                         }
                     }
                 } catch(err) {}
             };
         }
     })();
-    </script>
-    <?php endif; ?>
+    </script><?php endif; ?>
     <main>
 
