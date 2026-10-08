@@ -10,7 +10,7 @@ $mobile_nav_items = [];
 
 if ($is_logged_in) {
     // Populate/Sync profile image from database for logged-in user
-    if (isset($conn)) {
+    if (isset($conn) && (!isset($_SESSION['profile_image']) || empty($_SESSION['profile_image']))) {
         $uid = (int)$_SESSION['user_id'];
         $u_res = @$conn->query("SELECT profile_image FROM users WHERE id = $uid");
         if ($u_res && $u_row = $u_res->fetch_assoc()) {
@@ -400,6 +400,18 @@ function toggleWaOfflinePopup() {
                     }
                 }
             }, { passive: true });
+
+            // Instant Sub-10ms Mobile Bottom Navigation Active Tab Switching
+            document.addEventListener('click', function(e) {
+                const navItem = e.target.closest('.mobile-bottom-nav .mobile-nav-item');
+                if (navItem) {
+                    const navParent = navItem.closest('.mobile-bottom-nav');
+                    if (navParent) {
+                        navParent.querySelectorAll('.mobile-nav-item').forEach(el => el.classList.remove('active'));
+                        navItem.classList.add('active');
+                    }
+                }
+            });
 
             // Global Form Double-Submit Protection (Prevents duplicate orders/payments/tickets)
             document.addEventListener('submit', function(e) {

@@ -310,6 +310,12 @@ function ensure_database_indexes($conn) {
     $add_index_if_missing('support_ticket_replies', 'idx_str_ticket_id', 'ticket_id, id');
     $add_index_if_missing('prescriptions', 'idx_presc_patient', 'patient_id');
     $add_index_if_missing('prescription_items', 'idx_pi_presc', 'prescription_id');
+    $add_index_if_missing('appointments', 'idx_app_date_time', 'appointment_date, appointment_time');
+    $add_index_if_missing('user_notifications', 'idx_un_created', 'created_at');
+    $add_index_if_missing('medical_card_applications', 'idx_mca_user_status', 'user_id, status');
+    $add_index_if_missing('medical_prescriptions', 'idx_mp_patient', 'patient_id');
+    $add_index_if_missing('users', 'idx_u_email', 'email');
+    $add_index_if_missing('users', 'idx_u_phone', 'phone');
 
     // Auto-migrate columns for orders table
     try { @$conn->query("ALTER TABLE orders MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'"); } catch (Throwable $t) {}
