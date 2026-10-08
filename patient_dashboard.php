@@ -89,7 +89,6 @@ $my_orders = $conn->query("
 
         <?php
         $queue_data = getPatientQueueData($conn, $patient_id);
-        if ($queue_data['has_appointment']):
         ?>
         <!-- DIGITAL QUEUE TRACKING (Feature Group 10) -->
         <div class="glass-panel" id="live-queue-card" style="margin-top: 2rem; padding: 1.5rem; border: 1px solid rgba(74, 144, 226, 0.3); background: linear-gradient(135deg, rgba(16, 26, 43, 0.85), rgba(22, 33, 62, 0.95)); border-radius: 16px;">
@@ -141,15 +140,20 @@ $my_orders = $conn->query("
             <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.25); padding: 0.75rem 1rem; border-radius: 10px; font-size: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
                 <div>
                     <span style="color: var(--text-secondary);">Doctor:</span>
-                    <strong style="color: var(--text-primary); margin-left: 0.3rem;">Dr. <?php echo htmlspecialchars($queue_data['doctor_name']); ?></strong>
+                    <strong style="color: var(--text-primary); margin-left: 0.3rem;"><?php echo ($queue_data['has_appointment'] ? 'Dr. ' : '') . htmlspecialchars($queue_data['doctor_name']); ?></strong>
                     <span style="color: var(--text-secondary); font-size: 0.75rem;">(<?php echo htmlspecialchars($queue_data['specialization']); ?>)</span>
+                    <?php if ($queue_data['has_appointment']): ?>
                     <span style="margin-left: 0.6rem; font-size: 0.75rem; color: var(--secondary-color);"><?php echo $queue_data['appointment_date']; ?> @ <?php echo $queue_data['appointment_time']; ?></span>
+                    <?php endif; ?>
                 </div>
                 <div>
                     <span style="color: var(--text-secondary); margin-right: 0.4rem;">Consultation Status:</span>
                     <span id="q-status-badge" style="padding: 0.25rem 0.7rem; background: rgba(52, 152, 219, 0.2); color: #3498db; border-radius: 8px; font-weight: 700; font-size: 0.8rem; text-transform: capitalize;">
                         <?php echo htmlspecialchars($queue_data['status']); ?>
                     </span>
+                    <?php if (!$queue_data['has_appointment']): ?>
+                    <a href="book_consult.php" style="margin-left: 0.5rem; color: #2ed573; text-decoration: underline; font-weight: bold; font-size: 0.8rem;"><i class="fas fa-calendar-plus"></i> Book Now</a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -158,12 +162,13 @@ $my_orders = $conn->query("
         (function() {
             function refreshLiveQueue() {
                 const spinner = document.getElementById('queue-spinner');
+                const apptId = <?php echo (int)($queue_data['appointment_id'] ?? 0); ?>;
                 if (spinner) spinner.classList.add('fa-spin');
-                fetch('api_patient_features.php?action=get_queue_tracker&appointment_id=<?php echo $queue_data['appointment_id']; ?>')
+                fetch('api_patient_features.php?action=get_queue_tracker&appointment_id=' + apptId)
                     .then(r => r.json())
                     .then(res => {
                         if (spinner) spinner.classList.remove('fa-spin');
-                        if (res.success && res.data && res.data.has_appointment) {
+                        if (res.success && res.data) {
                             const d = res.data;
                             const patEl = document.getElementById('q-patient-token');
                             const srvEl = document.getElementById('q-serving-token');
@@ -180,11 +185,10 @@ $my_orders = $conn->query("
                     })
                     .catch(() => { if (spinner) spinner.classList.remove('fa-spin'); });
             }
-            // Poll real database every 15 seconds (no fake movement)
+            // Poll real database every 15 seconds
             setInterval(refreshLiveQueue, 15000);
         })();
         </script>
-        <?php endif; ?>
 
         <h3 style="margin-top: 3rem; margin-bottom: 1rem;">Recent Medicine Orders tracker</h3>
         <div class="glass-panel" style="overflow-x: auto; padding: 1rem;">

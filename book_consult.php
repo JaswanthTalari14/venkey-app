@@ -159,7 +159,6 @@ $my_appointments = $conn->query("
 
         <?php
         $queue_data = getPatientQueueData($conn, $_SESSION['user_id']);
-        if ($queue_data['has_appointment']):
         ?>
         <!-- DIGITAL QUEUE TRACKING (Feature Group 10) -->
         <div class="glass-panel" id="live-queue-card" style="margin-top: 2rem; padding: 1.5rem; border: 1px solid rgba(74, 144, 226, 0.3); background: linear-gradient(135deg, rgba(16, 26, 43, 0.85), rgba(22, 33, 62, 0.95)); border-radius: 16px;">
@@ -206,7 +205,7 @@ $my_appointments = $conn->query("
             <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.25); padding: 0.75rem 1rem; border-radius: 10px; font-size: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
                 <div>
                     <span style="color: var(--text-secondary);">Doctor:</span>
-                    <strong style="color: var(--text-primary); margin-left: 0.3rem;">Dr. <?php echo htmlspecialchars($queue_data['doctor_name']); ?></strong>
+                    <strong style="color: var(--text-primary); margin-left: 0.3rem;"><?php echo ($queue_data['has_appointment'] ? 'Dr. ' : '') . htmlspecialchars($queue_data['doctor_name']); ?></strong>
                     <span style="color: var(--text-secondary); font-size: 0.75rem;">(<?php echo htmlspecialchars($queue_data['specialization']); ?>)</span>
                 </div>
                 <div>
@@ -222,12 +221,13 @@ $my_appointments = $conn->query("
         (function() {
             function refreshBcQueue() {
                 const spinner = document.getElementById('bc-queue-spinner');
+                const apptId = <?php echo (int)($queue_data['appointment_id'] ?? 0); ?>;
                 if (spinner) spinner.classList.add('fa-spin');
-                fetch('api_patient_features.php?action=get_queue_tracker&appointment_id=<?php echo $queue_data['appointment_id']; ?>')
+                fetch('api_patient_features.php?action=get_queue_tracker&appointment_id=' + apptId)
                     .then(r => r.json())
                     .then(res => {
                         if (spinner) spinner.classList.remove('fa-spin');
-                        if (res.success && res.data && res.data.has_appointment) {
+                        if (res.success && res.data) {
                             const d = res.data;
                             if (document.getElementById('bc-patient-token')) document.getElementById('bc-patient-token').innerText = d.patient_token;
                             if (document.getElementById('bc-serving-token')) document.getElementById('bc-serving-token').innerText = d.current_serving_token;
@@ -241,7 +241,6 @@ $my_appointments = $conn->query("
             setInterval(refreshBcQueue, 15000);
         })();
         </script>
-        <?php endif; ?>
 
         <h3 style="margin-top: 3rem; margin-bottom: 1rem;">Your Appointment History</h3>
         <div class="glass-panel" style="overflow-x: auto; padding: 1rem;">

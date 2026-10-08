@@ -1179,17 +1179,31 @@ function get_profile_image_url($input) {
  */
 function getPatientQueueData($conn, $patient_id, $appointment_id = null) {
     $patient_id = (int)$patient_id;
+    $appointment_id = (int)$appointment_id;
     
     // Find target appointment or nearest active appointment
     if ($appointment_id > 0) {
-        $appt_res = $conn->query("SELECT a.*, d.name as doctor_name, d.specialization FROM appointments a JOIN users d ON a.doctor_id = d.id WHERE a.id = $appointment_id AND a.patient_id = $patient_id LIMIT 1");
+        $appt_res = $conn->query("SELECT a.*, COALESCE(d.name, 'Doctor') as doctor_name, COALESCE(d.specialization, 'General Practitioner') as specialization FROM appointments a LEFT JOIN users d ON a.doctor_id = d.id WHERE a.id = $appointment_id AND a.patient_id = $patient_id LIMIT 1");
     } else {
-        $appt_res = $conn->query("SELECT a.*, d.name as doctor_name, d.specialization FROM appointments a JOIN users d ON a.doctor_id = d.id WHERE a.patient_id = $patient_id AND LOWER(COALESCE(a.status, '')) NOT IN ('cancelled', 'rejected') AND a.appointment_date >= CURDATE() ORDER BY a.appointment_date ASC, a.appointment_time ASC LIMIT 1");
+        $appt_res = $conn->query("SELECT a.*, COALESCE(d.name, 'Doctor') as doctor_name, COALESCE(d.specialization, 'General Practitioner') as specialization FROM appointments a LEFT JOIN users d ON a.doctor_id = d.id WHERE a.patient_id = $patient_id AND LOWER(COALESCE(a.status, '')) NOT IN ('cancelled', 'rejected') ORDER BY (a.appointment_date >= CURDATE()) DESC, a.appointment_date DESC, a.appointment_time DESC LIMIT 1");
     }
     
     if (!$appt_res || $appt_res->num_rows === 0) {
         return [
             'has_appointment' => false,
+            'appointment_id' => 0,
+            'patient_token' => 'N/A',
+            'current_serving_token' => 'Q-01',
+            'position' => 'No Active Queue',
+            'patients_ahead' => 0,
+            'estimated_wait' => 'No Wait',
+            'status' => 'Not Booked',
+            'raw_status' => 'none',
+            'doctor_name' => 'Not Assigned',
+            'specialization' => 'General Practitioner',
+            'appointment_date' => date('M d, Y'),
+            'appointment_time' => '--:--',
+            'type' => 'OFFLINE',
             'message' => 'No active appointment scheduled'
         ];
     }
