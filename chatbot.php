@@ -1,12 +1,13 @@
 <?php
 require_once 'config.php';
 
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'patient') {
+if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit;
 }
 
-$patient_name = htmlspecialchars($_SESSION['name'] ?? 'Patient');
+$user_role = $_SESSION['role'] ?? 'patient';
+$patient_name = htmlspecialchars($_SESSION['name'] ?? 'User');
 $patient_id = (int)$_SESSION['user_id'];
 ?>
 <!DOCTYPE html>
@@ -921,7 +922,10 @@ $patient_id = (int)$_SESSION['user_id'];
             const response = await fetch('api_chatbot.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: userText })
+                body: JSON.stringify({ 
+                    message: userText,
+                    history: chatHistory.slice(-6)
+                })
             });
 
             const data = await response.json();
