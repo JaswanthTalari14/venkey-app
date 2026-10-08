@@ -1,6 +1,22 @@
 <?php
 require_once 'config.php';
-require_once 'includes/referral_functions.php';
+
+// Instant Redirect for Logged-In Users
+if (isset($_SESSION['user_id'])) {
+    $role = $_SESSION['role'] ?? 'patient';
+    if ($role === 'patient') {
+        header("Location: patient_dashboard.php");
+    } elseif ($role === 'doctor') {
+        header("Location: doctor_dashboard.php");
+    } elseif ($role === 'admin') {
+        header("Location: admin_dashboard.php");
+    } elseif ($role === 'rmp') {
+        header("Location: rmp_dashboard.php");
+    } else {
+        header("Location: index.php");
+    }
+    exit;
+}
 
 $error = '';
 $success = '';
@@ -15,36 +31,48 @@ $ref_code = isset($_POST['referral_code'])
     : (isset($_SESSION['pending_ref']) ? $_SESSION['pending_ref'] : '');
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $name = $conn->real_escape_string($_POST['name']);
-    $email = $conn->real_escape_string($_POST['email']);
-    $phone = $conn->real_escape_string($_POST['phone']);
-    $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
-    $role = $_POST['role'];
+    $name = trim($_POST['name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $phone = trim($_POST['phone'] ?? '');
+    $raw_password = $_POST['password'] ?? '';
+    $role = $_POST['role'] ?? 'patient';
 
-    $check = $conn->query("SELECT * FROM users WHERE email='$email'");
-    if ($check && $check->num_rows > 0) {
-        $error = "Email already registered.";
+    if (empty($name) || empty($email) || empty($phone) || empty($raw_password)) {
+        $error = "Please fill in all required fields.";
     } else {
-        // Assign mock coordinates to doctors within 10km radius so they appear on the Patient tracking map automatically
-        $lat = ($role == 'doctor') ? (28.7042 + (rand(-50, 50) / 1000)) : "NULL";
-        $lon = ($role == 'doctor') ? (77.1026 + (rand(-50, 50) / 1000)) : "NULL";
-        $spec = ($role == 'doctor') ? "'General Practitioner'" : "NULL";
+        // Prepared statement for duplicate email check (fast & safe)
+        $stmt_check = $conn->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
+        $stmt_check->bind_param("s", $email);
+        $stmt_check->execute();
+        $res_check = $stmt_check->get_result();
 
-        $query = "INSERT INTO users (name, email, phone, password, role, latitude, longitude, specialization) 
-                  VALUES ('$name', '$email', '$phone', '$password', '$role', $lat, $lon, $spec)";
-        
-        if ($conn->query($query)) {
-            $new_user_id = $conn->insert_id;
-
-            // Process Referral linkage if patient and referral code exists
-            if ($role === 'patient' && !empty($ref_code)) {
-                register_referral_claim($new_user_id, $ref_code);
-            }
-            unset($_SESSION['pending_ref']);
-
-            $success = "Registration successful! You can now login.";
+        if ($res_check && $res_check->num_rows > 0) {
+            $error = "Email already registered.";
         } else {
-            $error = "Registration failed. Try again.";
+            $password = password_hash($raw_password, PASSWORD_DEFAULT);
+
+            // Assign mock coordinates to doctors within 10km radius so they appear on the Patient tracking map automatically
+            $lat = ($role == 'doctor') ? (28.7042 + (rand(-50, 50) / 1000)) : null;
+            $lon = ($role == 'doctor') ? (77.1026 + (rand(-50, 50) / 1000)) : null;
+            $spec = ($role == 'doctor') ? "General Practitioner" : null;
+
+            $stmt_ins = $conn->prepare("INSERT INTO users (name, email, phone, password, role, latitude, longitude, specialization) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt_ins->bind_param("sssssdds", $name, $email, $phone, $password, $role, $lat, $lon, $spec);
+
+            if ($stmt_ins->execute()) {
+                $new_user_id = $stmt_ins->insert_id;
+
+                // Process Referral linkage if patient and referral code exists
+                if ($role === 'patient' && !empty($ref_code)) {
+                    require_once 'includes/referral_functions.php';
+                    register_referral_claim($new_user_id, $ref_code);
+                }
+                unset($_SESSION['pending_ref']);
+
+                $success = "Registration successful! You can now login.";
+            } else {
+                $error = "Registration failed. Try again.";
+            }
         }
     }
 }

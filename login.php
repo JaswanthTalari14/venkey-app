@@ -2,6 +2,23 @@
 require_once 'config.php';
 require_once 'includes/security_helper.php';
 
+// Instant Redirect for Logged-In Users
+if (isset($_SESSION['user_id'])) {
+    $role = $_SESSION['role'] ?? 'patient';
+    if ($role === 'patient') {
+        header("Location: patient_dashboard.php");
+    } elseif ($role === 'doctor') {
+        header("Location: doctor_dashboard.php");
+    } elseif ($role === 'admin') {
+        header("Location: admin_dashboard.php");
+    } elseif ($role === 'rmp') {
+        header("Location: rmp_dashboard.php");
+    } else {
+        header("Location: index.php");
+    }
+    exit;
+}
+
 $error = '';
 $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
 
@@ -9,10 +26,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
 
-    if (is_login_locked($conn, $ip, $email)) {
+    if (empty($email) || empty($password)) {
+        $error = "Please fill in all required fields.";
+    } elseif (is_login_locked($conn, $ip, $email)) {
         $error = "Too many failed login attempts. Please try again in 15 minutes for security.";
     } else {
-        $stmt = $conn->prepare("SELECT * FROM users WHERE email = ?");
+        $stmt = $conn->prepare("SELECT id, name, email, password, role, profile_image, image, avatar, photo FROM users WHERE email = ? LIMIT 1");
         $stmt->bind_param("s", $email);
         $stmt->execute();
         $result = $stmt->get_result();
