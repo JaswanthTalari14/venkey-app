@@ -1389,6 +1389,8 @@ function getPatientQueueData($conn, $patient_id, $appointment_id = null) {
         'appointment_time' => date('h:i A', strtotime($appt['appointment_time'])),
         'type' => strtoupper($appt['type'] ?: 'OFFLINE')
     ];
+}
+
 // Auto-generate notification sound asset if missing
 if (!file_exists(__DIR__ . '/sounds/notification.wav')) {
     $snd_dir = __DIR__ . '/sounds';
