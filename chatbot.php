@@ -227,10 +227,10 @@ $patient_id = (int)$_SESSION['user_id'];
 
         /* --- Welcome Card --- */
         .welcome-card {
-            background: rgba(15, 23, 42, 0.7);
+            background: rgba(15, 23, 42, 0.75);
             border: 1px solid var(--border-glass);
-            border-radius: 24px;
-            padding: 1.75rem 1.5rem;
+            border-radius: 20px;
+            padding: 1.15rem 1.25rem;
             backdrop-filter: blur(12px);
             box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
             margin-bottom: auto;
@@ -240,67 +240,84 @@ $patient_id = (int)$_SESSION['user_id'];
         .welcome-header {
             display: flex;
             align-items: center;
-            gap: 1rem;
-            margin-bottom: 1.25rem;
+            gap: 0.85rem;
+            margin-bottom: 0.85rem;
         }
 
         .welcome-icon-box {
-            width: 54px;
-            height: 54px;
-            border-radius: 20px;
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
             background: var(--primary-gradient);
             display: flex;
             align-items: center;
             justify-content: center;
             color: #fff;
-            font-size: 1.6rem;
+            font-size: 1.35rem;
             box-shadow: 0 8px 24px rgba(37, 99, 235, 0.4);
+            flex-shrink: 0;
         }
 
         .welcome-title h2 {
-            font-size: 1.25rem;
+            font-size: 1.15rem;
             font-weight: 700;
             color: #fff;
+            margin: 0;
         }
 
         .welcome-title p {
-            font-size: 0.88rem;
+            font-size: 0.82rem;
             color: var(--text-muted);
-            margin-top: 0.2rem;
+            margin-top: 0.15rem;
+            line-height: 1.35;
         }
 
         .prompt-chips-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 0.75rem;
-            margin-top: 1.25rem;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+            max-height: 240px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .prompt-chips-grid::-webkit-scrollbar {
+            width: 4px;
+        }
+        .prompt-chips-grid::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
         }
 
         .chip-card {
             background: rgba(30, 41, 59, 0.6);
             border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 16px;
-            padding: 0.85rem 1rem;
+            border-radius: 12px;
+            padding: 0.55rem 0.7rem;
             color: var(--text-main);
-            font-size: 0.88rem;
+            font-size: 0.8rem;
             font-weight: 500;
             cursor: pointer;
             display: flex;
             align-items: center;
-            gap: 0.65rem;
-            transition: all 0.25 ease;
+            gap: 0.5rem;
+            transition: all 0.2s ease;
             text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .chip-card:hover {
-            background: rgba(37, 99, 235, 0.18);
-            border-color: rgba(37, 99, 235, 0.4);
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+            background: rgba(37, 99, 235, 0.22);
+            border-color: rgba(37, 99, 235, 0.5);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
         }
 
         .chip-card i {
-            font-size: 1.1rem;
+            font-size: 0.95rem;
             color: var(--accent-cyan);
             flex-shrink: 0;
         }
@@ -636,10 +653,18 @@ $patient_id = (int)$_SESSION['user_id'];
                 max-width: 92%;
             }
             .welcome-card {
-                padding: 1.25rem 1rem;
+                padding: 1rem 0.85rem;
+                border-radius: 16px;
             }
             .prompt-chips-grid {
-                grid-template-columns: 1fr;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 0.45rem;
+                max-height: 210px;
+            }
+            .chip-card {
+                padding: 0.5rem 0.6rem;
+                font-size: 0.78rem;
+                border-radius: 10px;
             }
         }
     </style>
