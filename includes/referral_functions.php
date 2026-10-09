@@ -12,7 +12,7 @@ function init_referral_tables() {
         program_enabled TINYINT(1) DEFAULT 1,
         referrer_reward DECIMAL(10,2) DEFAULT 50.00,
         referred_reward DECIMAL(10,2) DEFAULT 25.00,
-        min_order_amount DECIMAL(10,2) DEFAULT 0.00,
+        min_order_amount DECIMAL(10,2) DEFAULT 20.00,
         expiry_days INT DEFAULT 30,
         max_rewards INT DEFAULT 0,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -22,9 +22,9 @@ function init_referral_tables() {
     $res = $conn->query("SELECT id FROM referral_settings LIMIT 1");
     if ($res && $res->num_rows === 0) {
         $conn->query("INSERT INTO referral_settings (program_enabled, referrer_reward, referred_reward, min_order_amount, expiry_days) 
-                      VALUES (1, 50.00, 25.00, 0.00, 30)");
+                      VALUES (1, 50.00, 25.00, 20.00, 30)");
     } else {
-        @$conn->query("UPDATE referral_settings SET min_order_amount = 0.00 WHERE min_order_amount = 199.00");
+        @$conn->query("UPDATE referral_settings SET min_order_amount = 20.00 WHERE min_order_amount != 20.00");
     }
 
     // 2. Referral Codes Table
@@ -166,7 +166,7 @@ function get_referral_settings() {
         'program_enabled' => 1,
         'referrer_reward' => 50.00,
         'referred_reward' => 25.00,
-        'min_order_amount' => 0.00,
+        'min_order_amount' => 20.00,
         'expiry_days' => 30,
         'max_rewards' => 0
     ];
@@ -235,7 +235,7 @@ if (!function_exists('register_referral_claim')) {
         $stmt->execute();
         $res = $stmt->get_result();
 
-        if (!$res || $res->num_rows === 0) {
+        if (!$res || !$res->num_rows) {
             return false;
         }
 
@@ -280,7 +280,7 @@ function sync_pending_referrals($referrer_id = null) {
     $settings = get_referral_settings();
     if (!isset($settings['program_enabled']) || !$settings['program_enabled']) return false;
 
-    $min_amt = (float)($settings['min_order_amount'] ?? 0.00);
+    $min_amt = (float)($settings['min_order_amount'] ?? 20.00);
 
     // Select pending referrals (Registered or Order Pending)
     $sql = "SELECT * FROM customer_referrals WHERE status IN ('Registered', 'Order Pending')";
