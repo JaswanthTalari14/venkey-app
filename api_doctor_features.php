@@ -83,6 +83,7 @@ if ($action === 'save_consultation') {
         $rx_stmt->bind_param("iiis", $patient_id, $doctor_id, $appt_id, $notes_text);
         $rx_stmt->execute();
         $prescription_id = $conn->insert_id;
+        register_document_verification($conn, 'prescription', $prescription_id, $patient_id, $doctor_id, 'doctor');
 
         // Insert Prescription Medicine Items
         if (is_array($medicines) && !empty($medicines)) {

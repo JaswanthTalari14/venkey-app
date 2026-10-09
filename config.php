@@ -854,7 +854,44 @@ function update_order_status_timestamps($conn, $order_id, $new_status) {
             if (!in_array('completion_status', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN completion_status VARCHAR(30) DEFAULT 'incomplete'");
             if (!in_array('last_reviewed_at', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN last_reviewed_at DATETIME DEFAULT NULL");
             if (!in_array('is_qr_enabled', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN is_qr_enabled TINYINT(1) DEFAULT 1");
-        }
+    // Auto-migrate tables for Medical Document Authenticity Verification System
+    try {
+        $conn->query("CREATE TABLE IF NOT EXISTS document_verifications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            verification_id VARCHAR(64) UNIQUE NOT NULL,
+            doc_type VARCHAR(50) NOT NULL,
+            doc_id INT DEFAULT NULL,
+            patient_id INT NOT NULL,
+            issuer_id INT DEFAULT NULL,
+            issuer_type VARCHAR(30) DEFAULT 'doctor',
+            file_path VARCHAR(255) DEFAULT NULL,
+            doc_hash VARCHAR(64) NOT NULL,
+            qr_token VARCHAR(100) UNIQUE NOT NULL,
+            status ENUM('VERIFIED', 'REVOKED', 'EXPIRED', 'REVIEW_REQUIRED', 'SUSPICIOUS') DEFAULT 'VERIFIED',
+            revocation_reason TEXT DEFAULT NULL,
+            revoked_by INT DEFAULT NULL,
+            revoked_at DATETIME DEFAULT NULL,
+            version INT DEFAULT 1,
+            issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME DEFAULT NULL,
+            last_verified_at DATETIME DEFAULT NULL,
+            INDEX (verification_id),
+            INDEX (qr_token),
+            INDEX (doc_type, doc_id),
+            INDEX (patient_id),
+            INDEX (issuer_id)
+        )");
+
+        $conn->query("CREATE TABLE IF NOT EXISTS document_verification_reports (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            verification_id VARCHAR(64) NOT NULL,
+            reported_by INT DEFAULT NULL,
+            reporter_email VARCHAR(100) DEFAULT NULL,
+            reason TEXT NOT NULL,
+            status ENUM('pending', 'reviewed', 'dismissed') DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX (verification_id)
+        )");
     } catch (Throwable $t) {}
 
     // Auto-migrate columns for user_notifications table
@@ -1446,5 +1483,84 @@ if (!file_exists(__DIR__ . '/sounds/notification.wav')) {
     $header = 'RIFF' . pack('V', 36 + $dataLen) . 'WAVEfmt ' . pack('V', 16) . pack('v', 1) . pack('v', 1) . pack('V', 44100) . pack('V', 88200) . pack('v', 2) . pack('v', 16) . 'data' . pack('V', $dataLen);
     @file_put_contents($snd_dir . '/notification.wav', $header . $pcmData);
     @file_put_contents($snd_dir . '/notification.mp3', $header . $pcmData);
+}
+
+// Medical Document Authenticity Verification Functions
+if (!function_exists('register_document_verification')) {
+    function register_document_verification($conn, $doc_type, $doc_id, $patient_id, $issuer_id, $issuer_type = 'doctor', $file_path = null, $content_payload = '', $expires_at = null) {
+        $doc_type = $conn->real_escape_string($doc_type);
+        $doc_id = (int)$doc_id;
+        $patient_id = (int)$patient_id;
+        $issuer_id = $issuer_id ? (int)$issuer_id : null;
+        $issuer_type = $conn->real_escape_string($issuer_type);
+
+        // Calculate SHA-256 Hash
+        $doc_hash = '';
+        if (!empty($file_path)) {
+            $clean_rel = ltrim(str_replace('\\', '/', $file_path), '/.');
+            $abs_path = __DIR__ . '/' . ltrim($clean_rel, '/');
+            if (file_exists($abs_path) && is_file($abs_path)) {
+                $doc_hash = hash_file('sha256', $abs_path);
+            }
+        }
+        if (empty($doc_hash)) {
+            $payload = $content_payload ? $content_payload : ($doc_type . ':' . $doc_id . ':' . $patient_id . ':' . ($issuer_id ?? 0));
+            $doc_hash = hash('sha256', $payload);
+        }
+
+        // Check existing
+        $chk = $conn->query("SELECT * FROM document_verifications WHERE doc_type = '$doc_type' AND doc_id = $doc_id AND patient_id = $patient_id");
+        if ($chk && $chk->num_rows > 0) {
+            $row = $chk->fetch_assoc();
+            $stmt = $conn->prepare("UPDATE document_verifications SET file_path = ?, doc_hash = ?, issuer_id = ?, issuer_type = ?, expires_at = ?, status = 'VERIFIED' WHERE id = ?");
+            $stmt->bind_param("ssissi", $file_path, $doc_hash, $issuer_id, $issuer_type, $expires_at, $row['id']);
+            $stmt->execute();
+            $row['doc_hash'] = $doc_hash;
+            $row['file_path'] = $file_path;
+            $row['status'] = 'VERIFIED';
+            return $row;
+        } else {
+            $ver_id = 'DOC-VER-' . strtoupper(bin2hex(random_bytes(3))) . '-' . strtoupper(bin2hex(random_bytes(3)));
+            $qr_token = bin2hex(random_bytes(16));
+            $stmt = $conn->prepare("INSERT INTO document_verifications (verification_id, doc_type, doc_id, patient_id, issuer_id, issuer_type, file_path, doc_hash, qr_token, status, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'VERIFIED', ?)");
+            $stmt->bind_param("ssiiisssss", $ver_id, $doc_type, $doc_id, $patient_id, $issuer_id, $issuer_type, $file_path, $doc_hash, $qr_token, $expires_at);
+            $stmt->execute();
+            $insert_id = $stmt->insert_id;
+            return [
+                'id' => $insert_id,
+                'verification_id' => $ver_id,
+                'doc_type' => $doc_type,
+                'doc_id' => $doc_id,
+                'patient_id' => $patient_id,
+                'issuer_id' => $issuer_id,
+                'issuer_type' => $issuer_type,
+                'file_path' => $file_path,
+                'doc_hash' => $doc_hash,
+                'qr_token' => $qr_token,
+                'status' => 'VERIFIED',
+                'expires_at' => $expires_at,
+                'issued_at' => date('Y-m-d H:i:s')
+            ];
+        }
+    }
+}
+
+if (!function_exists('get_document_verification_by_id')) {
+    function get_document_verification_by_id($conn, $vid_or_qr) {
+        $clean = trim($vid_or_qr);
+        $stmt = $conn->prepare("
+            SELECT v.*, 
+                   p.name as patient_name, p.health_id as patient_health_id,
+                   i.name as issuer_name, i.role as issuer_role, i.specialization as issuer_specialization, i.is_verified as issuer_is_verified
+            FROM document_verifications v
+            LEFT JOIN users p ON v.patient_id = p.id
+            LEFT JOIN users i ON v.issuer_id = i.id
+            WHERE v.verification_id = ? OR v.qr_token = ?
+        ");
+        $stmt->bind_param("ss", $clean, $clean);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        return ($res && $res->num_rows > 0) ? $res->fetch_assoc() : null;
+    }
 }
 ?>

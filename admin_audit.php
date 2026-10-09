@@ -110,8 +110,39 @@ include 'includes/header.php';
                 <p style="color: var(--text-secondary); margin-top: 0.3rem;">Immutable, persistent server-side audit trail recording all administrative operations.</p>
             </div>
 
-            <div style="background: rgba(80, 227, 194, 0.15); border: 1px solid #50e3c2; color: #50e3c2; padding: 0.4rem 1rem; border-radius: 20px; font-weight: bold; font-size: 0.85rem;">
-                <i class="fas fa-shield-alt"></i> Recorded Events: <?php echo number_format($total_records); ?>
+            <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+                <div style="background: rgba(80, 227, 194, 0.15); border: 1px solid #50e3c2; color: #50e3c2; padding: 0.4rem 1rem; border-radius: 20px; font-weight: bold; font-size: 0.85rem;">
+                    <i class="fas fa-shield-alt"></i> Recorded Events: <?php echo number_format($total_records); ?>
+                </div>
+                <a href="verify_document.php" target="_blank" class="btn btn-outline" style="font-size: 0.85rem; padding: 0.4rem 0.9rem;">
+                    <i class="fas fa-search"></i> Verification Portal
+                </a>
+            </div>
+        </div>
+
+        <?php
+        // Fetch Document Verification System Summary Stats
+        $tot_ver_docs = (int)($conn->query("SELECT COUNT(*) as cnt FROM document_verifications")->fetch_assoc()['cnt'] ?? 0);
+        $tot_revoked_docs = (int)($conn->query("SELECT COUNT(*) as cnt FROM document_verifications WHERE status = 'REVOKED'")->fetch_assoc()['cnt'] ?? 0);
+        $tot_suspicious_reports = (int)($conn->query("SELECT COUNT(*) as cnt FROM document_verification_reports")->fetch_assoc()['cnt'] ?? 0);
+        ?>
+
+        <!-- Document Authenticity System Counter Summary -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+            <div class="glass-panel" style="padding: 1.25rem; border-left: 4px solid #10b981;">
+                <div style="font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; font-weight: bold;">Verified Medical Documents</div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #10b981; margin: 0.3rem 0;"><?php echo number_format($tot_ver_docs); ?></div>
+                <div style="font-size: 0.78rem; color: var(--text-secondary);"><i class="fas fa-fingerprint me-1"></i> SHA-256 Registered</div>
+            </div>
+            <div class="glass-panel" style="padding: 1.25rem; border-left: 4px solid #ef4444;">
+                <div style="font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; font-weight: bold;">Revoked Documents</div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #ef4444; margin: 0.3rem 0;"><?php echo number_format($tot_revoked_docs); ?></div>
+                <div style="font-size: 0.78rem; color: var(--text-secondary);"><i class="fas fa-ban me-1"></i> Invalidated by Issuer</div>
+            </div>
+            <div class="glass-panel" style="padding: 1.25rem; border-left: 4px solid #f59e0b;">
+                <div style="font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; font-weight: bold;">Suspicious Reports</div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #f59e0b; margin: 0.3rem 0;"><?php echo number_format($tot_suspicious_reports); ?></div>
+                <div style="font-size: 0.78rem; color: var(--text-secondary);"><i class="fas fa-flag me-1"></i> Flagged for Audit</div>
             </div>
         </div>
 

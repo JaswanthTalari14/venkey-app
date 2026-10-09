@@ -175,6 +175,7 @@ if (isset($_SESSION['user_id'])) {
             <ul>
                 <li><a href="index.php">Home</a></li>
                 <li><a href="index.php#features">Features</a></li>
+                <li><a href="verify_document.php"><i class="fas fa-shield-alt" style="color: var(--primary-color, #0284c7);"></i> Verify Doc</a></li>
                 <li><a href="index.php#about">About</a></li>
                 <?php if(isset($_SESSION['user_id'])): ?>
                     <?php if($_SESSION['role'] !== 'admin'): ?>

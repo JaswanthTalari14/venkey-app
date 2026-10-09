@@ -30,6 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['save_prescription'])) 
     $stmt->bind_param("iiis", $patient_id, $doctor_id, $appointment_id, $notes);
     if ($stmt->execute()) {
         $p_id = $stmt->insert_id;
+        register_document_verification($conn, 'prescription', $p_id, $patient_id, $doctor_id, 'doctor');
         for ($i = 0; $i < count($med_names); $i++) {
             $m = trim($med_names[$i]);
             $d = trim($dosages[$i] ?? '1 Tab');

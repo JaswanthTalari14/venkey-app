@@ -360,7 +360,11 @@ if ($action === 'upload_medical_document') {
         $stmt = $conn->prepare("INSERT INTO medical_documents (patient_id, title, category, file_path) VALUES (?, ?, ?, ?)");
         $stmt->bind_param("isss", $user_id, $title, $category, $rel_path);
         $ok = $stmt->execute();
-        echo json_encode(['success' => (bool)$ok, 'message' => 'Medical document uploaded and categorized successfully']);
+        if ($ok) {
+            $doc_id = $stmt->insert_id;
+            register_document_verification($conn, 'medical_document', $doc_id, $user_id, $user_id, 'patient', $rel_path);
+        }
+        echo json_encode(['success' => (bool)$ok, 'message' => 'Medical document uploaded, categorized, and registered with SHA-256 authenticity signature!']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Failed to save document file on server']);
     }

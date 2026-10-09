@@ -1,4 +1,4 @@
-const CACHE_NAME = 'medicalak-pwa-v30';
+const CACHE_NAME = 'medicalak-pwa-v31';
 
 const STATIC_ASSETS = [
     './',
@@ -6,6 +6,7 @@ const STATIC_ASSETS = [
     'guidelines.php',
     'login.php',
     'register.php',
+    'verify_document.php',
     'customer_support.php',
     'create_ticket.php',
     'my_tickets.php',

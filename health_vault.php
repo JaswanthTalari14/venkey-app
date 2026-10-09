@@ -278,6 +278,9 @@ include 'includes/header.php';
                 <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;">
                     <?php if ($docs_q && $docs_q->num_rows > 0): ?>
                         <?php while($doc = $docs_q->fetch_assoc()): ?>
+                            <?php 
+                                $doc_ver = register_document_verification($conn, 'medical_document', $doc['id'], $doc['patient_id'], $doc['patient_id'], 'patient', $doc['file_path'] ?? null);
+                            ?>
                             <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 1.25rem; border-radius: 12px;">
                                 <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem;">
                                     <div style="width: 40px; height: 40px; border-radius: 10px; background: rgba(74, 144, 226, 0.15); color: var(--primary-color); display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">
@@ -288,8 +291,18 @@ include 'includes/header.php';
                                         <span style="font-size: 0.75rem; color: var(--secondary-color); font-weight: bold;"><?php echo htmlspecialchars($doc['category']); ?></span>
                                     </div>
                                 </div>
-                                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1rem;">Uploaded: <?php echo date('M d, Y', strtotime($doc['created_at'])); ?></p>
-                                <div style="display: flex; gap: 0.5rem;">
+                                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.6rem;">Uploaded: <?php echo date('M d, Y', strtotime($doc['created_at'])); ?></p>
+                                
+                                <?php if ($doc_ver): ?>
+                                    <div style="margin-bottom: 0.8rem; font-size: 0.75rem; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.25); padding: 0.35rem 0.6rem; border-radius: 6px; display: flex; align-items: center; justify-content: space-between;">
+                                        <span style="color: #10b981;"><i class="fas fa-shield-alt"></i> Verified</span>
+                                        <a href="verify_document.php?vid=<?php echo urlencode($doc_ver['verification_id']); ?>" target="_blank" style="color: #10b981; font-family: monospace;">
+                                            <?php echo htmlspecialchars($doc_ver['verification_id']); ?> <i class="fas fa-external-link-alt" style="font-size: 0.65rem;"></i>
+                                        </a>
+                                    </div>
+                                <?php endif; ?>
+
+                                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
                                     <a href="<?php echo htmlspecialchars($doc['file_path']); ?>" target="_blank" class="btn btn-outline" style="flex: 1; font-size: 0.75rem; text-align: center;">Preview</a>
                                     <a href="<?php echo htmlspecialchars($doc['file_path']); ?>" download class="btn btn-primary" style="flex: 1; font-size: 0.75rem; text-align: center;">Download</a>
                                 </div>

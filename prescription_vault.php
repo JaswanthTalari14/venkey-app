@@ -81,6 +81,9 @@ $prescriptions = $stmt->get_result();
                         $p_id = (int)$p['id'];
                         $items_q = $conn->query("SELECT * FROM prescription_items WHERE prescription_id = $p_id");
                     ?>
+                    <?php
+                        $ver_info = register_document_verification($conn, 'prescription', $p['id'], $p['patient_id'], $p['doctor_id'], 'doctor', $p['file_path'] ?? null);
+                    ?>
                     <div class="feature-card glass-panel" style="padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between;">
                         <div>
                             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.8rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.8rem;">
@@ -92,6 +95,16 @@ $prescriptions = $stmt->get_result();
                                     <i class="fas fa-calendar-alt"></i> <?php echo date('M d, Y', strtotime($p['consultation_date'])); ?>
                                 </span>
                             </div>
+
+                            <!-- Document Authenticity Badge -->
+                            <?php if ($ver_info): ?>
+                                <div style="margin-bottom: 0.8rem; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); padding: 0.4rem 0.8rem; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.8rem; color: #10b981;">
+                                    <span><i class="fas fa-shield-alt"></i> <strong>Verified Authentic</strong></span>
+                                    <a href="verify_document.php?vid=<?php echo urlencode($ver_info['verification_id']); ?>" target="_blank" style="color: #10b981; text-decoration: underline; font-family: monospace; font-size: 0.78rem;">
+                                        <?php echo htmlspecialchars($ver_info['verification_id']); ?> <i class="fas fa-external-link-alt" style="font-size: 0.7rem;"></i>
+                                    </a>
+                                </div>
+                            <?php endif; ?>
 
                             <?php if (!empty($p['notes'])): ?>
                                 <p style="font-size: 0.88rem; color: var(--text-primary); margin-bottom: 0.8rem; line-height: 1.4;">
@@ -113,13 +126,18 @@ $prescriptions = $stmt->get_result();
                             <?php endif; ?>
                         </div>
 
-                        <div style="display: flex; gap: 0.6rem; margin-top: 1rem; pt: 0.8rem; border-top: 1px solid var(--glass-border);">
+                        <div style="display: flex; gap: 0.6rem; margin-top: 1rem; pt: 0.8rem; border-top: 1px solid var(--glass-border); flex-wrap: wrap;">
                             <?php if (!empty($p['file_path'])): ?>
-                                <a href="view_document.php?type=prescription&file=<?php echo urlencode(basename($p['file_path'])); ?>" target="_blank" class="btn btn-primary" style="flex: 1; font-size: 0.85rem; text-align: center;">
+                                <a href="view_document.php?type=prescription&file=<?php echo urlencode(basename($p['file_path'])); ?>" target="_blank" class="btn btn-primary" style="flex: 1; font-size: 0.85rem; text-align: center; min-width: 100px;">
                                     <i class="fas fa-eye"></i> View File
                                 </a>
                             <?php endif; ?>
-                            <a href="medicines.php" class="btn btn-outline" style="flex: 1; font-size: 0.85rem; text-align: center;">
+                            <?php if ($ver_info): ?>
+                                <a href="verify_document.php?vid=<?php echo urlencode($ver_info['verification_id']); ?>" target="_blank" class="btn btn-outline" style="font-size: 0.85rem; text-align: center; color: #10b981; border-color: rgba(16, 185, 129, 0.4);" title="Verify SHA-256 Authenticity">
+                                    <i class="fas fa-shield-alt"></i> Verify
+                                </a>
+                            <?php endif; ?>
+                            <a href="medicines.php" class="btn btn-outline" style="flex: 1; font-size: 0.85rem; text-align: center; min-width: 100px;">
                                 <i class="fas fa-shopping-cart"></i> Order Meds
                             </a>
                         </div>
