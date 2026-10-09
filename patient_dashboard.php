@@ -77,7 +77,9 @@ $my_orders = $conn->query("
                 <a href="guidelines.php" class="btn" style="background: #ffffff; color: #047857; font-weight: 700; font-size: 0.82rem; padding: 0.45rem 0.9rem; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.15); flex-shrink: 0;">
                     <span>View Guide</span>
                     <i class="fas fa-arrow-right"></i>
+                </a>
             </div>
+        </div>
 
         <h2>Welcome back, <?php echo htmlspecialchars($_SESSION['name']); ?>!</h2>
         <p style="color: var(--text-secondary); margin-bottom: 2rem;">Manage your health, appointments, and secure consultations.</p>
