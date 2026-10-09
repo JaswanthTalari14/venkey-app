@@ -55,8 +55,13 @@ include 'includes/header.php';
             </div>
         </div>
 
-        <!-- Navigation Tabs -->
-        <div style="display: flex; gap: 0.5rem; margin-bottom: 2rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.5rem; overflow-x: auto; scrollbar-width: none;">
+        <!-- Navigation Tabs (Mobile Only Switcher) -->
+        <style>
+            @media (min-width: 992px) {
+                .vault-subtabs-mobile { display: none !important; }
+            }
+        </style>
+        <div class="vault-subtabs-mobile" style="display: flex; gap: 0.5rem; margin-bottom: 2rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.5rem; overflow-x: auto; scrollbar-width: none;">
             <a href="health_vault.php?tab=overview" class="btn <?php echo $active_tab === 'overview' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.85rem; border-radius: 20px; white-space: nowrap;"><i class="fas fa-tachometer-alt"></i> Overview</a>
             <a href="health_vault.php?tab=timeline" class="btn <?php echo $active_tab === 'timeline' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.85rem; border-radius: 20px; white-space: nowrap;"><i class="fas fa-stream"></i> Timeline</a>
             <a href="health_vault.php?tab=documents" class="btn <?php echo $active_tab === 'documents' ? 'btn-primary' : 'btn-outline'; ?>" style="font-size: 0.85rem; border-radius: 20px; white-space: nowrap;"><i class="fas fa-folder"></i> Documents</a>
@@ -448,74 +453,435 @@ include 'includes/header.php';
             </script>
 
         <?php elseif ($active_tab === 'emergency'): ?>
-            <!-- TAB 5: EMERGENCY MEDICAL CARD -->
+            <!-- TAB 5: ADVANCED EMERGENCY INFORMATION CARD & ACCESS SYSTEM -->
             <?php
             $emg_q = $conn->query("SELECT * FROM emergency_cards WHERE user_id = $patient_id");
             $emg_data = ($emg_q && $emg_q->num_rows > 0) ? $emg_q->fetch_assoc() : null;
-            $public_fields = $emg_data ? json_decode($emg_data['public_fields_json'], true) : ['name', 'blood_group', 'emergency_contact'];
+            
+            $completion_status = $emg_data ? ($emg_data['completion_status'] ?? 'information_available') : 'not_created';
+            $last_reviewed = $emg_data ? ($emg_data['last_reviewed_at'] ?? $emg_data['updated_at']) : null;
+            $needs_review = false;
+            if ($last_reviewed && (time() - strtotime($last_reviewed) > 180 * 86400)) {
+                $needs_review = true;
+                $completion_status = 'ready_for_review';
+            }
+
+            $public_fields = $emg_data ? json_decode($emg_data['public_fields_json'], true) : ['name', 'blood_group', 'allergies', 'emergency_contact', 'conditions', 'medications'];
             if (!is_array($public_fields)) $public_fields = [];
+            
             $qr_token = $emg_data['qr_token'] ?? md5('EMG_' . $patient_id);
+            $is_qr_enabled = isset($emg_data['is_qr_enabled']) ? (int)$emg_data['is_qr_enabled'] : 1;
             $emg_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . '/emergency_view.php?qr=' . $qr_token;
+
+            $allergies_arr = [];
+            if ($emg_data && !empty($emg_data['allergies_json'])) {
+                $decoded = json_decode($emg_data['allergies_json'], true);
+                if (is_array($decoded)) $allergies_arr = $decoded;
+            }
+            if (empty($allergies_arr) && !empty($patient_data['allergies']) && !stristr($patient_data['allergies'], 'No known')) {
+                $items = array_map('trim', explode(',', $patient_data['allergies']));
+                foreach ($items as $it) {
+                    if (!empty($it)) $allergies_arr[] = ['allergy' => $it, 'severity' => 'Unspecified', 'reaction' => ''];
+                }
+            }
             ?>
 
-            <div class="glass-panel" style="padding: 1.5rem; margin-bottom: 2rem;">
-                <h3 style="margin-top: 0;"><i class="fas fa-id-card" style="color: #ff4757;"></i> Emergency Medical Card Configuration</h3>
-                <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Select exactly which medical details are publicly accessible when your Emergency QR is scanned.</p>
-
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
+            <!-- Card Overview Header Panel -->
+            <div class="glass-panel" style="padding: 1.8rem; margin-bottom: 2rem; border-left: 5px solid #ff4757; border-radius: 20px; box-shadow: 0 10px 30px rgba(255, 71, 87, 0.15);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
                     <div>
-                        <h4 style="color: var(--secondary-color); margin-bottom: 1rem;">Public Field Visibility Controls</h4>
-                        <form id="emgCardForm">
-                            <label style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.8rem; cursor: pointer; color: var(--text-primary);">
-                                <input type="checkbox" name="public_fields[]" value="name" <?php echo in_array('name', $public_fields) ? 'checked' : ''; ?>>
-                                <span>Patient Full Name</span>
-                            </label>
-                            <label style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.8rem; cursor: pointer; color: var(--text-primary);">
-                                <input type="checkbox" name="public_fields[]" value="blood_group" <?php echo in_array('blood_group', $public_fields) ? 'checked' : ''; ?>>
-                                <span>Blood Group (<?php echo htmlspecialchars($patient_data['blood_group'] ?: 'Not set'); ?>)</span>
-                            </label>
-                            <label style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.8rem; cursor: pointer; color: var(--text-primary);">
-                                <input type="checkbox" name="public_fields[]" value="allergies" <?php echo in_array('allergies', $public_fields) ? 'checked' : ''; ?>>
-                                <span>Known Allergies (<?php echo htmlspecialchars($patient_data['allergies'] ?: 'None listed'); ?>)</span>
-                            </label>
-                            <label style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.8rem; cursor: pointer; color: var(--text-primary);">
-                                <input type="checkbox" name="public_fields[]" value="emergency_contact" <?php echo in_array('emergency_contact', $public_fields) ? 'checked' : ''; ?>>
-                                <span>Emergency Contact Number</span>
-                            </label>
-                            <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Save Card Preferences</button>
-                        </form>
+                        <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.5rem;">
+                            <div style="width: 45px; height: 45px; border-radius: 50%; background: rgba(255, 71, 87, 0.15); color: #ff4757; display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">
+                                <i class="fas fa-heartbeat"></i>
+                            </div>
+                            <div>
+                                <h3 style="margin: 0; font-size: 1.4rem; color: var(--text-primary);">EMERGENCY MEDICAL INFORMATION CARD</h3>
+                                <p style="margin: 0.2rem 0 0; color: var(--text-secondary); font-size: 0.85rem;">Patient Identity & Rapid Response Health Summary</p>
+                            </div>
+                        </div>
+
+                        <!-- Card Completion Badge -->
+                        <div style="margin-top: 0.8rem; display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
+                            <?php if ($completion_status === 'information_available'): ?>
+                                <span style="background: rgba(46, 213, 115, 0.15); color: #2ed573; border: 1.5px solid #2ed573; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; font-weight: 800; display: inline-flex; align-items: center; gap: 0.4rem;">
+                                    <i class="fas fa-check-circle"></i> Information Available
+                                </span>
+                            <?php elseif ($completion_status === 'ready_for_review'): ?>
+                                <span style="background: rgba(255, 165, 2, 0.15); color: #ffa502; border: 1.5px solid #ffa502; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; font-weight: 800; display: inline-flex; align-items: center; gap: 0.4rem;">
+                                    <i class="fas fa-history"></i> Ready for Periodic Review
+                                </span>
+                            <?php elseif ($completion_status === 'incomplete'): ?>
+                                <span style="background: rgba(236, 204, 104, 0.15); color: #eccc68; border: 1.5px solid #eccc68; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; font-weight: 800; display: inline-flex; align-items: center; gap: 0.4rem;">
+                                    <i class="fas fa-exclamation-triangle"></i> Incomplete Information
+                                </span>
+                            <?php else: ?>
+                                <span style="background: rgba(255, 71, 87, 0.15); color: #ff4757; border: 1.5px solid #ff4757; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; font-weight: 800; display: inline-flex; align-items: center; gap: 0.4rem;">
+                                    <i class="fas fa-plus-circle"></i> Not Created Yet
+                                </span>
+                            <?php endif; ?>
+
+                            <?php if ($last_reviewed): ?>
+                                <span style="font-size: 0.8rem; color: var(--text-secondary);">
+                                    <i class="fas fa-clock"></i> Last Updated: <?php echo date('M d, Y', strtotime($last_reviewed)); ?>
+                                </span>
+                            <?php endif; ?>
+                        </div>
+
+                        <?php if ($needs_review): ?>
+                            <div style="background: rgba(255, 165, 2, 0.1); border-left: 3px solid #ffa502; padding: 0.6rem 0.9rem; border-radius: 6px; margin-top: 0.8rem; font-size: 0.82rem; color: #ffa502;">
+                                <i class="fas fa-bell"></i> <strong>Neutral Reminder:</strong> Your Emergency Card has not been reviewed recently. Please verify your emergency contact numbers and medication details.
+                            </div>
+                        <?php endif; ?>
                     </div>
 
-                    <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 1.5rem; border-radius: 16px; text-align: center;">
-                        <h4 style="margin-top: 0; color: var(--text-primary);"><i class="fas fa-qrcode"></i> Your Secure Emergency QR</h4>
-                        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">Scan this QR code in emergencies to reveal authorized information.</p>
-
-                        <div style="background: #fff; padding: 1rem; border-radius: 12px; display: inline-block; margin-bottom: 1rem;">
-                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=<?php echo urlencode($emg_url); ?>" alt="Emergency QR Code" style="width: 180px; height: 180px; display: block;">
-                        </div>
-
-                        <div>
-                            <a href="emergency_view.php?qr=<?php echo $qr_token; ?>" target="_blank" class="btn btn-outline" style="font-size: 0.8rem;"><i class="fas fa-external-link-alt"></i> Test QR View Page</a>
-                        </div>
+                    <!-- Quick Action Buttons -->
+                    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                        <a href="emergency_quick_view.php" class="btn btn-primary" style="font-size: 0.9rem; background: linear-gradient(135deg, #ff4757, #ff6b81); border: none; font-weight: 800; box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);">
+                            <i class="fas fa-bolt"></i> Emergency Quick View
+                        </a>
+                        <a href="download_emergency_card.php" target="_blank" class="btn btn-outline" style="font-size: 0.9rem; color: #2ed573; border-color: #2ed573;">
+                            <i class="fas fa-file-pdf"></i> Download PDF
+                        </a>
+                        <?php if ($emg_data): ?>
+                            <button onclick="confirmDeleteCard()" class="btn btn-outline" style="font-size: 0.85rem; color: #ff4757; border-color: rgba(255, 71, 87, 0.4);">
+                                <i class="fas fa-trash-alt"></i> Delete Card
+                            </button>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
 
+            <!-- Smart Form & Configuration Container -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 2rem;">
+                
+                <!-- Left: 6-Step Smart Form -->
+                <div class="glass-panel" style="padding: 2rem;">
+                    <h4 style="margin-top: 0; color: var(--text-primary); border-bottom: 1px solid var(--glass-border); padding-bottom: 0.8rem; margin-bottom: 1.5rem;">
+                        <i class="fas fa-user-edit" style="color: var(--primary-color);"></i> Maintain Emergency Card Details
+                    </h4>
+
+                    <form id="smartEmergencyForm">
+                        <input type="hidden" name="action" value="save_emergency_info">
+
+                        <!-- SECTION 1: Emergency Contacts -->
+                        <div style="margin-bottom: 1.8rem; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 1.25rem; border-radius: 14px;">
+                            <h5 style="margin-top: 0; color: #2ed573; font-size: 0.95rem; font-weight: 800;"><i class="fas fa-phone-alt"></i> 1. Emergency Contact Details</h5>
+                            
+                            <!-- Primary Contact -->
+                            <div style="margin-bottom: 1rem;">
+                                <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.3rem;">Primary Contact Full Name *</label>
+                                <input type="text" name="primary_contact_name" class="form-control" value="<?php echo htmlspecialchars($emg_data['primary_contact_name'] ?? $patient_data['name']); ?>" required placeholder="e.g. Jane Doe">
+                            </div>
+
+                            <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem;">
+                                <div style="flex: 1; min-width: 140px;">
+                                    <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.3rem;">Relationship *</label>
+                                    <input type="text" name="primary_contact_rel" class="form-control" value="<?php echo htmlspecialchars($emg_data['primary_contact_rel'] ?? 'Spouse/Family'); ?>" placeholder="e.g. Spouse, Parent, Brother">
+                                </div>
+                                <div style="flex: 1; min-width: 160px;">
+                                    <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.3rem;">Phone Number (Validated) *</label>
+                                    <input type="tel" id="primary_contact_phone" name="primary_contact_phone" class="form-control" value="<?php echo htmlspecialchars($emg_data['primary_contact_phone'] ?? $patient_data['emergency_contact'] ?? $patient_data['phone']); ?>" required placeholder="e.g. 9876543210">
+                                </div>
+                            </div>
+
+                            <!-- Secondary Contact -->
+                            <div style="border-top: 1px dashed var(--glass-border); padding-top: 1rem; margin-top: 0.5rem;">
+                                <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">Secondary Contact (Optional)</label>
+                                <input type="text" name="secondary_contact_name" class="form-control" value="<?php echo htmlspecialchars($emg_data['secondary_contact_name'] ?? ''); ?>" placeholder="e.g. John Smith (Secondary)">
+                                
+                                <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.8rem;">
+                                    <div style="flex: 1; min-width: 140px;">
+                                        <input type="text" name="secondary_contact_rel" class="form-control" value="<?php echo htmlspecialchars($emg_data['secondary_contact_rel'] ?? ''); ?>" placeholder="Relationship e.g. Friend, Doctor">
+                                    </div>
+                                    <div style="flex: 1; min-width: 160px;">
+                                        <input type="tel" id="secondary_contact_phone" name="secondary_contact_phone" class="form-control" value="<?php echo htmlspecialchars($emg_data['secondary_contact_phone'] ?? ''); ?>" placeholder="Secondary Phone Number">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SECTION 2: Known Allergies & Severity -->
+                        <div style="margin-bottom: 1.8rem; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 1.25rem; border-radius: 14px; border-left: 4px solid #ff4757;">
+                            <h5 style="margin-top: 0; color: #ff4757; font-size: 0.95rem; font-weight: 800;"><i class="fas fa-allergies"></i> 2. Known Allergies & Severity</h5>
+                            
+                            <label style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem; cursor: pointer; color: var(--text-primary); font-size: 0.9rem;">
+                                <input type="checkbox" id="no_allergies_cb" name="no_allergies_confirmed" value="1" <?php echo ($emg_data['no_allergies_confirmed'] ?? 0) ? 'checked' : ''; ?> onchange="toggleAllergiesList(this)">
+                                <span style="font-weight: 700; color: #2ed573;">Explicitly Confirm: "I have NO KNOWN medical allergies"</span>
+                            </label>
+
+                            <div id="allergiesDynamicContainer" style="<?php echo ($emg_data['no_allergies_confirmed'] ?? 0) ? 'display:none;' : ''; ?>">
+                                <div id="allergiesList">
+                                    <?php if (!empty($allergies_arr)): ?>
+                                        <?php foreach ($allergies_arr as $idx => $alg): ?>
+                                            <div class="allergy-row" style="display: flex; gap: 0.5rem; margin-bottom: 0.6rem; align-items: center; flex-wrap: wrap;">
+                                                <input type="text" name="allergy_name[]" class="form-control" style="flex: 2; min-width: 130px;" value="<?php echo htmlspecialchars($alg['allergy'] ?? ''); ?>" placeholder="Allergy e.g. Penicillin">
+                                                <select name="allergy_severity[]" class="form-control" style="flex: 1; min-width: 110px; background: #1e293b; color: #fff;">
+                                                    <option value="Mild" <?php echo ($alg['severity'] ?? '') === 'Mild' ? 'selected' : ''; ?>>Mild</option>
+                                                    <option value="Moderate" <?php echo ($alg['severity'] ?? '') === 'Moderate' ? 'selected' : ''; ?>>Moderate</option>
+                                                    <option value="Severe" <?php echo ($alg['severity'] ?? '') === 'Severe' ? 'selected' : ''; ?>>Severe</option>
+                                                    <option value="Life-Threatening" <?php echo ($alg['severity'] ?? '') === 'Life-Threatening' ? 'selected' : ''; ?>>Life-Threatening</option>
+                                                    <option value="Unspecified" <?php echo ($alg['severity'] ?? '') === 'Unspecified' ? 'selected' : ''; ?>>Unspecified</option>
+                                                </select>
+                                                <button type="button" onclick="this.parentElement.remove()" class="btn btn-outline" style="color: #ff4757; border-color: #ff4757; padding: 0.4rem 0.7rem;"><i class="fas fa-times"></i></button>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </div>
+                                <button type="button" onclick="addAllergyRow()" class="btn btn-outline" style="font-size: 0.8rem; margin-top: 0.4rem;"><i class="fas fa-plus"></i> Add Allergy Entry</button>
+                            </div>
+                        </div>
+
+                        <!-- SECTION 3: Medical Conditions & Devices -->
+                        <div style="margin-bottom: 1.8rem; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 1.25rem; border-radius: 14px;">
+                            <h5 style="margin-top: 0; color: #4a90e2; font-size: 0.95rem; font-weight: 800;"><i class="fas fa-stethoscope"></i> 3. Medical Conditions & Devices</h5>
+                            
+                            <div style="margin-bottom: 1rem;">
+                                <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.3rem;">Important Medical Conditions</label>
+                                <textarea name="conditions_text" class="form-control" rows="2" placeholder="e.g. Asthma, Type 1 Diabetes, Hypertension, Epilepsy"><?php echo htmlspecialchars($emg_data['conditions_text'] ?? ''); ?></textarea>
+                            </div>
+
+                            <div>
+                                <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.3rem;">Medical Devices / Implants</label>
+                                <input type="text" name="medical_devices" class="form-control" value="<?php echo htmlspecialchars($emg_data['medical_devices'] ?? ''); ?>" placeholder="e.g. Cardiac Pacemaker, Hearing Aid, Insulin Pump">
+                            </div>
+                        </div>
+
+                        <!-- SECTION 4: Current Medications -->
+                        <div style="margin-bottom: 1.8rem; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 1.25rem; border-radius: 14px;">
+                            <h5 style="margin-top: 0; color: #50e3c2; font-size: 0.95rem; font-weight: 800;"><i class="fas fa-pills"></i> 4. Current Medications</h5>
+                            <textarea name="medications_text" class="form-control" rows="2" placeholder="e.g. Metformin 500mg daily, Albuterol Inhaler as needed"><?php echo htmlspecialchars($emg_data['medications_text'] ?? ''); ?></textarea>
+                            <small style="color: var(--text-secondary); display: block; margin-top: 0.35rem;"><i class="fas fa-info-circle"></i> Only enter medications explicitly confirmed by you.</small>
+                        </div>
+
+                        <!-- SECTION 5: Blood Group & Emergency Instructions -->
+                        <div style="margin-bottom: 1.8rem; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 1.25rem; border-radius: 14px;">
+                            <h5 style="margin-top: 0; color: #eccc68; font-size: 0.95rem; font-weight: 800;"><i class="fas fa-notes-medical"></i> 5. Identity & Special Emergency Instructions</h5>
+                            
+                            <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                                <div style="flex: 1; min-width: 130px;">
+                                    <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.3rem;">Blood Group</label>
+                                    <select name="blood_group" class="form-control" style="background: #1e293b; color: #fff;">
+                                        <option value="">Select Blood Group</option>
+                                        <?php 
+                                            $b_groups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+                                            $curr_b = $emg_data['blood_group'] ?? $patient_data['blood_group'] ?? '';
+                                            foreach ($b_groups as $bg) {
+                                                $sel = ($curr_b === $bg) ? 'selected' : '';
+                                                echo "<option value='$bg' $sel>$bg</option>";
+                                            }
+                                        ?>
+                                    </select>
+                                </div>
+                                <div style="flex: 1; min-width: 140px;">
+                                    <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.3rem;">Date of Birth</label>
+                                    <input type="date" name="date_of_birth" class="form-control" value="<?php echo htmlspecialchars($emg_data['date_of_birth'] ?? ''); ?>">
+                                </div>
+                            </div>
+
+                            <div>
+                                <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.3rem;">Special Emergency Instructions</label>
+                                <textarea name="emergency_instructions" class="form-control" rows="2" placeholder="e.g. In case of seizure, lay patient on left side. Do not administer aspirin."><?php echo htmlspecialchars($emg_data['emergency_instructions'] ?? ''); ?></textarea>
+                            </div>
+                        </div>
+
+                        <!-- SECTION 6: Privacy & Public QR Field Sharing -->
+                        <div style="margin-bottom: 1.8rem; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 1.25rem; border-radius: 14px;">
+                            <h5 style="margin-top: 0; color: #a29bfe; font-size: 0.95rem; font-weight: 800;"><i class="fas fa-lock"></i> 6. Sharing & Public Field Visibility</h5>
+                            <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.8rem;">Select which fields are revealed when your Emergency QR code is scanned:</p>
+
+                            <label style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; cursor: pointer; color: var(--text-primary); font-size: 0.88rem;">
+                                <input type="checkbox" name="public_fields[]" value="name" <?php echo in_array('name', $public_fields) ? 'checked' : ''; ?>>
+                                <span>Patient Full Name</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; cursor: pointer; color: var(--text-primary); font-size: 0.88rem;">
+                                <input type="checkbox" name="public_fields[]" value="blood_group" <?php echo in_array('blood_group', $public_fields) ? 'checked' : ''; ?>>
+                                <span>Blood Group</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; cursor: pointer; color: var(--text-primary); font-size: 0.88rem;">
+                                <input type="checkbox" name="public_fields[]" value="allergies" <?php echo in_array('allergies', $public_fields) ? 'checked' : ''; ?>>
+                                <span>Known Allergies & Severities</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; cursor: pointer; color: var(--text-primary); font-size: 0.88rem;">
+                                <input type="checkbox" name="public_fields[]" value="emergency_contact" <?php echo in_array('emergency_contact', $public_fields) ? 'checked' : ''; ?>>
+                                <span>Emergency Contacts & Call Buttons</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; cursor: pointer; color: var(--text-primary); font-size: 0.88rem;">
+                                <input type="checkbox" name="public_fields[]" value="conditions" <?php echo in_array('conditions', $public_fields) ? 'checked' : ''; ?>>
+                                <span>Medical Conditions</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; cursor: pointer; color: var(--text-primary); font-size: 0.88rem;">
+                                <input type="checkbox" name="public_fields[]" value="medications" <?php echo in_array('medications', $public_fields) ? 'checked' : ''; ?>>
+                                <span>Current Medications</span>
+                            </label>
+                        </div>
+
+                        <!-- Form Submission -->
+                        <div id="formFeedback" style="display: none; margin-bottom: 1rem; padding: 0.8rem; border-radius: 8px;"></div>
+                        <button type="submit" id="saveCardBtn" class="btn btn-primary" style="width: 100%; padding: 0.9rem; font-size: 1rem; font-weight: 800; border-radius: 12px;">
+                            <i class="fas fa-save"></i> Save Emergency Information Card
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Right: Secure QR Access Controls & Live Preview -->
+                <div>
+                    <div class="glass-panel" style="padding: 1.8rem; text-align: center; margin-bottom: 1.5rem; border-radius: 20px;">
+                        <h4 style="margin-top: 0; color: var(--text-primary);"><i class="fas fa-qrcode" style="color: #ff4757;"></i> Secure Revocable Emergency QR</h4>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">Scanning this QR code reveals only patient-authorized public details.</p>
+
+                        <div style="background: #fff; padding: 1rem; border-radius: 16px; display: inline-block; margin-bottom: 1.2rem; border: 3px solid #ff4757;">
+                            <img id="emgQrImg" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=<?php echo urlencode($emg_url); ?>" alt="Emergency QR Code" style="width: 180px; height: 180px; display: block;">
+                        </div>
+
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                            <a href="emergency_view.php?qr=<?php echo $qr_token; ?>" target="_blank" class="btn btn-outline" style="font-size: 0.85rem;"><i class="fas fa-external-link-alt"></i> Preview Public QR View</a>
+                            
+                            <button onclick="toggleQrAccess(<?php echo $is_qr_enabled ? 0 : 1; ?>)" class="btn btn-outline" style="font-size: 0.85rem; color: <?php echo $is_qr_enabled ? '#ff4757' : '#2ed573'; ?>; border-color: <?php echo $is_qr_enabled ? '#ff4757' : '#2ed573'; ?>;">
+                                <i class="fas <?php echo $is_qr_enabled ? 'fa-eye-slash' : 'fa-eye'; ?>"></i> <?php echo $is_qr_enabled ? 'Disable Emergency QR Access' : 'Enable Emergency QR Access'; ?>
+                            </button>
+
+                            <button onclick="regenerateQrToken()" class="btn btn-outline" style="font-size: 0.85rem; color: #a29bfe; border-color: #a29bfe;">
+                                <i class="fas fa-sync-alt"></i> Regenerate QR Token (Revoke Old)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Security & Informed Consent Notice -->
+                    <div class="glass-panel" style="padding: 1.25rem; font-size: 0.82rem; color: var(--text-secondary); border-left: 3px solid var(--primary-color); border-radius: 14px;">
+                        <strong style="color: var(--text-primary);"><i class="fas fa-shield-alt" style="color: var(--primary-color);"></i> Privacy & Security Assurance:</strong>
+                        <ul style="margin: 0.5rem 0 0; padding-left: 1.2rem; line-height: 1.5;">
+                            <li>Server-side IDOR protection ensures only you can modify your records.</li>
+                            <li>QR token is unguessable and can be revoked at any time.</li>
+                            <li>No financial details or full medical history are ever exposed publicly.</li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Smart Form Scripts -->
             <script>
-            document.getElementById('emgCardForm').addEventListener('submit', function(e) {
+            let isFormDirty = false;
+
+            document.querySelectorAll('#smartEmergencyForm input, #smartEmergencyForm textarea, #smartEmergencyForm select').forEach(el => {
+                el.addEventListener('change', () => { isFormDirty = true; });
+                el.addEventListener('input', () => { isFormDirty = true; });
+            });
+
+            window.addEventListener('beforeunload', function(e) {
+                if (isFormDirty) {
+                    e.preventDefault();
+                    e.returnValue = '';
+                }
+            });
+
+            function toggleAllergiesList(cb) {
+                document.getElementById('allergiesDynamicContainer').style.display = cb.checked ? 'none' : 'block';
+            }
+
+            function addAllergyRow() {
+                const container = document.getElementById('allergiesList');
+                const row = document.createElement('div');
+                row.className = 'allergy-row';
+                row.style.cssText = 'display: flex; gap: 0.5rem; margin-bottom: 0.6rem; align-items: center; flex-wrap: wrap;';
+                row.innerHTML = `
+                    <input type="text" name="allergy_name[]" class="form-control" style="flex: 2; min-width: 130px;" placeholder="Allergy e.g. Penicillin">
+                    <select name="allergy_severity[]" class="form-control" style="flex: 1; min-width: 110px; background: #1e293b; color: #fff;">
+                        <option value="Mild">Mild</option>
+                        <option value="Moderate">Moderate</option>
+                        <option value="Severe">Severe</option>
+                        <option value="Life-Threatening">Life-Threatening</option>
+                        <option value="Unspecified" selected>Unspecified</option>
+                    </select>
+                    <button type="button" onclick="this.parentElement.remove()" class="btn btn-outline" style="color: #ff4757; border-color: #ff4757; padding: 0.4rem 0.7rem;"><i class="fas fa-times"></i></button>
+                `;
+                container.appendChild(row);
+            }
+
+            document.getElementById('smartEmergencyForm').addEventListener('submit', function(e) {
                 e.preventDefault();
+                const feedback = document.getElementById('formFeedback');
+                feedback.style.display = 'none';
+
+                // Collect dynamic allergies
+                const allergiesArr = [];
+                const names = document.querySelectorAll('input[name="allergy_name[]"]');
+                const sevs = document.querySelectorAll('select[name="allergy_severity[]"]');
+                
+                names.forEach((el, idx) => {
+                    const val = el.value.trim();
+                    if (val) {
+                        allergiesArr.push({
+                            allergy: val,
+                            severity: sevs[idx] ? sevs[idx].value : 'Unspecified',
+                            reaction: ''
+                        });
+                    }
+                });
+
                 const formData = new FormData(this);
-                formData.append('action', 'save_emergency_card');
+                formData.append('allergies_json', JSON.stringify(allergiesArr));
+
+                document.getElementById('saveCardBtn').disabled = true;
+                document.getElementById('saveCardBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving Verified Information...';
 
                 fetch('api_patient_features.php', { method: 'POST', body: formData })
                 .then(r => r.json())
                 .then(res => {
+                    document.getElementById('saveCardBtn').disabled = false;
+                    document.getElementById('saveCardBtn').innerHTML = '<i class="fas fa-save"></i> Save Emergency Information Card';
+                    
+                    feedback.style.display = 'block';
                     if (res.success) {
-                        alert(res.message);
-                        location.reload();
+                        isFormDirty = false;
+                        feedback.style.background = 'rgba(46, 213, 115, 0.15)';
+                        feedback.style.color = '#2ed573';
+                        feedback.style.border = '1px solid #2ed573';
+                        feedback.innerHTML = '<i class="fas fa-check-circle"></i> ' + res.message;
+                        setTimeout(() => location.reload(), 1200);
+                    } else {
+                        feedback.style.background = 'rgba(255, 71, 87, 0.15)';
+                        feedback.style.color = '#ff4757';
+                        feedback.style.border = '1px solid #ff4757';
+                        feedback.innerHTML = '<i class="fas fa-exclamation-circle"></i> ' + res.message;
                     }
+                })
+                .catch(err => {
+                    document.getElementById('saveCardBtn').disabled = false;
+                    document.getElementById('saveCardBtn').innerHTML = '<i class="fas fa-save"></i> Save Emergency Information Card';
+                    feedback.style.display = 'block';
+                    feedback.style.background = 'rgba(255, 71, 87, 0.15)';
+                    feedback.style.color = '#ff4757';
+                    feedback.innerHTML = '<i class="fas fa-exclamation-circle"></i> Server communication error. Please try again.';
                 });
             });
+
+            function toggleQrAccess(newStatus) {
+                const fd = new FormData();
+                fd.append('action', 'toggle_qr_access');
+                fd.append('is_qr_enabled', newStatus);
+                fetch('api_patient_features.php', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(res => { if(res.success) location.reload(); });
+            }
+
+            function regenerateQrToken() {
+                if (!confirm("Are you sure you want to regenerate your Emergency QR token? Any printed or shared QR code will no longer grant access.")) return;
+                const fd = new FormData();
+                fd.append('action', 'regenerate_qr_token');
+                fetch('api_patient_features.php', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(res => { if(res.success) location.reload(); });
+            }
+
+            function confirmDeleteCard() {
+                if (!confirm("CAUTION: Are you sure you want to delete your Emergency Information Card? This action cannot be undone.")) return;
+                const fd = new FormData();
+                fd.append('action', 'delete_emergency_card');
+                fetch('api_patient_features.php', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(res => { if(res.success) location.reload(); });
+            }
             </script>
 
         <?php elseif ($active_tab === 'trends'): ?>

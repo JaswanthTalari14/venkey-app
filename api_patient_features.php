@@ -135,29 +135,173 @@ if ($action === 'delete_family_member') {
     exit;
 }
 
-// 7. Emergency Medical Card Config & QR Generation (Feature Group 4)
-if ($action === 'save_emergency_card') {
-    $fields = $_POST['public_fields'] ?? [];
+// 7. Advanced Emergency Medical Card & Access System (Feature Group 4)
+if ($action === 'save_emergency_card' || $action === 'save_emergency_info') {
+    $primary_name = trim($_POST['primary_contact_name'] ?? '');
+    $primary_rel = trim($_POST['primary_contact_rel'] ?? '');
+    $primary_phone = trim($_POST['primary_contact_phone'] ?? '');
+
+    $secondary_name = trim($_POST['secondary_contact_name'] ?? '');
+    $secondary_rel = trim($_POST['secondary_contact_rel'] ?? '');
+    $secondary_phone = trim($_POST['secondary_contact_phone'] ?? '');
+
+    $blood_group = trim($_POST['blood_group'] ?? '');
+    $dob = trim($_POST['date_of_birth'] ?? '');
+
+    $no_allergies_confirmed = isset($_POST['no_allergies_confirmed']) ? (int)$_POST['no_allergies_confirmed'] : 0;
+    $allergies_raw = $_POST['allergies_json'] ?? $_POST['allergies'] ?? '';
+
+    $allergies_arr = [];
+    if (is_array($allergies_raw)) {
+        $allergies_arr = $allergies_raw;
+    } elseif (!empty($allergies_raw)) {
+        $decoded = json_decode($allergies_raw, true);
+        if (is_array($decoded)) {
+            $allergies_arr = $decoded;
+        } else {
+            // Plain text conversion
+            $items = array_map('trim', explode(',', $allergies_raw));
+            foreach ($items as $it) {
+                if (!empty($it)) {
+                    $allergies_arr[] = ['allergy' => $it, 'severity' => 'Unspecified', 'reaction' => ''];
+                }
+            }
+        }
+    }
+    $allergies_json = json_encode($allergies_arr);
+
+    $conditions = trim($_POST['conditions_text'] ?? '');
+    $medications = trim($_POST['medications_text'] ?? '');
+    $medical_devices = trim($_POST['medical_devices'] ?? '');
+    $emergency_instructions = trim($_POST['emergency_instructions'] ?? '');
+
+    $fields = $_POST['public_fields'] ?? ['name', 'blood_group', 'allergies', 'emergency_contact', 'conditions', 'medications'];
     if (!is_array($fields)) $fields = [];
-
     $fields_json = json_encode($fields);
-    $qr_token = md5('EMG_' . $user_id . '_' . time() . '_' . rand(1000, 9999));
 
-    // Check existing
+    // Validate phone number if provided
+    if (!empty($primary_phone)) {
+        $clean_p1 = preg_replace('/[^0-9]/', '', $primary_phone);
+        if (strlen($clean_p1) < 7 || strlen($clean_p1) > 15) {
+            echo json_encode(['success' => false, 'message' => 'Please provide a valid primary emergency phone number (7-15 digits).']);
+            exit;
+        }
+    }
+
+    if (!empty($secondary_phone)) {
+        $clean_p2 = preg_replace('/[^0-9]/', '', $secondary_phone);
+        if (strlen($clean_p2) < 7 || strlen($clean_p2) > 15) {
+            echo json_encode(['success' => false, 'message' => 'Please provide a valid secondary emergency phone number (7-15 digits).']);
+            exit;
+        }
+
+        if (!empty($primary_phone) && preg_replace('/[^0-9]/', '', $primary_phone) === $clean_p2) {
+            echo json_encode(['success' => false, 'message' => 'Primary and secondary emergency contact phone numbers cannot be identical.']);
+            exit;
+        }
+    }
+
+    // Determine completion status
+    $completion_status = 'incomplete';
+    if (!empty($primary_name) && !empty($primary_phone)) {
+        if (!empty($blood_group) && (!empty($allergies_arr) || $no_allergies_confirmed === 1)) {
+            $completion_status = 'information_available';
+        } else {
+            $completion_status = 'incomplete';
+        }
+    }
+
+    $now = date('Y-m-d H:i:s');
+
+    // Check existing record
     $chk = $conn->query("SELECT id, qr_token FROM emergency_cards WHERE user_id = $user_id");
     if ($chk && $chk->num_rows > 0) {
         $existing = $chk->fetch_assoc();
-        $qr_token = $existing['qr_token']; // retain persistent token
-        $stmt = $conn->prepare("UPDATE emergency_cards SET public_fields_json = ? WHERE user_id = ?");
-        $stmt->bind_param("si", $fields_json, $user_id);
+        $qr_token = $existing['qr_token'];
+        $stmt = $conn->prepare("UPDATE emergency_cards SET 
+            primary_contact_name = ?, primary_contact_rel = ?, primary_contact_phone = ?,
+            secondary_contact_name = ?, secondary_contact_rel = ?, secondary_contact_phone = ?,
+            allergies_json = ?, no_allergies_confirmed = ?, conditions_text = ?, medications_text = ?,
+            medical_devices = ?, emergency_instructions = ?, blood_group = ?, date_of_birth = ?,
+            public_fields_json = ?, completion_status = ?, last_reviewed_at = ?
+            WHERE user_id = ?");
+        $dob_param = !empty($dob) ? $dob : null;
+        $stmt->bind_param(
+            "sssssssssssssssssi",
+            $primary_name, $primary_rel, $primary_phone,
+            $secondary_name, $secondary_rel, $secondary_phone,
+            $allergies_json, $no_allergies_confirmed, $conditions, $medications,
+            $medical_devices, $emergency_instructions, $blood_group, $dob_param,
+            $fields_json, $completion_status, $now, $user_id
+        );
         $stmt->execute();
     } else {
-        $stmt = $conn->prepare("INSERT INTO emergency_cards (user_id, public_fields_json, qr_token) VALUES (?, ?, ?)");
-        $stmt->bind_param("iss", $user_id, $fields_json, $qr_token);
+        $qr_token = bin2hex(random_bytes(16));
+        $dob_param = !empty($dob) ? $dob : null;
+        $stmt = $conn->prepare("INSERT INTO emergency_cards 
+            (user_id, qr_token, primary_contact_name, primary_contact_rel, primary_contact_phone,
+            secondary_contact_name, secondary_contact_rel, secondary_contact_phone,
+            allergies_json, no_allergies_confirmed, conditions_text, medications_text,
+            medical_devices, emergency_instructions, blood_group, date_of_birth,
+            public_fields_json, completion_status, last_reviewed_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param(
+            "issssssssssssssssss",
+            $user_id, $qr_token, $primary_name, $primary_rel, $primary_phone,
+            $secondary_name, $secondary_rel, $secondary_phone,
+            $allergies_json, $no_allergies_confirmed, $conditions, $medications,
+            $medical_devices, $emergency_instructions, $blood_group, $dob_param,
+            $fields_json, $completion_status, $now
+        );
         $stmt->execute();
     }
 
-    echo json_encode(['success' => true, 'qr_token' => $qr_token, 'message' => 'Emergency Medical Card configuration saved']);
+    // Sync back to users table for global profile backward compatibility
+    $u_update_sql = "UPDATE users SET ";
+    $u_params = [];
+    $u_types = "";
+    if (!empty($blood_group)) {
+        $u_params[] = "blood_group = '" . $conn->real_escape_string($blood_group) . "'";
+    }
+    if (!empty($primary_phone)) {
+        $u_params[] = "emergency_contact = '" . $conn->real_escape_string($primary_phone) . "'";
+    }
+    if ($no_allergies_confirmed) {
+        $u_params[] = "allergies = 'Confirmed: No known allergies'";
+    } elseif (!empty($allergies_arr)) {
+        $alg_names = array_column($allergies_arr, 'allergy');
+        $u_params[] = "allergies = '" . $conn->real_escape_string(implode(', ', $alg_names)) . "'";
+    }
+    if (!empty($u_params)) {
+        $conn->query("UPDATE users SET " . implode(', ', $u_params) . " WHERE id = $user_id");
+    }
+
+    echo json_encode([
+        'success' => true,
+        'qr_token' => $qr_token,
+        'completion_status' => $completion_status,
+        'message' => 'Emergency Medical Information saved and verified successfully.'
+    ]);
+    exit;
+}
+
+if ($action === 'toggle_qr_access') {
+    $status = isset($_POST['is_qr_enabled']) ? (int)$_POST['is_qr_enabled'] : 1;
+    $conn->query("UPDATE emergency_cards SET is_qr_enabled = $status WHERE user_id = $user_id");
+    echo json_encode(['success' => true, 'is_qr_enabled' => $status, 'message' => ($status ? 'Emergency QR access enabled.' : 'Emergency QR access disabled.')]);
+    exit;
+}
+
+if ($action === 'regenerate_qr_token') {
+    $new_token = bin2hex(random_bytes(16));
+    $conn->query("UPDATE emergency_cards SET qr_token = '$new_token' WHERE user_id = $user_id");
+    echo json_encode(['success' => true, 'qr_token' => $new_token, 'message' => 'New Emergency QR token generated. Previous QR codes revoked.']);
+    exit;
+}
+
+if ($action === 'delete_emergency_card') {
+    $conn->query("DELETE FROM emergency_cards WHERE user_id = $user_id");
+    echo json_encode(['success' => true, 'message' => 'Emergency Medical Information Card deleted successfully.']);
     exit;
 }
 

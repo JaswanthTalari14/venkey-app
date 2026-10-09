@@ -1,4 +1,4 @@
-const CACHE_NAME = 'medicalak-pwa-v29';
+const CACHE_NAME = 'medicalak-pwa-v30';
 
 const STATIC_ASSETS = [
     './',
@@ -18,6 +18,9 @@ const STATIC_ASSETS = [
     'admin_audit.php',
     'digital_medical_card.php',
     'download_medical_card.php',
+    'emergency_quick_view.php',
+    'download_emergency_card.php',
+    'emergency_view.php',
     'admin_digital_cards.php',
     'offline.html',
     'css/style.css',

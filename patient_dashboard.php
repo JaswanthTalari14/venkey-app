@@ -43,6 +43,7 @@ $my_orders = $conn->query("
             <li><a href="patient_dashboard.php" class="active"><i class="fas fa-home"></i> Overview</a></li>
             <li><a href="guidelines.php" style="color: #10B981; font-weight: 600;"><i class="fas fa-book-open" style="color: #10B981;"></i> How to Use Guideline</a></li>
             <li><a href="digital_medical_card.php"><i class="fas fa-id-card"></i> Digital Medical Card</a></li>
+            <li><a href="health_vault.php?tab=emergency" style="color: #ff4757; font-weight: 700;"><i class="fas fa-ambulance" style="color: #ff4757;"></i> Emergency Card</a></li>
             <li><a href="health_vault.php"><i class="fas fa-vault"></i> Health Vault</a></li>
             <li><a href="health_journey.php"><i class="fas fa-route"></i> Healthcare Journey</a></li>
             <li><a href="book_consult.php"><i class="fas fa-calendar-check"></i> Consultations</a></li>
@@ -55,7 +56,6 @@ $my_orders = $conn->query("
             <li><a href="refer_earn.php"><i class="fas fa-gift"></i> Refer & Earn</a></li>
             <li><a href="my_wallet.php"><i class="fas fa-wallet"></i> My Wallet</a></li>
             <li><a href="customer_support.php"><i class="fas fa-headset"></i> Customer Support & Tickets</a></li>
-            <li><a href="create_ticket.php"><i class="fas fa-plus-circle"></i> Create Support Ticket</a></li>
             <li><a href="chatbot.php"><i class="fas fa-robot"></i> AI Chatbot</a></li>
             <li><a href="javascript:void(0);" class="pwaInstallBtn"><i class="fas fa-download"></i> Install App</a></li>
         </ul>
@@ -78,6 +78,27 @@ $my_orders = $conn->query("
                     <span>View Guide</span>
                     <i class="fas fa-arrow-right"></i>
                 </a>
+            </div>
+        <!-- Sleek Emergency Information Card Quick Access Banner -->
+        <div style="background: linear-gradient(135deg, #1e0b10 0%, #0f172a 100%); border: 1.5px solid #ff4757; border-radius: 14px; color: #ffffff; padding: 0.85rem 1.25rem; margin-bottom: 1.25rem; box-shadow: 0 6px 20px -3px rgba(255, 71, 87, 0.3); position: relative;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <div style="width: 38px; height: 38px; border-radius: 10px; background: rgba(255, 71, 87, 0.2); color: #ff4757; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0;">
+                        <i class="fas fa-heartbeat"></i>
+                    </div>
+                    <div>
+                        <h4 style="font-size: 1rem; font-weight: 800; margin: 0; color: #ffffff; line-height: 1.2;">Emergency Information Card</h4>
+                        <p style="margin: 0.15rem 0 0 0; font-size: 0.8rem; color: #cbd5e1; line-height: 1.2;">Instant access to emergency contacts, allergies & 1-tap call action</p>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
+                    <a href="emergency_quick_view.php" class="btn" style="background: #ff4757; color: #ffffff; font-weight: 800; font-size: 0.82rem; padding: 0.45rem 0.9rem; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; box-shadow: 0 2px 8px rgba(255,71,87,0.3);">
+                        <i class="fas fa-bolt"></i> Quick View
+                    </a>
+                    <a href="health_vault.php?tab=emergency" class="btn btn-outline" style="font-size: 0.82rem; padding: 0.45rem 0.9rem; border-radius: 8px; color: #ffffff; border-color: rgba(255,255,255,0.3);">
+                        <i class="fas fa-edit"></i> Edit Card
+                    </a>
+                </div>
             </div>
         </div>
 

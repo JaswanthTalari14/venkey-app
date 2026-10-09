@@ -829,6 +829,34 @@ function update_order_status_timestamps($conn, $order_id, $new_status) {
         }
     } catch (Throwable $t) {}
 
+    // Auto-migrate columns for emergency_cards table
+    try {
+        $emg_col_res = @$conn->query("SHOW COLUMNS FROM emergency_cards");
+        if ($emg_col_res) {
+            $emg_cols = [];
+            while ($emg_col_row = $emg_col_res->fetch_assoc()) {
+                $emg_cols[] = strtolower($emg_col_row['Field']);
+            }
+            if (!in_array('primary_contact_name', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN primary_contact_name VARCHAR(100) DEFAULT NULL");
+            if (!in_array('primary_contact_rel', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN primary_contact_rel VARCHAR(50) DEFAULT NULL");
+            if (!in_array('primary_contact_phone', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN primary_contact_phone VARCHAR(20) DEFAULT NULL");
+            if (!in_array('secondary_contact_name', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN secondary_contact_name VARCHAR(100) DEFAULT NULL");
+            if (!in_array('secondary_contact_rel', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN secondary_contact_rel VARCHAR(50) DEFAULT NULL");
+            if (!in_array('secondary_contact_phone', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN secondary_contact_phone VARCHAR(20) DEFAULT NULL");
+            if (!in_array('allergies_json', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN allergies_json TEXT DEFAULT NULL");
+            if (!in_array('no_allergies_confirmed', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN no_allergies_confirmed TINYINT(1) DEFAULT 0");
+            if (!in_array('conditions_text', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN conditions_text TEXT DEFAULT NULL");
+            if (!in_array('medications_text', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN medications_text TEXT DEFAULT NULL");
+            if (!in_array('medical_devices', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN medical_devices TEXT DEFAULT NULL");
+            if (!in_array('emergency_instructions', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN emergency_instructions TEXT DEFAULT NULL");
+            if (!in_array('blood_group', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN blood_group VARCHAR(10) DEFAULT NULL");
+            if (!in_array('date_of_birth', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN date_of_birth DATE DEFAULT NULL");
+            if (!in_array('completion_status', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN completion_status VARCHAR(30) DEFAULT 'incomplete'");
+            if (!in_array('last_reviewed_at', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN last_reviewed_at DATETIME DEFAULT NULL");
+            if (!in_array('is_qr_enabled', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN is_qr_enabled TINYINT(1) DEFAULT 1");
+        }
+    } catch (Throwable $t) {}
+
     // Auto-migrate columns for user_notifications table
     try {
         $un_col_res = @$conn->query("SHOW COLUMNS FROM user_notifications");

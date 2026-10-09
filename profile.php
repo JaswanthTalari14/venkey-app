@@ -218,6 +218,51 @@ $user = $conn->query("SELECT * FROM users WHERE id=$user_id")->fetch_assoc();
                 <span><?php echo date('M Y', strtotime($user['created_at'])); ?></span>
             </div>
         </div>
+
+        <?php if ($user['role'] === 'patient'): ?>
+            <?php
+                $emg_prof_q = $conn->query("SELECT * FROM emergency_cards WHERE user_id = $user_id");
+                $emg_prof_data = ($emg_prof_q && $emg_prof_q->num_rows > 0) ? $emg_prof_q->fetch_assoc() : null;
+                $emg_prof_status = $emg_prof_data ? ($emg_prof_data['completion_status'] ?? 'information_available') : 'not_created';
+                $emg_last_upd = $emg_prof_data ? ($emg_prof_data['last_reviewed_at'] ?? $emg_prof_data['updated_at']) : null;
+            ?>
+            <div style="width: 100%; margin-top: 1.8rem; padding-top: 1.5rem; border-top: 1px solid var(--glass-border); text-align: left;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem;">
+                    <span style="font-size: 0.85rem; font-weight: 800; color: #ff4757; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <i class="fas fa-heartbeat"></i> Emergency Medical Card
+                    </span>
+                    <?php if ($emg_prof_status === 'information_available'): ?>
+                        <span style="background: rgba(46, 213, 115, 0.2); color: #2ed573; font-size: 0.7rem; font-weight: 800; padding: 0.15rem 0.5rem; border-radius: 10px;">AVAILABLE</span>
+                    <?php elseif ($emg_prof_status === 'incomplete'): ?>
+                        <span style="background: rgba(236, 204, 104, 0.2); color: #eccc68; font-size: 0.7rem; font-weight: 800; padding: 0.15rem 0.5rem; border-radius: 10px;">INCOMPLETE</span>
+                    <?php else: ?>
+                        <span style="background: rgba(255, 71, 87, 0.2); color: #ff4757; font-size: 0.7rem; font-weight: 800; padding: 0.15rem 0.5rem; border-radius: 10px;">NOT CREATED</span>
+                    <?php endif; ?>
+                </div>
+
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                    <?php if ($emg_last_upd): ?>
+                        Last Updated: <?php echo date('M d, Y', strtotime($emg_last_upd)); ?>
+                    <?php else: ?>
+                        Maintain emergency contacts & allergies for rapid response.
+                    <?php endif; ?>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <a href="emergency_quick_view.php" class="btn btn-primary" style="font-size: 0.82rem; width: 100%; text-align: center; background: linear-gradient(135deg, #ff4757, #ff6b81); border: none; font-weight: 800;">
+                        <i class="fas fa-bolt"></i> Emergency Quick View
+                    </a>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <a href="health_vault.php?tab=emergency" class="btn btn-outline" style="font-size: 0.78rem; flex: 1; text-align: center;">
+                            <i class="fas fa-edit"></i> Edit Info
+                        </a>
+                        <a href="download_emergency_card.php" target="_blank" class="btn btn-outline" style="font-size: 0.78rem; flex: 1; text-align: center; color: #2ed573; border-color: rgba(46, 213, 115, 0.4);">
+                            <i class="fas fa-download"></i> PDF Card
+                        </a>
+                    </div>
+                </div>
+            </div>
+        <?php endif; ?>
     </div>
 
     <!-- Right Column: Settings Form -->
