@@ -10,9 +10,10 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $role = $_SESSION['role'];
 
-// Ensure user has a referral code
+// Ensure user has a referral code & sync pending referrals
 $my_referral_code = get_or_create_referral_code($user_id);
 $my_referral_link = get_referral_link($user_id);
+sync_pending_referrals(null);
 $available_balance = get_customer_referral_balance($user_id);
 
 // Fetch patient's referral statistics & history

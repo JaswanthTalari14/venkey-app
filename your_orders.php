@@ -70,6 +70,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
+require_once 'includes/referral_functions.php';
+sync_pending_referrals(null);
+
 include 'includes/header.php';
 
 // Server-side Search & Filter Support

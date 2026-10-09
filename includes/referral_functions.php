@@ -218,18 +218,71 @@ function get_customer_referral_balance($customer_id) {
     return 0.00;
 }
 
+// Register a referral claim upon user sign up
+if (!function_exists('register_referral_claim')) {
+    function register_referral_claim($referred_customer_id, $referral_code) {
+        global $conn;
+
+        $clean_code = strtoupper(trim($referral_code ?? ''));
+        $referred_id = (int)$referred_customer_id;
+        if (empty($clean_code) || $referred_id <= 0) return false;
+
+        // Find referrer customer ID from referral_codes
+        $stmt = $conn->prepare("SELECT customer_id FROM referral_codes WHERE referral_code = ?");
+        $stmt->bind_param("s", $clean_code);
+        $stmt->execute();
+        $res = $stmt->get_result();
+
+        if (!$res || $res->num_rows === 0) {
+            return false;
+        }
+
+        $referrer_id = (int)$res->fetch_assoc()['customer_id'];
+
+        // Self-referral protection
+        if ($referrer_id === $referred_id) {
+            return false;
+        }
+
+        // Check if referral link already exists for this referred customer
+        $chk = $conn->prepare("SELECT id FROM customer_referrals WHERE referred_customer_id = ?");
+        $chk->bind_param("i", $referred_id);
+        $chk->execute();
+        $chk_res = $chk->get_result();
+
+        if ($chk_res && $chk_res->num_rows > 0) {
+            return false; // Relationship already recorded
+        }
+
+        // Calculate expiry (default 30 days)
+        $settings = get_referral_settings();
+        $expiry_days = max(1, (int)($settings['expiry_days'] ?? 30));
+        $expires_at = date('Y-m-d H:i:s', strtotime("+$expiry_days days"));
+
+        $ins = $conn->prepare("INSERT INTO customer_referrals (referrer_customer_id, referred_customer_id, referral_code, status, registered_at, expires_at) VALUES (?, ?, ?, 'Registered', NOW(), ?)");
+        $ins->bind_param("iiss", $referrer_id, $referred_id, $clean_code, $expires_at);
+        $ok = $ins->execute();
+
+        if ($ok) {
+            sync_pending_referrals($referrer_id);
+        }
+
+        return $ok;
+    }
+}
+
 // Automatically synchronize pending referrals based on order delivery status
 function sync_pending_referrals($referrer_id = null) {
     global $conn;
 
     $settings = get_referral_settings();
-    if (!$settings['program_enabled']) return false;
+    if (!isset($settings['program_enabled']) || !$settings['program_enabled']) return false;
 
-    $min_amt = (float)$settings['min_order_amount'];
+    $min_amt = (float)($settings['min_order_amount'] ?? 199.00);
 
     // Select pending referrals (Registered or Order Pending)
     $sql = "SELECT * FROM customer_referrals WHERE status IN ('Registered', 'Order Pending')";
-    if ($referrer_id !== null) {
+    if ($referrer_id !== null && intval($referrer_id) > 0) {
         $sql .= " AND referrer_customer_id = " . (int)$referrer_id;
     }
 
@@ -247,38 +300,35 @@ function sync_pending_referrals($referrer_id = null) {
             continue;
         }
 
-        // Find qualifying order
-        $qualifying_order_id = !empty($referral['qualifying_order_id']) ? (int)$referral['qualifying_order_id'] : 0;
+        // 1. Check for ANY DELIVERED order placed by the referred customer meeting minimum order amount
+        $delivered_stmt = $conn->query("
+            SELECT id, total_amount, status, payment_status 
+            FROM orders 
+            WHERE patient_id = $patient_id 
+              AND LOWER(TRIM(status)) = 'delivered'
+              AND status NOT IN ('cancelled', 'Cancelled', 'rejected')
+            ORDER BY id ASC
+        ");
 
-        if ($qualifying_order_id > 0) {
-            $ord_stmt = $conn->query("SELECT id, total_amount, status, payment_status FROM orders WHERE id = $qualifying_order_id");
-            $ord = $ord_stmt ? $ord_stmt->fetch_assoc() : null;
-        } else {
-            // Find first order placed by referred customer
-            $ord_stmt = $conn->query("SELECT id, total_amount, status, payment_status FROM orders WHERE patient_id = $patient_id AND status NOT IN ('cancelled', 'Cancelled', 'rejected') ORDER BY id ASC LIMIT 1");
-            $ord = $ord_stmt ? $ord_stmt->fetch_assoc() : null;
+        $qualifying_order = null;
+        if ($delivered_stmt && $delivered_stmt->num_rows > 0) {
+            while ($d_ord = $delivered_stmt->fetch_assoc()) {
+                if ((float)$d_ord['total_amount'] >= $min_amt) {
+                    $qualifying_order = $d_ord;
+                    break;
+                }
+            }
         }
 
-        if (!$ord) {
-            continue;
-        }
+        if ($qualifying_order) {
+            $order_id = (int)$qualifying_order['id'];
+            $total_amount = (float)$qualifying_order['total_amount'];
 
-        $order_id = (int)$ord['id'];
-        $total_amount = (float)$ord['total_amount'];
-        $order_status = strtolower(trim($ord['status']));
-
-        // Update qualifying_order_id and status to Order Pending if currently Registered
-        if ($referral['status'] === 'Registered') {
-            $conn->query("UPDATE customer_referrals SET status = 'Order Pending', qualifying_order_id = $order_id WHERE id = $ref_id");
-        }
-
-        // Qualification check: Order status is 'delivered' (case-insensitive) AND total_amount >= min_order_amount
-        if ($order_status === 'delivered' && $total_amount >= $min_amt) {
-            // Idempotency Check: Prevent duplicate reward grant
+            // EXACTLY-ONCE IDEMPOTENCY CHECK: Prevent duplicate reward credit
             $reward_check = $conn->query("SELECT id FROM referral_rewards WHERE referral_id = $ref_id AND reward_type = 'referrer_reward'");
             if ($reward_check && $reward_check->num_rows > 0) {
-                // Already rewarded, ensure referral status is 'Reward Earned'
-                $conn->query("UPDATE customer_referrals SET status = 'Reward Earned' WHERE id = $ref_id");
+                // Already rewarded, update referral record to 'Reward Earned' & link order
+                $conn->query("UPDATE customer_referrals SET status = 'Reward Earned', qualifying_order_id = $order_id WHERE id = $ref_id");
                 continue;
             }
 
@@ -289,7 +339,10 @@ function sync_pending_referrals($referrer_id = null) {
             $tx1 = 'REF_RWD_' . time() . '_' . rand(1000, 9999);
             $conn->query("INSERT INTO referral_rewards (referral_id, customer_id, reward_type, amount, status, related_order_id, transaction_id, description) 
                           VALUES ($ref_id, $referrer_customer_id, 'referrer_reward', $referrer_reward, 'earned', $order_id, '$tx1', 'Referral reward for successful invite')");
-            add_wallet_transaction($referrer_customer_id, 'referral_reward', 'credit', $referrer_reward, "Referral reward for successful invite", $order_id, null, $ref_id);
+            
+            if (function_exists('add_wallet_transaction')) {
+                add_wallet_transaction($referrer_customer_id, 'referral_reward', 'credit', $referrer_reward, "Referral reward for successful invite", $order_id, null, $ref_id);
+            }
 
             // Notification for Referrer Customer
             if (function_exists('create_notification')) {
@@ -303,7 +356,10 @@ function sync_pending_referrals($referrer_id = null) {
                     $tx2 = 'REF_RWD_' . time() . '_' . rand(1000, 9999);
                     $conn->query("INSERT INTO referral_rewards (referral_id, customer_id, reward_type, amount, status, related_order_id, transaction_id, description) 
                                   VALUES ($ref_id, $patient_id, 'referred_reward', $referred_reward, 'earned', $order_id, '$tx2', 'Welcome referral bonus on first order')");
-                    add_wallet_transaction($patient_id, 'referral_reward', 'credit', $referred_reward, "Welcome referral bonus on first order", $order_id, null, $ref_id);
+                    
+                    if (function_exists('add_wallet_transaction')) {
+                        add_wallet_transaction($patient_id, 'referral_reward', 'credit', $referred_reward, "Welcome referral bonus on first order", $order_id, null, $ref_id);
+                    }
 
                     if (function_exists('create_notification')) {
                         create_notification($patient_id, "🎉 Welcome Referral Bonus!", "Your order has been delivered! ₹" . number_format($referred_reward, 2) . " welcome bonus has been credited to your wallet.", 'success', 'referral', $ref_id);
@@ -312,11 +368,32 @@ function sync_pending_referrals($referrer_id = null) {
             }
 
             // Update referral record status to 'Reward Earned'
-            $conn->query("UPDATE customer_referrals SET status = 'Reward Earned', qualified_at = NOW(), reward_earned_at = NOW() WHERE id = $ref_id");
+            $conn->query("UPDATE customer_referrals SET status = 'Reward Earned', qualifying_order_id = $order_id, qualified_at = NOW(), reward_earned_at = NOW() WHERE id = $ref_id");
+        } else {
+            // Check if referred customer has placed ANY active order (to update status to 'Order Pending')
+            $active_ord_stmt = $conn->query("
+                SELECT id FROM orders 
+                WHERE patient_id = $patient_id 
+                  AND LOWER(TRIM(status)) NOT IN ('cancelled', 'rejected') 
+                ORDER BY id ASC LIMIT 1
+            ");
+            if ($active_ord_stmt && $active_ord_stmt->num_rows > 0) {
+                $active_ord_id = (int)$active_ord_stmt->fetch_assoc()['id'];
+                $conn->query("UPDATE customer_referrals SET status = 'Order Pending', qualifying_order_id = $active_ord_id WHERE id = $ref_id");
+            }
         }
     }
 
     return true;
+}
+
+// Recovery function for historical delivered orders missing referral rewards
+if (!function_exists('recover_uncredited_delivered_referrals')) {
+    function recover_uncredited_delivered_referrals() {
+        global $conn;
+        // Run full sync on all referrers
+        sync_pending_referrals(null);
+    }
 }
 
 // Evaluate and process Referral Rewards on Order Confirmation
