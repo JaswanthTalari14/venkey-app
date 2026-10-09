@@ -206,7 +206,7 @@ include 'includes/header.php';
                                         </span>
                                     </td>
                                     <td style="padding: 1rem; font-weight: 700; color: #2ed573; white-space: nowrap;">
-                                        <?php echo ($st === 'Reward Earned') ? '₹50.00' : '₹0.00'; ?>
+                                        <?php echo ($st === 'Reward Earned' || $st === 'Qualified') ? '₹50.00' : '₹0.00'; ?>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
