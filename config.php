@@ -854,6 +854,9 @@ function update_order_status_timestamps($conn, $order_id, $new_status) {
             if (!in_array('completion_status', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN completion_status VARCHAR(30) DEFAULT 'incomplete'");
             if (!in_array('last_reviewed_at', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN last_reviewed_at DATETIME DEFAULT NULL");
             if (!in_array('is_qr_enabled', $emg_cols)) @$conn->query("ALTER TABLE emergency_cards ADD COLUMN is_qr_enabled TINYINT(1) DEFAULT 1");
+        }
+    } catch (Throwable $t) {}
+
     // Auto-migrate tables for Medical Document Authenticity Verification System
     try {
         $conn->query("CREATE TABLE IF NOT EXISTS document_verifications (
